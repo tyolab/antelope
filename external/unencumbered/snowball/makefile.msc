@@ -1,0 +1,26 @@
+.SILENT:
+include mkinc.mak
+
+AR = lib
+ARFLAGS = -nologo /LTCG
+
+!IF "$(DEBUG)" == "1"
+CFLAGS= -DWIN32 /MTd /Od -D_FILE_OFFSET_BITS=64 -nologo /Zi /fp:fast /GL /Gy /MP8 /I include
+!ELSE
+CFLAGS= -DWIN32 /MT /Ox -D_FILE_OFFSET_BITS=64 -nologo /Zi /fp:fast /GL /Gy /MP8 /I include
+!ENDIF
+
+SRC2OBJ = $(snowball_sources:.c=.obj)
+
+libstemmer.lib: $(SRC2OBJ)
+	$(AR) $(ARFLAGS) -out:$@ $(SRC2OBJ)
+
+{libstemmer}.c{libstemmer}.obj:
+    $(CC) $(CFLAGS) /c $< /Fo$*.obj
+
+{runtime}.c{runtime}.obj:
+    $(CC) $(CFLAGS) /c $< /Fo$*.obj
+
+{src_c}.c{src_c}.obj:
+    $(CC) $(CFLAGS) /c $< /Fo$*.obj
+
