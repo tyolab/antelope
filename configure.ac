@@ -63,6 +63,7 @@ CXXFLAGS="-I$JAVA_HOME/include -I$JAVA_HOME/include/$JVM_OS $CXXFLAGS"
 ])   
 
 AC_CHECK_HEADER([jni.h], [have_jni=yes]) 
+AC_SUBST([JAVA_HOME])
 #AC_SUBST([JVM_ARCH])
 #AS_IF([test X$enable_java_feature != Xno],
 #[AS_IF([test X$have_jni != Xyes],
