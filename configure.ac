@@ -27,7 +27,20 @@ AC_ARG_WITH([pi],
                        [Define PARALLEL_INDEXING macro]),
         [CXXFLAGS="$CXXFLAGS -DPARALLEL_INDEXING"; CFLAGS="$CXXFLAGS"])
         
-# Get MySQL library and include locations
+AC_ARG_WITH(mysql,
+            AC_HELP_STRING([--with-mysql]),
+        [
+            CFLAGS="$CFLAGS -DANT_HAS_MYSQL"
+            CXXFLAGS="$CXXFLAGS -DANT_HAS_MYSQL"
+            HAS_MYSQL="yes"
+		],
+		[	
+		]
+		)
+		
+# Get MySQL library and include locations if set
+AS_IF([test -z "$HAS_MYSQL"], [],
+[
 AC_ARG_WITH([mysql-include-path],
   [AS_HELP_STRING([--with-mysql-include-path],
     [location of the MySQL headers, defaults to /usr/include/mysql])],
@@ -43,14 +56,6 @@ AC_ARG_WITH([mysql-include-path],
   ])
 AC_SUBST([MYSQL_CFLAGS])
 
-AC_ARG_WITH(mysql,
-            AC_HELP_STRING([--with-mysql]),
-        [
-            CFLAGS="$CFLAGS -DANT_HAS_MYSQL"
-            CXXFLAGS="$CXXFLAGS -DANT_HAS_MYSQL"
-		])
-          
-# Checks for libraries.
 AC_ARG_WITH([mysql-lib-path],
   [AS_HELP_STRING([--with-mysql-lib-path], [location of the MySQL libraries])],
   [
@@ -62,7 +67,10 @@ AC_ARG_WITH([mysql-lib-path],
   	LIBS="$LIBS $MYSQL_LIBS"
   ])
 AC_SUBST([MYSQL_LIBS])
-
+]
+)
+          
+# Checks for libraries.
 AC_CHECK_LIB([dl], [dlopen])
 AC_CHECK_LIB([z], [inflateReset], [LIBS="$LIBS -lz"; CXXFLAGS="$CXXFLAGS -DANT_HAS_ZLIB"; CFLAGS="$CXXFLAGS"])
 AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [LIBS="$LIBS -lbz2"; CXXFLAGS="$CXXFLAGS -DANT_HAS_BZLIB"; CFLAGS="$CXXFLAGS"])
