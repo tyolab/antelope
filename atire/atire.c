@@ -159,7 +159,7 @@ if (params->snippet_algorithm != ANT_ANT_param_block::NONE)
 		snippet_stemmer = NULL;
 	else
 		if ((snippet_stemmer = ANT_stemmer_factory::get_core_stemmer(params->snippet_stemmer)) == NULL)
-			exit(printf("unvalid snippet stemmer requested somehow\n"));
+			exit(printf("Invalid snippet stemmer requested somehow\n"));
 
 	snippet_generator = ANT_snippet_factory::get_snippet_maker(params->snippet_algorithm, params->snippet_length, atire->get_longest_document_length(), params->snippet_tag, atire->get_search_engine(), snippet_stemmer, params->snippet_word_cloud_terms);
 	}
@@ -726,7 +726,7 @@ return atire;
 	MAIN()
 	------
 */
-int main(int argc, char *argv[])
+int atire(int argc, char *argv[])
 {
 ANT_stats stats;
 ANT_ANT_param_block params(argc, argv);
@@ -744,3 +744,16 @@ stats.print_elapsed_time();
 ANT_stats::print_operating_system_process_time();
 return 0;
 }
+
+#ifdef STANDALONE_ATIRE
+
+/*
+	MAIN()
+	------
+*/
+int main(int argc, char *argv[])
+{
+	return atire(argc, argv);
+}
+
+#endif
