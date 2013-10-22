@@ -33,6 +33,8 @@ ATIRE_API *atire = NULL;
 
 ATIRE_API *ant_init(ANT_ANT_param_block & params);
 int ant_init_ranking(ATIRE_API * atire, ANT_indexer_param_block_rank & params);
+int run_atire(int argc, char *argv[]);
+int run_atire(char *files);
 
 /*
 	PERFORM_QUERY()
@@ -723,10 +725,62 @@ return atire;
 }
 
 /*
-	MAIN()
-	------
+	RUN_ATIRE()
+	-------------
+	for the simplicity of JNI calling
+	options are separated with +
 */
-int atire(int argc, char *argv[])
+int run_atire(char *options)
+{
+static char *seperators = "+";
+char **argv, **file_list;
+char *token;
+size_t total_length = (options ? strlen(options) : 0) + 7;
+char *copy, *copy_start;
+
+copy = copy_start = new char[total_length];
+
+memset(copy, 0, sizeof(copy));
+
+memcpy(copy, "atire+", 6);
+copy += 6;
+if (options) {
+	memcpy(copy, options, strlen(options));
+	copy += strlen(options);
+}
+*copy = '\0';
+
+argv = file_list = new char *[total_length];
+int argc = 0;
+token = strtok(copy_start, seperators);
+
+#ifdef DEBUG
+	fprintf(stderr, "Start atire with options: %s\n", options);
+#endif
+for (; token != NULL; token = strtok(NULL, seperators))
+	{
+#ifdef DEBUG
+	fprintf(stderr, "%s ", token);
+#endif
+	*argv++ = token;
+	++argc;
+	}
+#ifdef DEBUG
+	fprintf(stderr, "\n");
+#endif
+*argv = NULL;
+int result = run_atire(argc, file_list);
+delete [] copy;
+delete [] file_list;
+
+return result;
+}
+
+/*
+	RUN_ATIRE()
+	-------------------
+*/
+int run_atire(int argc, char *argv[])
 {
 ANT_stats stats;
 ANT_ANT_param_block params(argc, argv);
@@ -745,7 +799,7 @@ ANT_stats::print_operating_system_process_time();
 return 0;
 }
 
-#ifdef STANDALONE_ATIRE
+#ifndef ATIRE_LIBRARY
 
 /*
 	MAIN()
@@ -753,7 +807,7 @@ return 0;
 */
 int main(int argc, char *argv[])
 {
-	return atire(argc, argv);
+	return run_atire(argc, argv);
 }
 
 #endif

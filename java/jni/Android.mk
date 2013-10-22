@@ -232,7 +232,9 @@ include $(CLEAR_VARS)
 LOCAL_CPP_EXTENSION := .c
 
 
-API_SOURCES = $(ATIRE_DIR)/atire_api.c \
+API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
+			$(ATIRE_DIR)/atire.c \
+			$(ATIRE_DIR)/atire_api.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			
 INDEX_SOURCES =	$(ATIRE_DIR)/index.c \

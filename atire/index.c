@@ -65,7 +65,7 @@
 #endif
 
 int atire_index(int argc, char *argv[]);
-int atire_index(char *files);
+int atire_index(char *options);
 
 /*
 	REPORT()
@@ -103,14 +103,14 @@ int atire_exit(int errno) {
 	ATIRE_INDEX()
 	-------------
 	for the simplicity of JNI calling
-	files are seperated with ;
+	options are separated with +
 */
-int atire_index(char *files)
+int atire_index(char *options)
 {
 static char *seperators = "+";
 char **argv, **file_list;
 char *token;
-size_t total_length = (files ? strlen(files) : 0) + 7;
+size_t total_length = (options ? strlen(options) : 0) + 7;
 char *copy, *copy_start;
 
 copy = copy_start = new char[total_length];
@@ -119,9 +119,9 @@ memset(copy, 0, sizeof(copy));
 
 memcpy(copy, "index+", 6);
 copy += 6;
-if (files) {
-	memcpy(copy, files, strlen(files));
-	copy += strlen(files);
+if (options) {
+	memcpy(copy, options, strlen(options));
+	copy += strlen(options);
 }
 *copy = '\0';
 
@@ -130,7 +130,7 @@ int argc = 0;
 token = strtok(copy_start, seperators);
 
 #ifdef DEBUG
-	fprintf(stderr, "Start indexing with options: %s\n", files);
+	fprintf(stderr, "Start indexing with options: %s\n", options);
 #endif
 for (; token != NULL; token = strtok(NULL, seperators))
 	{

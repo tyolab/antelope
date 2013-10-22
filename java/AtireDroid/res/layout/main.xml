@@ -9,11 +9,32 @@
         android:layout_height="wrap_content"
         android:text="@string/hello" />
 
+    <EditText
+        android:id="@+id/search_field"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:ems="10" >
+
+        <requestFocus />
+    </EditText>
+
+    <Button
+        android:id="@+id/btn_search"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Search" />
+
     <Button
         android:id="@+id/index_button"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Index" />
+    
+    <Button
+        android:id="@+id/atire_button"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Atire" />
 
     <TextView
         android:id="@+id/textViewFiles"

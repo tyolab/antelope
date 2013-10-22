@@ -44,6 +44,16 @@ public class MobileSearchActivity extends Activity implements OnClickListener {
         Button button = (Button)findViewById(R.id.index_button);
         button.setOnClickListener(this);
         
+        Button atireButton = (Button) findViewById(R.id.atire_button);
+        atireButton.setOnClickListener(new OnClickListener() {
+
+			@Override
+			public void onClick(View v) {
+				
+			}
+        	
+        });
+        
         textViewFiles = (TextView)findViewById(R.id.textViewFiles);
         textViewResult = (TextView)findViewById(R.id.textViewResult);
         textViewStatus = (TextView)findViewById(R.id.textViewStatus);
