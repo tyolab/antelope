@@ -9,9 +9,10 @@ AM_CPPFLAGS += -std=c++0x -pedantic -I$(JAVA_HOME)/include -I$(JAVA_HOME)/includ
 lib_LTLIBRARIES = libatire_jni.la
 
 
-libatire_jni_la_SOURCES = atire_wrap.c 
+libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire.c $(top_srcdir)/index.c
+libatire_jni_la_CFLAGS = -DATIRE_LIBRARY
 libatire_jni_la_LDFLAGS = 
-libatire_jni_la_DEPENDENCIES = ../../libatire_index_param.la ../../libatire_index.la
+libatire_jni_la_DEPENDENCIES = ../../libatire_index_param.la ../../libatire_index.la ../../
 
 # other possible libraries
 #  -L../../ -latire_index_param

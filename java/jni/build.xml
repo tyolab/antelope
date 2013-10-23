@@ -15,6 +15,7 @@
 	<!-- classpathref="${engine.classpath} -->
 	<target name="compile">
 	        <mkdir dir="${build.dir}" />
+	        <mkdir dir="${lib.dir}" />
 	        <javac srcdir="${src.dir}" destdir="${build.dir}" debug="on">
 	        	<classpath refid="class.path" />
 	        </javac>
