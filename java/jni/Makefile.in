@@ -93,8 +93,7 @@ am__uninstall_files_from_dir = { \
 am__installdirs = "$(DESTDIR)$(libdir)"
 LTLIBRARIES = $(lib_LTLIBRARIES)
 am_libatire_jni_la_OBJECTS = libatire_jni_la-atire_wrap.lo \
-	libatire_jni_la-atire.lo libatire_jni_la-index.lo \
-	libatire_jni_la-ant_param_block.lo
+	libatire_jni_la-atire.lo libatire_jni_la-index.lo
 libatire_jni_la_OBJECTS = $(am_libatire_jni_la_OBJECTS)
 libatire_jni_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(libatire_jni_la_CFLAGS) \
@@ -264,16 +263,16 @@ AM_CPPFLAGS = $(AM_CFLAGS) -std=c++0x -pedantic -I$(JAVA_HOME)/include \
 	-I$(JAVA_HOME)/include/linux
 AM_LDFLAGS = @LIBS@
 lib_LTLIBRARIES = libatire_jni.la
-libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire/atire.c $(top_srcdir)/atire/index.c $(top_srcdir)/atire/ant_param_block.c
+libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire/atire.c $(top_srcdir)/atire/index.c
 libatire_jni_la_CFLAGS = -DATIRE_LIBRARY  -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
 		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -I$(top_srcdir)/source
 
-libatire_jni_la_LDFLAGS = -Bsymbolic  
-libatire_jni_la_DEPENDENCIES = ../../libatire_index_param.la ../../libatire_api.la
+libatire_jni_la_LDFLAGS = -Bsymbolic -export-dynamic
+libatire_jni_la_DEPENDENCIES = ../../libatire_api.la  ../../libatire_ant_param.la
 
 # other possible libraries
 #  -L../../ -latire_index_param -L../../ -latire_index 
-libatire_jni_la_LIBADD = -L../../ -latire_index_param -L../../ -latire_api
+libatire_jni_la_LIBADD = ../../libatire_api.la ../../libatire_ant_param.la
 index_test_SOURCES = test/index_test.c
 index_test_CFLAGS = -I$(srcdir)/include
 index_test_LDADD = -L. -latire_jni -L../../ -latire_core
@@ -376,7 +375,6 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atire_test-atire_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/index_test-index_test.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libatire_jni_la-ant_param_block.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libatire_jni_la-atire.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libatire_jni_la-atire_wrap.Plo@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libatire_jni_la-index.Plo@am__quote@
@@ -422,13 +420,6 @@ libatire_jni_la-index.lo: $(top_srcdir)/atire/index.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/atire/index.c' object='libatire_jni_la-index.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libatire_jni_la_CFLAGS) $(CFLAGS) -c -o libatire_jni_la-index.lo `test -f '$(top_srcdir)/atire/index.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/index.c
-
-libatire_jni_la-ant_param_block.lo: $(top_srcdir)/atire/ant_param_block.c
-@am__fastdepCC_TRUE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libatire_jni_la_CFLAGS) $(CFLAGS) -MT libatire_jni_la-ant_param_block.lo -MD -MP -MF $(DEPDIR)/libatire_jni_la-ant_param_block.Tpo -c -o libatire_jni_la-ant_param_block.lo `test -f '$(top_srcdir)/atire/ant_param_block.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/ant_param_block.c
-@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/libatire_jni_la-ant_param_block.Tpo $(DEPDIR)/libatire_jni_la-ant_param_block.Plo
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/atire/ant_param_block.c' object='libatire_jni_la-ant_param_block.lo' libtool=yes @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libatire_jni_la_CFLAGS) $(CFLAGS) -c -o libatire_jni_la-ant_param_block.lo `test -f '$(top_srcdir)/atire/ant_param_block.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/ant_param_block.c
 
 atire_test-atire_test.o: test/atire_test.c
 @am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_test_CFLAGS) $(CFLAGS) -MT atire_test-atire_test.o -MD -MP -MF $(DEPDIR)/atire_test-atire_test.Tpo -c -o atire_test-atire_test.o `test -f 'test/atire_test.c' || echo '$(srcdir)/'`test/atire_test.c

@@ -9,15 +9,15 @@ AM_CPPFLAGS += -std=c++0x -pedantic -I$(JAVA_HOME)/include -I$(JAVA_HOME)/includ
 lib_LTLIBRARIES = libatire_jni.la
 
 
-libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire/atire.c $(top_srcdir)/atire/index.c $(top_srcdir)/atire/ant_param_block.c
+libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire/atire.c $(top_srcdir)/atire/index.c
 libatire_jni_la_CFLAGS = -DATIRE_LIBRARY  -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
 		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -I$(top_srcdir)/source
-libatire_jni_la_LDFLAGS =  -Bsymbolic -static -export-dynamic
-libatire_jni_la_DEPENDENCIES = ../../libatire_index_param.la ../../libatire_api.la
+libatire_jni_la_LDFLAGS =  -Bsymbolic -export-dynamic
+libatire_jni_la_DEPENDENCIES = ../../libatire_api.la  ../../libatire_ant_param.la
 
 # other possible libraries
 #  -L../../ -latire_index_param -L../../ -latire_index 
-libatire_jni_la_LIBADD =  -L../../ -latire_index_param -L../../ -latire_api
+libatire_jni_la_LIBADD =   ../../libatire_api.la ../../libatire_ant_param.la
 
 noinst_PROGRAMS = index_test atire_test
 
