@@ -8,6 +8,8 @@ public class Atire {
 	 * @param args
 	 */
 	public static void main(String[] args) {
+		System.loadLibrary("atire_jni");
+		
 		if (args.length == 0) {
 			atire_apis.run_atire("-q:");
 		}
