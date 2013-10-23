@@ -556,6 +556,7 @@ main_headers = $(ATIRE_DIR)/atire_api_remote.h \
 #core_sources = $(filter-out $(IGNORE_LIST) $(ATIRE_PARAM_LIST) $(INDEX_PARAM_LIST), $(all_sources))
 	
 ATIRE_PARAM_LIST = $(ATIRE_DIR)/ant_param_block.c
+
 INDEX_PARAM_LIST = $(ATIRE_DIR)/indexer_param_block.c \
 				 $(ATIRE_DIR)/indexer_param_block_rank.c \
 				 $(ATIRE_DIR)/indexer_param_block_topsig.c \
