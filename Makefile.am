@@ -16,7 +16,11 @@ JNI_DIR = jni
 TOOLS_DIR = tools
 TESTS_DIR = tests
 
-AM_LDFLAGS = @LIBS@
+###############################################################################
+# ldd -d xxxx.so might produce undefined symbol: __cxa_pure_virtual errors.
+# so add linking options as follows
+###############################################################################
+AM_LDFLAGS = -Wl,--gc-sections -fPIC -shared -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
 AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
@@ -587,8 +591,8 @@ ATIRE_LIBS = $(ATIRE_CORE_LIB)  $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB)
 includedir = $(prefix)/include
 include_HEADERS = $(library_headers)
 		
-noinst_LTLIBRARIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB) libatire_index.la $(ATIRE_ANT_PARAM_LIB)
-lib_LTLIBRARIES = $(ATIRE_API_LIB)
+noinst_LTLIBRARIES = libatire_index.la 
+lib_LTLIBRARIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_API_LIB) 
 
 libatire_core_la_SOURCES = $(core_sources)
 libatire_core_la_LIBADD = -ldl -lpthread
