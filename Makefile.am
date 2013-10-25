@@ -684,7 +684,7 @@ index_SOURCES = \
 	$(ATIRE_DIR)/index.c 
 index_LDADD = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB)
 #index_LDFLAGS = -rdynamic
-index_LDFLAGS = -export-dynamic
+index_LDFLAGS = -static -export-dynamic
 index_DEPENDENCIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB)
 index_CFLAGS = $(AM_CFLAGS)
 

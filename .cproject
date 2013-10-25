@@ -36,10 +36,18 @@
 								<inputType id="cdt.managedbuild.tool.gnu.c.compiler.input.945668187" superClass="cdt.managedbuild.tool.gnu.c.compiler.input"/>
 							</tool>
 							<tool errorParsers="org.eclipse.cdt.core.GCCErrorParser" id="org.eclipse.linuxtools.cdt.autotools.core.toolchain.tool.gpp.435444556" name="GCC C++ Compiler" superClass="org.eclipse.linuxtools.cdt.autotools.core.toolchain.tool.gpp">
+								<option id="gnu.cpp.compiler.option.include.paths.1162034908" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/atire.github/source}&quot;"/>
+								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.compiler.input.793029121" superClass="cdt.managedbuild.tool.gnu.cpp.compiler.input"/>
 							</tool>
 						</toolChain>
 					</folderInfo>
+					<sourceEntries>
+						<entry excluding="atire|source" flags="VALUE_WORKSPACE_PATH|RESOLVED" kind="sourcePath" name=""/>
+						<entry flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="atire"/>
+						<entry flags="VALUE_WORKSPACE_PATH" kind="sourcePath" name="source"/>
+					</sourceEntries>
 				</configuration>
 			</storageModule>
 			<storageModule moduleId="org.eclipse.cdt.core.externalSettings"/>
@@ -70,7 +78,7 @@
 					<folderInfo id="org.eclipse.linuxtools.cdt.autotools.core.toolChain.677624188.1882006665." name="/" resourcePath="">
 						<toolChain errorParsers="" id="org.eclipse.linuxtools.cdt.autotools.core.toolChain.2091060717" name="org.eclipse.linuxtools.cdt.autotools.core.toolChain" superClass="org.eclipse.linuxtools.cdt.autotools.core.toolChain">
 							<targetPlatform binaryParser="org.eclipse.cdt.core.ELF;org.eclipse.cdt.core.GNU_ELF;org.eclipse.cdt.core.MachO64;org.eclipse.cdt.core.PE;org.eclipse.cdt.core.SOM;org.eclipse.cdt.core.MachO;org.eclipse.cdt.core.Cygwin_PE;org.eclipse.cdt.core.XCOFF32" id="org.eclipse.linuxtools.cdt.autotools.core.toolchain.targetPlatform.1101625555" isAbstract="false" name="GNU Autotools Target Platform" superClass="org.eclipse.linuxtools.cdt.autotools.core.toolchain.targetPlatform"/>
-							<builder buildPath="${workspace_loc:/atire}/build-Debug" errorParsers="" id="org.eclipse.linuxtools.cdt.autotools.core.toolchain.builder.212050561" keepEnvironmentInBuildfile="false" managedBuildOn="false" superClass="org.eclipse.linuxtools.cdt.autotools.core.toolchain.builder">
+							<builder buildPath="${workspace_loc:/atire.github}/build-Debug" errorParsers="" id="org.eclipse.linuxtools.cdt.autotools.core.toolchain.builder.212050561" keepEnvironmentInBuildfile="false" managedBuildOn="false" superClass="org.eclipse.linuxtools.cdt.autotools.core.toolchain.builder">
 								<outputEntries>
 									<entry flags="VALUE_WORKSPACE_PATH" kind="outputPath" name="build/debug"/>
 								</outputEntries>

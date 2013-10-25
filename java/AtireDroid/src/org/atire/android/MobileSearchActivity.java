@@ -49,6 +49,14 @@ public class MobileSearchActivity extends Activity implements OnClickListener {
 
 			@Override
 			public void onClick(View v) {
+				new Thread(new Runnable() {
+
+					@Override
+					public void run() {
+						atire_apis.run_atire("-q:");
+					}
+					
+				}).start();
 				
 			}
         	
