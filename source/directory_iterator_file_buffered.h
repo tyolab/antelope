@@ -32,6 +32,7 @@ protected:
 	long long read_buffer_used;
 	long asciiafy;
 	ANT_instream *source;
+	long auto_file_id;
 
 protected:
 	ANT_directory_iterator_object *read_entire_file(ANT_directory_iterator_object *object);
