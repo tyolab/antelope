@@ -57,7 +57,7 @@ ANT_directory_iterator_object *ANT_directory_iterator_file_buffered::next(ANT_di
 {
 char *start, *document_id_start, *document_id_end;
 long long bytes_read;
-char *file_id_buffer = new char[sizeof(long long) + 1];
+char *file_id_buffer = new char[sizeof(long) * 8 + 1];
 
 start = read_buffer + read_buffer_used;
 
@@ -128,20 +128,19 @@ else
 	Copy the id into the document object and get the document
 */
 object->file = NULL;
-if (auto_file_id) {
-	sprintf(file_id_buffer, "%d", auto_file_id);
-	object->filename = strnew(file_id_buffer);
-}
+if (document_id_end == NULL && !auto_file_id)
+	object->filename = strnew("Unknown");
 else
 	{
-	if (document_id_end == NULL)
-		object->filename = strnew("Unknown");
+	if (auto_file_id) {
+		sprintf(file_id_buffer, "%d", auto_file_id);
+		object->filename = strnew(file_id_buffer);
+	}
 	else
-		{
 		object->filename = strnnew(document_id_start, document_id_end - document_id_start);
-		if (get_file)
-			read_entire_file(object);
-		}
+
+	if (get_file)
+		read_entire_file(object);
 	}
 delete file_id_buffer;
 return object;
