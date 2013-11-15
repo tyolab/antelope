@@ -10,6 +10,10 @@
 #include "instream.h"
 #include "directory_iterator_file_buffered.h"
 
+#ifdef _MSC_VER
+	#define strstr	strcasestr
+#endif
+
 /*
 	ANT_DIRECTORY_ITERATOR_FILE_BUFFERED::ANT_DIRECTORY_ITERATOR_FILE_BUFFERED()
 	----------------------------------------------------------------------------
