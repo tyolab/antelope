@@ -3,5 +3,6 @@
 	<classpathentry kind="src" path="src"/>
 	<classpathentry exported="true" kind="src" path="/atire_jni"/>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="src" path="/CommonUtils"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

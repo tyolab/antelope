@@ -553,7 +553,12 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				*outchannel << "<hit>";
 				*outchannel << "<rank>" << result + 1 << "</rank>";
 				*outchannel << "<id>" << docid << "</id>";
-				*outchannel << "<name>" << answer_list[result] << "</name>";
+				*outchannel << "<name>";
+				if (answer_list[result] == NULL)
+					*outchannel << "Unknown";
+				else
+					*outchannel << answer_list[result];
+				*outchannel<< "</name>";
 				sprintf(print_buffer, "%0.2f", relevance);
 				*outchannel << "<rsv>" << print_buffer << "</rsv>";
 				if (title != NULL && *title != '\0')

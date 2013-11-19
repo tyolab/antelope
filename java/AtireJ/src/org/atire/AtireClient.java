@@ -11,27 +11,25 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashMap;
 
-import org.atire.swig.ATIRE_API_remote;
-
 import au.com.tyo.parser.SgmlNode;
 
-public class AtireRemoteClient {
+public class AtireClient {
 	
 	public static final String DEFAULT_SERVER = "localhost";
 	
 	public static final int DEFAULT_PORT  = 8088;
 	
-	private ATIRE_API_remote socket;
+	private Socket socket;
 	
 	private int port;
 	
 	private String serverAddress;
 	
-	private HashMap<String, SearchResult> results;
+	private DataOutputStream out;
 	
-    static {
-	    System.loadLibrary("atire_jni");
-	}
+	private BufferedReader in;
+	
+	private HashMap<String, SearchResult> results;
 	
 	public static class SearchResult {
 		String name;
@@ -41,13 +39,9 @@ public class AtireRemoteClient {
 		String id;
 		
 		double rsv;
-		
-		public String toString() {
-			return "rank: " + rank + ", " + "name: " + name + ", " + "id: " + id + ", " + "rsv: " + rsv;
-		}
 	}
 
-	public AtireRemoteClient() {
+	public AtireClient() {
 		port = DEFAULT_PORT;
 		serverAddress = DEFAULT_SERVER;
 		results = new HashMap<String, SearchResult>();
@@ -55,41 +49,33 @@ public class AtireRemoteClient {
 	}
 
 	private void init() {
-		socket = new ATIRE_API_remote();
 		initializeSocket();
 	}
 	
 	public void initializeSocket() {
-		socket.open(serverAddress + ":" + port);
+		try {
+			socket = new Socket(serverAddress, port);
+			
+//			out = new PrintWriter(socket.getOutputStream(), true);
+//		    in = new BufferedReader(
+//		        new InputStreamReader(socket.getInputStream()));
+			in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+			out = new DataOutputStream(socket.getOutputStream());
+		} catch (UnknownHostException e) {
+			e.printStackTrace();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 	
 	public void close() {
-		socket.close();
-	}
-	
-	public void destroy() {
-		socket.delete();
-	}
-	
-	/*
-	BETWEEN()
-	---------
-	written by Andrew Trotman
-*/
-	private String between(String source, String open_tag, String close_tag)
-	{
-//		char *start,*finish;
-//		
-//		if ((start = strstr((char *)source, (char *)open_tag)) == NULL)
-//			return NULL;
-//		
-//		start += strlen(open_tag);
-//		
-//		if ((finish = strstr(start, close_tag)) == NULL)
-//			return NULL;
-//		
-//		return strnnew(start, finish - start);
-		return "";
+		try {
+			in.close();
+			out.close();
+			socket.close();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 	
 	public ArrayList<String> search(String query) throws ConnectException {
@@ -97,34 +83,39 @@ public class AtireRemoteClient {
 		
 		results.clear();
 		
-//			out.writeBytes(query + "\n");
+		try {
+			out.writeBytes(query + "\n");
 			
-		String line = socket.search(query, 1, 10);
-		
-//			while ((line = in.readLine()) != null) {
-		
-		SgmlNode node = new SgmlNode();
-		node.parse(line.getBytes());
-		SearchResult result = new SearchResult();
-		for (int i = 0; i < node.countChildren(); ++i) {
-			SgmlNode child = node.getChild(i);
+			String line;
 			
-			if (child.getName().equalsIgnoreCase("id")) {
-				result.id = child.getText();
+			while ((line = in.readLine()) != null) {
+				SgmlNode node = new SgmlNode();
+				node.parse(line.getBytes());
+				SearchResult result = new SearchResult();
+				for (int i = 0; i < node.countChildren(); ++i) {
+					SgmlNode child = node.getChild(i);
+					
+					if (child.getName().equalsIgnoreCase("id")) {
+						result.id = child.getText();
+					}
+					else 	if (child.getName().equalsIgnoreCase("name")) {
+						result.name = child.getText();
+					}
+					else 	if (child.getName().equalsIgnoreCase("rank")) {
+						result.rank = Integer.parseInt(child.getText());
+					}
+					else 	if (child.getName().equalsIgnoreCase("rsv")) {
+						result.rsv = Double.parseDouble(child.getText());
+					}
+				}
+				
+				results.put(result.name, result);
+				list.add(result.name);
 			}
-			else 	if (child.getName().equalsIgnoreCase("name")) {
-				result.name = child.getText();
-			}
-			else 	if (child.getName().equalsIgnoreCase("rank")) {
-				result.rank = Integer.parseInt(child.getText());
-			}
-			else 	if (child.getName().equalsIgnoreCase("rsv")) {
-				result.rsv = Double.parseDouble(child.getText());
-			}
+			
+		} catch (IOException e) {
+			e.printStackTrace();
 		}
-    	System.err.println("rvsc:" + result.toString());
-		results.put(result.name, result);
-		list.add(result.name);
 		return list;	
 	}
 	
@@ -134,7 +125,7 @@ public class AtireRemoteClient {
 
 	public static void main(String[] args) {
 		
-		AtireRemoteClient atire = new AtireRemoteClient();
+		AtireClient atire = new AtireClient();
 		
 		if (args.length == 0) {
 			BufferedReader stdIn =
@@ -193,6 +184,5 @@ public class AtireRemoteClient {
 				e.printStackTrace();
 			}
 		atire.close();
-		atire.destroy();
 	}
 }
