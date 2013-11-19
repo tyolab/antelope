@@ -4,16 +4,19 @@ import java.io.BufferedReader;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
 import java.net.Socket;
 import java.net.SocketException;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 
 import org.atire.swig.ATIRE_API_remote;
 
 import au.com.tyo.parser.SgmlNode;
+import au.com.tyo.utils.ByteArrayKMP;
 
 public class AtireRemoteClient {
 	
@@ -28,6 +31,14 @@ public class AtireRemoteClient {
 	private String serverAddress;
 	
 	private HashMap<String, SearchResult> results;
+	
+	private int hits;
+	
+	private ByteArrayKMP kmpSearch;
+	
+	private byte[] buffer;
+	
+	private int index;
 	
     static {
 	    System.loadLibrary("atire_jni");
@@ -48,6 +59,8 @@ public class AtireRemoteClient {
 	}
 
 	public AtireRemoteClient() {
+		ByteArrayKMP kmpSearch = new ByteArrayKMP();
+		
 		port = DEFAULT_PORT;
 		serverAddress = DEFAULT_SERVER;
 		results = new HashMap<String, SearchResult>();
@@ -55,6 +68,7 @@ public class AtireRemoteClient {
 	}
 
 	private void init() {
+		hits = 0;
 		socket = new ATIRE_API_remote();
 		initializeSocket();
 	}
@@ -71,29 +85,44 @@ public class AtireRemoteClient {
 		socket.delete();
 	}
 	
+	private String between(String open_tag, String close_tag) {
+		return between(open_tag, close_tag, 0);
+	}
+	
 	/*
 	BETWEEN()
 	---------
 	written by Andrew Trotman
 */
-	private String between(String source, String open_tag, String close_tag)
-	{
-//		char *start,*finish;
+	private String between(String open_tag, String close_tag, int pos)	{
+		String got = "";
+		int start = pos, finish;
+		
+		if ((start = kmpSearch.search(buffer, pos)) < 0)
+			return got;
+		
+		start += open_tag.length();
+		
+		kmpSearch.setPattern(close_tag.getBytes());
+		if ((finish = kmpSearch.search(buffer, start)) < 0)
+			return got;
 //		
-//		if ((start = strstr((char *)source, (char *)open_tag)) == NULL)
-//			return NULL;
-//		
-//		start += strlen(open_tag);
-//		
-//		if ((finish = strstr(start, close_tag)) == NULL)
-//			return NULL;
-//		
-//		return strnnew(start, finish - start);
-		return "";
+		if (pos > 0)
+			index = finish;
+		
+		try {
+			got = new String(Arrays.copyOfRange(buffer, start, finish), "UTF-8");
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+			got = new String(Arrays.copyOfRange(buffer, start, finish));
+		}
+		
+		return got;
 	}
 	
 	public ArrayList<String> search(String query) throws ConnectException {
 		ArrayList<String> list = new ArrayList<String>();
+		long hits;
 		
 		results.clear();
 		
@@ -101,30 +130,29 @@ public class AtireRemoteClient {
 			
 		String line = socket.search(query, 1, 10);
 		
-//			while ((line = in.readLine()) != null) {
+    	System.err.println("rvsc:" + line);
 		
-		SgmlNode node = new SgmlNode();
-		node.parse(line.getBytes());
-		SearchResult result = new SearchResult();
-		for (int i = 0; i < node.countChildren(); ++i) {
-			SgmlNode child = node.getChild(i);
-			
-			if (child.getName().equalsIgnoreCase("id")) {
-				result.id = child.getText();
-			}
-			else 	if (child.getName().equalsIgnoreCase("name")) {
-				result.name = child.getText();
-			}
-			else 	if (child.getName().equalsIgnoreCase("rank")) {
-				result.rank = Integer.parseInt(child.getText());
-			}
-			else 	if (child.getName().equalsIgnoreCase("rsv")) {
-				result.rsv = Double.parseDouble(child.getText());
-			}
-		}
-    	System.err.println("rvsc:" + result.toString());
-		results.put(result.name, result);
-		list.add(result.name);
+//			while ((line = in.readLine()) != null) {
+    	
+    	buffer = line.getBytes();
+		
+    	long atire_found = hits = Long.parseLong(between("<numhits>", "</numhits>"));
+
+    	index = 0;
+    	int current = index;
+    	for (current = 0; current < hits; current++)  {
+    		kmpSearch.setPattern("<hit>".getBytes());
+    		SearchResult result = new SearchResult();
+    		index = kmpSearch.search(buffer, index);
+    		result.rank = Integer.parseInt(between("<rank>", "</rank>", index));
+    		result.id = between("<id>", "</id>", index);
+    		result.name = between("<name>", "</name>", index);
+    		result.rsv = Double.parseDouble(between("<rsv>", "</rsv>", index));
+    		
+    		results.put(result.name, result);
+    		list.add(result.name);
+    	}
+
 		return list;	
 	}
 	
