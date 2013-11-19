@@ -1,21 +1,17 @@
 package org.atire;
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
-import java.net.Socket;
 import java.net.SocketException;
-import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 
 import org.atire.swig.ATIRE_API_remote;
 
-import au.com.tyo.parser.SgmlNode;
 import au.com.tyo.utils.ByteArrayKMP;
 
 public class AtireRemoteClient {
@@ -24,11 +20,15 @@ public class AtireRemoteClient {
 	
 	public static final int DEFAULT_PORT  = 8088;
 	
+	public static final int DEFAULT_PAGE_SIZE = 10;
+	
 	private ATIRE_API_remote socket;
 	
 	private int port;
 	
 	private String serverAddress;
+	
+	private int pageSize;
 	
 	private HashMap<String, SearchResult> results;
 	
@@ -59,10 +59,12 @@ public class AtireRemoteClient {
 	}
 
 	public AtireRemoteClient() {
-		ByteArrayKMP kmpSearch = new ByteArrayKMP();
+		kmpSearch = new ByteArrayKMP();
 		
 		port = DEFAULT_PORT;
 		serverAddress = DEFAULT_SERVER;
+		pageSize = DEFAULT_PAGE_SIZE;
+		
 		results = new HashMap<String, SearchResult>();
 		init();
 	}
@@ -98,6 +100,7 @@ public class AtireRemoteClient {
 		String got = "";
 		int start = pos, finish;
 		
+		kmpSearch.setPattern(open_tag.getBytes());
 		if ((start = kmpSearch.search(buffer, pos)) < 0)
 			return got;
 		
@@ -136,11 +139,12 @@ public class AtireRemoteClient {
     	
     	buffer = line.getBytes();
 		
-    	long atire_found = hits = Long.parseLong(between("<numhits>", "</numhits>"));
+    	hits = Long.parseLong(between("<numhits>", "</numhits>"));
 
     	index = 0;
     	int current = index;
-    	for (current = 0; current < hits; current++)  {
+    	long upBound = Math.min(pageSize, hits);
+    	for (current = 0; current < pageSize; current++)  {
     		kmpSearch.setPattern("<hit>".getBytes());
     		SearchResult result = new SearchResult();
     		index = kmpSearch.search(buffer, index);
@@ -155,14 +159,12 @@ public class AtireRemoteClient {
 
 		return list;	
 	}
-	
-	public void tryAgain() {
-		
-	}
 
 	public static void main(String[] args) {
 		
 		AtireRemoteClient atire = new AtireRemoteClient();
+	     
+	    ArrayList<String> results = null;
 		
 		if (args.length == 0) {
 			BufferedReader stdIn =
@@ -174,8 +176,6 @@ public class AtireRemoteClient {
 				    System.out.println("Search: " + fromUser);
 				    if (fromUser.equals("Bye."))
 				        break;
-				     
-				    ArrayList<String> results = null;
 				    
 				    try {
 				    	results = atire.search(fromUser);
@@ -203,24 +203,24 @@ public class AtireRemoteClient {
 				    		 System.exit(-1);
 				    	 }
 				    }
-				    
-				    if (results != null) {
-				    	System.out.println("Results: ");
-				    	for (int i = 0; i < results.size(); ++i) 
-				    		System.out.println(results.get(i));
-				    	System.out.println("");
-				    }
 				}
 			} catch (IOException e) {
 				e.printStackTrace();
 			}
 		} else
 			try {
-				atire.search(args[0]);
+				results = atire.search(args[0]);
 			} catch (ConnectException e) {
 				e.printStackTrace();
 			}
 		atire.close();
 		atire.destroy();
+			    
+	    if (results != null) {
+	    	System.out.println("Results: ");
+	    	for (int i = 0; i < results.size(); ++i) 
+	    		System.out.println(results.get(i));
+	    	System.out.println("");
+	    }
 	}
 }
