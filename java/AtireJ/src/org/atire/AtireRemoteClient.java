@@ -40,9 +40,9 @@ public class AtireRemoteClient {
 	
 	private int index;
 	
-    static {
-	    System.loadLibrary("atire_jni");
-	}
+	public static String dylibName;
+	
+	private static AtireRemoteClient instance;
 	
 	public static class SearchResult {
 		String name;
@@ -69,7 +69,15 @@ public class AtireRemoteClient {
 		init();
 	}
 
+	public static AtireRemoteClient getInstance() {
+		if (instance == null)
+			instance = new AtireRemoteClient();
+		return instance;
+	}
+
 	private void init() {
+	    System.loadLibrary(dylibName);
+		
 		hits = 0;
 		socket = new ATIRE_API_remote();
 		initializeSocket();
@@ -78,7 +86,7 @@ public class AtireRemoteClient {
 	public void initializeSocket() {
 		socket.open(serverAddress + ":" + port);
 	}
-	
+
 	public void close() {
 		socket.close();
 	}
@@ -161,6 +169,7 @@ public class AtireRemoteClient {
 	}
 
 	public static void main(String[] args) {
+		AtireRemoteClient.dylibName = "atire_jni";
 		
 		AtireRemoteClient atire = new AtireRemoteClient();
 	     
