@@ -553,12 +553,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				*outchannel << "<hit>";
 				*outchannel << "<rank>" << result + 1 << "</rank>";
 				*outchannel << "<id>" << docid << "</id>";
-				*outchannel << "<name>";
-				if (answer_list[result] == NULL)
-					*outchannel << "Unknown";
-				else
-					*outchannel << answer_list[result];
-				*outchannel<< "</name>";
+				*outchannel << "<name>" << answer_list[result] << "</name>";
 				sprintf(print_buffer, "%0.2f", relevance);
 				*outchannel << "<rsv>" << print_buffer << "</rsv>";
 				if (title != NULL && *title != '\0')
@@ -637,6 +632,8 @@ switch (params.ranking_function)
 		return atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.bm25_k1, params.bm25_b) == 0;
 	case ANT_indexer_param_block_rank::LMD:
 		return atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmd_u, 0.0) == 0;
+	case ANT_indexer_param_block_rank::LMDS:
+		return atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmds_u, 0.0) == 0;
 	case ANT_indexer_param_block_rank::LMJM:
 		return atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmjm_l, 0.0) == 0;
 	case ANT_indexer_param_block_rank::KBTFIDF:
@@ -745,7 +742,7 @@ char *copy, *copy_start;
 
 copy = copy_start = new char[total_length];
 
-memset(copy, 0, sizeof(copy));
+memset(copy, 0, sizeof(*copy) * total_length);
 
 memcpy(copy, "atire+", 6);
 copy += 6;
