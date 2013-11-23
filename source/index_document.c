@@ -11,6 +11,7 @@
 #include "string_pair.h"
 #include "parser_token.h"
 #include "unicode.h"
+#include "readability_tag_finder.h"
 
 /*
 	ANT_INDEX_DOCUMENT::INDEX_DOCUMENT()
@@ -23,10 +24,10 @@ ANT_parser_token *token;
 long terms_in_document, length_of_token, is_previous_token_chinese;
 size_t length_of_previous_token;
 char *previous_token_start;
-ANT_readablity_tag_finder *tag_finder_measure = NULL;
+ANT_readability_tag_finder *tag_finder_measure = NULL;
 
-if (readablity->get_measure() == ANT_readability_factory::TAG_FINDER)
-	tag_finder_measure = readability->get_measure_to_use();
+if (readability->get_measure() == ANT_readability_factory::TAG_FINDER)
+	tag_finder_measure = static_cast<ANT_readability_tag_finder *>(readability->get_measure_to_use());
 
 /*
 	Initialise
@@ -121,7 +122,7 @@ while ((token = readability->get_next_token()) != NULL)
 			if ((stopword_mode & ANT_memory_index::PRUNE_TAGS) == 0)
 				readability->handle_node(indexer->add_term(token, doc));						// open tag
 			if (tag_finder_measure && tag_finder_measure->is_the_tag_looking_for(token))
-				tag_finder_measure->handle_tag();
+				tag_finder_measure->handle_tag(indexer, token, doc);
 			break;
 		case TT_TAG_CLOSE:
 			//no-op
