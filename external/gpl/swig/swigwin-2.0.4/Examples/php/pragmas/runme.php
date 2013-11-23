@@ -1,5 +1,4 @@
 <?php
-
 require "example.php";
 
 ?>

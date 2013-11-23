@@ -6,23 +6,22 @@
 <body bgcolor="#ffffff">
 
 
-<tt>SWIG/Examples/tcl/class/</tt>
-<hr>
+	<tt>SWIG/Examples/tcl/class/</tt>
+	<hr>
 
-<H2>Wrapping a simple C++ class</H2>
+	<H2>Wrapping a simple C++ class</H2>
 
-<p>
-This example illustrates the most primitive form of C++ class wrapping performed
-by SWIG.  In this case, C++ classes are simply transformed into a collection of
-C-style functions that provide access to class members.
+	<p>This example illustrates the most primitive form of C++ class
+		wrapping performed by SWIG. In this case, C++ classes are simply
+		transformed into a collection of C-style functions that provide access
+		to class members.
+	<h2>The C++ Code</h2>
 
-<h2>The C++ Code</h2>
+	Suppose you have some C++ classes described by the following (and
+	admittedly lame) header file:
 
-Suppose you have some C++ classes described by the following (and admittedly lame) 
-header file:
-
-<blockquote>
-<pre>
+	<blockquote>
+		<pre>
 /* File : example.h */
 
 class Shape {
@@ -58,15 +57,15 @@ public:
   virtual double perimeter();
 };
 </pre>
-</blockquote>
+	</blockquote>
 
-<h2>The SWIG interface</h2>
+	<h2>The SWIG interface</h2>
 
-A simple SWIG interface for this can be built by simply grabbing the header file
-like this:
+	A simple SWIG interface for this can be built by simply grabbing the
+	header file like this:
 
-<blockquote>
-<pre>
+	<blockquote>
+		<pre>
 /* File : example.i */
 %module example
 
@@ -77,198 +76,201 @@ like this:
 /* Let's just grab the original header file here */
 %include "example.h"
 </pre>
-</blockquote>
+	</blockquote>
 
-Note: when creating a C++ extension, you must run SWIG with the <tt>-c++</tt> option like this:
-<blockquote>
-<pre>
+	Note: when creating a C++ extension, you must run SWIG with the
+	<tt>-c++</tt>
+	option like this:
+	<blockquote>
+		<pre>
 % swig -c++ -tcl example.i
 </pre>
-</blockquote>
+	</blockquote>
 
-<h2>Some sample Tcl scripts</h2>
+	<h2>Some sample Tcl scripts</h2>
 
-SWIG performs two forms of C++ wrapping-- a low level interface and a high level widget-like interface.
-<ul>
-<li>
-Click <a href="example1.tcl">here</a> to see a script that calls the C++ functions using the
-low-level interface.
-<li>
-Click <a href="example2.tcl">here</a> to see a the same script written with the high-level
-interface.
-</ul>
+	SWIG performs two forms of C++ wrapping-- a low level interface and a
+	high level widget-like interface.
+	<ul>
+		<li>Click <a href="example1.tcl">here</a> to see a script that
+			calls the C++ functions using the low-level interface.
+		<li>Click <a href="example2.tcl">here</a> to see a the same
+			script written with the high-level interface.
+	</ul>
 
-<h2>Key points</h2>
+	<h2>Key points</h2>
 
-<ul>
-<li>The low-level C++ interface works like this:
-<p>
-<ul>
-<li>To create a new object, you call a constructor like this:
+	<ul>
+		<li>The low-level C++ interface works like this:
+			<p>
+			<ul>
+				<li>To create a new object, you call a constructor like this:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 set c [new_Circle 10.0]
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>To access member data, a pair of accessor functions are used.
-For example:
+					<p>
+				<li>To access member data, a pair of accessor functions are
+					used. For example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 Shape_x_set $c 15        ;# Set member data
 set x [Shape_x_get $c]   ;# Get member data
 </pre>
-</blockquote>
+					</blockquote> Note: when accessing member data, the name of the base class must
+					be used such as <tt>Shape_x_get</tt>
 
-Note: when accessing member data, the name of the base class must
-be used such as <tt>Shape_x_get</tt>
+					<p>
+				<li>To invoke a member function, you simply do this
 
-<p>
-<li>To invoke a member function, you simply do this
-
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 puts "The area is [Shape_area $c]"
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>Type checking knows about the inheritance structure of C++. For example:
+					<p>
+				<li>Type checking knows about the inheritance structure of C++.
+					For example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 Shape_area $c       # Works (c is a Shape)
 Circle_area $c      # Works (c is a Circle)
 Square_area $c      # Fails (c is definitely not a Square)
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>To invoke a destructor, simply do this
+					<p>
+				<li>To invoke a destructor, simply do this
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 delete_Shape $c     # Deletes a shape
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>Static member variables are wrapped as C global variables.  For example:
+					<p>
+				<li>Static member variables are wrapped as C global variables.
+					For example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 set n $Shape_nshapes    # Get a static data member
 set Shapes_nshapes 13   # Set a static data member
 </pre>
-</blockquote>
+					</blockquote>
+			</ul>
 
-</ul>
+			<p>
+		<li>The high-level interface works like a Tk widget
 
-<p>
-<li>The high-level interface works like a Tk widget
+			<p>
+			<ul>
+				<li>To create a new object, you call a constructor like this:
 
-<p>
-<ul>
-<li>To create a new object, you call a constructor like this:
-
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 Circle c 10      # c becomes a name for the Circle object
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>To access member data, use cget and configure methods.
-For example:
+					<p>
+				<li>To access member data, use cget and configure methods. For
+					example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 c configure -x 15        ;# Set member data
 set x [c cget -x]        ;# Get member data
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>To invoke a member function, you simply do this
+					<p>
+				<li>To invoke a member function, you simply do this
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 puts "The area is [c area]"
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>To invoke a destructor, simply destroy the object name like this:
+					<p>
+				<li>To invoke a destructor, simply destroy the object name like
+					this:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 rename c ""         # c goes away
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>Static member variables are wrapped as C global variables.  For example:
+					<p>
+				<li>Static member variables are wrapped as C global variables.
+					For example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 set n $Shape_nshapes    # Get a static data member
 set Shapes_nshapes 13   # Set a static data member
 </pre>
-</blockquote>
+					</blockquote>
+			</ul>
+	</ul>
 
-</ul>
-</ul>
+	<h2>General Comments</h2>
 
-<h2>General Comments</h2>
+	<ul>
+		<li>The low-level function interface is much faster than the
+			high-level interface. In fact, all the higher level interface does is
+			call functions in the low-level interface.
 
-<ul>
-<li>The low-level function interface is much faster than the high-level interface.
-In fact, all the higher level interface does is call functions in the low-level interface.
+			<p>
+		<li>SWIG *does* know how to properly perform upcasting of objects
+			in an inheritance hierarchy (including multiple inheritance).
+			Therefore it is perfectly safe to pass an object of a derived class
+			to any function involving a base class.
 
-<p>
-<li>SWIG *does* know how to properly perform upcasting of objects in an inheritance
-hierarchy (including multiple inheritance).  Therefore it is perfectly safe to pass
-an object of a derived class to any function involving a base class.
+			<p>
+		<li>A wide variety of C++ features are not currently supported by
+			SWIG. Here is the short and incomplete list:
 
-<p>
-<li>A wide variety of C++ features are not currently supported by SWIG.  Here is the
-short and incomplete list:
+			<p>
+			<ul>
+				<li>Overloaded methods and functions. SWIG wrappers don't know
+					how to resolve name conflicts so you must give an alternative name
+					to any overloaded method name using the %name directive like this:
 
-<p>
-<ul>
-<li>Overloaded methods and functions.  SWIG wrappers don't know how to resolve name
-conflicts so you must give an alternative name to any overloaded method name using the
-%name directive like this:
-
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 void foo(int a);  
 %name(foo2) void foo(double a, double b);
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>Overloaded operators.  Not supported at all. The only workaround for this is
-to write a helper function. For example:
+					<p>
+				<li>Overloaded operators. Not supported at all. The only
+					workaround for this is to write a helper function. For example:
 
-<blockquote>
-<pre>
+					<blockquote>
+						<pre>
 %inline %{
     Vector *vector_add(Vector *a, Vector *b) {
           ... whatever ...
     }
 %}
 </pre>
-</blockquote>
+					</blockquote>
 
-<p>
-<li>Namespaces.  Not supported at all. Won't be supported until SWIG2.0 (if at all).
+					<p>
+				<li>Namespaces. Not supported at all. Won't be supported until
+					SWIG2.0 (if at all).
+			</ul>
 
-</ul>
-
-<hr>
+			<hr>
 </body>
 </html>

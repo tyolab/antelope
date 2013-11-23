@@ -1,29 +1,35 @@
 <?php
-
 require "tests.php";
 require "director_unroll.php";
 
 // No new functions
-check::functions(array(foo_ping,foo_pong));
+check::functions ( array (
+		foo_ping,
+		foo_pong 
+) );
 // No new classes
-check::classes(array(Foo,Bar));
+check::classes ( array (
+		Foo,
+		Bar 
+) );
 // now new vars
-check::globals(array(bar));
-
+check::globals ( array (
+		bar 
+) );
 class MyFoo extends Foo {
-  function ping() {
-    return "MyFoo::ping()";
-  }
+	function ping() {
+		return "MyFoo::ping()";
+	}
 }
 
-$a = new MyFoo();
+$a = new MyFoo ();
 
-$b = new Bar();
+$b = new Bar ();
 
-$b->set($a);
-$c = $b->get();
+$b->set ( $a );
+$c = $b->get ();
 
-check::equal($a->this, $c->this, "this failed");
+check::equal ( $a->this, $c->this, "this failed" );
 
-check::done();
+check::done ();
 ?>

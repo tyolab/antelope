@@ -6,20 +6,19 @@
 <body bgcolor="#ffffff">
 
 
-<tt>SWIG/Examples/java/template/</tt>
-<hr>
+	<tt>SWIG/Examples/java/template/</tt>
+	<hr>
 
-<H2>C++ template support</H2>
+	<H2>C++ template support</H2>
 
-<p>
-This example illustrates how C++ templates can be used from Java using SWIG.
+	<p>This example illustrates how C++ templates can be used from Java
+		using SWIG.
+	<h2>The C++ Code</h2>
 
-<h2>The C++ Code</h2>
+	Lets take a templated function and a templated class as follows:
 
-Lets take a templated function and a templated class as follows:
-
-<blockquote>
-<pre>
+	<blockquote>
+		<pre>
 /* File : example.h */
 
 // Some template definitions
@@ -51,17 +50,24 @@ template<class T> class vector {
   }
 #endif
 };
-</pre>
-</blockquote>
-The %addmethods is used for a neater interface from Java as the functions <tt>get</tt> and <tt>set</tt> use C++ references to primitive types. These are tricky to use from Java as they end up as a pointer in Java (Java long).
 
-<h2>The SWIG interface</h2>
+		</pre>
+	</blockquote>
+	The %addmethods is used for a neater interface from Java as the
+	functions
+	<tt>get</tt>
+	and
+	<tt>set</tt>
+	use C++ references to primitive types. These are tricky to use from
+	Java as they end up as a pointer in Java (Java long).
 
-A simple SWIG interface for this can be built by simply grabbing the header file
-like this:
+	<h2>The SWIG interface</h2>
 
-<blockquote>
-<pre>
+	A simple SWIG interface for this can be built by simply grabbing the
+	header file like this:
+
+	<blockquote>
+		<pre>
 /* File : example.i */
 %module example
 
@@ -78,25 +84,35 @@ like this:
 %template(maxdouble) max<double>;
 %template(vecint) vector<int>;
 %template(vecdouble) vector<double>;
-</pre>
-</blockquote>
 
-Note that SWIG parses the templated function <tt>max</tt> and templated class <tt>vector</tt> and so knows about them. However to generate code for use from Java, SWIG has to be told which class/type to use as the template parameter. The SWIG directive %template is used for this.
+		</pre>
+	</blockquote>
 
-<h2>A sample Java program</h2>
+	Note that SWIG parses the templated function
+	<tt>max</tt>
+	and templated class
+	<tt>vector</tt>
+	and so knows about them. However to generate code for use from Java,
+	SWIG has to be told which class/type to use as the template parameter.
+	The SWIG directive %template is used for this.
 
-Click <a href="runme.java">here</a> to see a Java program that calls the C++ functions from Java.
+	<h2>A sample Java program</h2>
 
-<h2>Notes</h2>
-Use templated classes just like you would any other SWIG generated Java class. Use the classnames specified by the %template directive.
+	Click
+	<a href="runme.java">here</a> to see a Java program that calls the C++
+	functions from Java.
 
-<blockquote>
-<pre>
+	<h2>Notes</h2>
+	Use templated classes just like you would any other SWIG generated Java
+	class. Use the classnames specified by the %template directive.
+
+	<blockquote>
+		<pre>
 vecdouble dv = new vecdouble(1000);
 dv.setitem(i, 12.34));
 </pre>
-</blockquote>
+	</blockquote>
 
-<hr>
+	<hr>
 </body>
 </html>

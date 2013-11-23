@@ -5,48 +5,42 @@
 
 <body bgcolor="#ffffff">
 
-<tt>SWIG/Examples/go/pointer/</tt>
-<hr>
+	<tt>SWIG/Examples/go/pointer/</tt>
+	<hr>
 
-<H2>Simple Pointer Handling</H2>
+	<H2>Simple Pointer Handling</H2>
 
-<p>
-This example illustrates a couple of techniques for handling simple
-pointers in SWIG.  The prototypical example is a C function that
-operates on pointers such as this:
-
-<blockquote>
-<pre>
+	<p>This example illustrates a couple of techniques for handling
+		simple pointers in SWIG. The prototypical example is a C function that
+		operates on pointers such as this:
+	<blockquote>
+		<pre>
 void add(int *x, int *y, int *r) { 
     *r = *x + *y;
 }
 </pre>
-</blockquote>
+	</blockquote>
 
-By default, SWIG wraps this function exactly as specified and creates
-an interface that expects pointer objects for arguments.  This only
-works when there is a precise correspondence between the C type and
-some Go type.
-<p>
+	By default, SWIG wraps this function exactly as specified and creates
+	an interface that expects pointer objects for arguments. This only
+	works when there is a precise correspondence between the C type and
+	some Go type.
+	<p>
+	<h2>Other approaches</h2>
 
-<h2>Other approaches</h2>
+	<p>
+	<li>The SWIG pointer library provides a different, safer, way to
+		handle pointers. For example, in the interface file you would do this:
 
-<p>
-<li>The SWIG pointer library provides a different, safer, way to
-  handle pointers.  For example, in the interface file you would do
-  this:
-
-<blockquote>
-<pre>
+		<blockquote>
+			<pre>
 %include cpointer.i
 %pointer_functions(int, intp);
 </pre>
-</blockquote>
+		</blockquote> and from Go you would use pointers like this:
 
-and from Go you would use pointers like this:
-
-<blockquote>
-<pre>
+		<blockquote>
+			<pre>
 a := example.New_intp()
 b := example.New_intp()
 c := example.New_intp()
@@ -69,38 +63,36 @@ example.Delete_intp(a)
 example.Delete_intp(b)
 example.Delete_intp(c)
 </pre>
-</blockquote>
+		</blockquote>
 
-<p>
-<li>Use the SWIG typemap library.  This library allows you to
-completely change the way arguments are processed by SWIG.  For
-example:
+		<p>
+	<li>Use the SWIG typemap library. This library allows you to
+		completely change the way arguments are processed by SWIG. For
+		example:
 
-<blockquote>
-<pre>
+		<blockquote>
+			<pre>
 %include "typemaps.i"
 void add(int *INPUT, int *INPUT, int *OUTPUT);
 </pre>
-</blockquote>
+		</blockquote> And in a Go program:
 
-And in a Go program:
-
-<blockquote>
-<pre>
+		<blockquote>
+			<pre>
 r := []int{0}
 example.Sub(37,42,r)
 fmt.Println("Result =", r[0])
 </pre>
-</blockquote>
-Needless to say, this is substantially easier although a bit unusual.
+		</blockquote> Needless to say, this is substantially easier although a bit unusual.
 
-<p>
-<li>A final alternative is to use the typemaps library in combination
-with the %apply directive.  This allows you to change the names of parameters
-that behave as input or output parameters. For example:
+		<p>
+	<li>A final alternative is to use the typemaps library in
+		combination with the %apply directive. This allows you to change the
+		names of parameters that behave as input or output parameters. For
+		example:
 
-<blockquote>
-<pre>
+		<blockquote>
+			<pre>
 %include "typemaps.i"
 %apply int *INPUT {int *x, int *y};
 %apply int *OUTPUT {int *r};
@@ -110,34 +102,32 @@ void sub(int *x, int *y, int *r);
 void mul(int *x, int *y, int *r);
 ... etc ...
 </pre>
-</blockquote>
+		</blockquote>
 
-</ul>
+		</ul>
 
-<h2>Example</h2>
+		<h2>Example</h2> The following example illustrates the use of these
+		features for pointer extraction.
 
-The following example illustrates the use of these features for pointer
-extraction.
+		<ul>
+			<li><a href="example.c">example.c</a> (C Source)
+			<li><a href="example.i">example.i</a> (SWIG interface)
+			<li><a href="runme.go">runme.go</a> (Go program)
+		</ul>
 
-<ul>
-<li> <a href="example.c">example.c</a>  (C Source)
-<li> <a href="example.i">example.i</a>  (SWIG interface)
-<li> <a href="runme.go">runme.go</a>  (Go program)
-</ul>
+		<h2>Notes</h2>
 
-<h2>Notes</h2>
+		<ul>
+			<li>Since pointers are used for so many different things
+				(arrays, output values, etc...) the complexity of pointer handling
+				can be as complicated as you want to make it.
 
-<ul>
-<li>Since pointers are used for so many different things (arrays, output values,
-etc...) the complexity of pointer handling can be as complicated as you want to
-make it.
+				<p>
+			<li>More documentation on the typemaps.i and cpointer.i library
+				files can be found in the SWIG user manual. The files also contain
+				documentation.
+		</ul>
 
-<p>
-<li>More documentation on the typemaps.i and cpointer.i library files can be
-found in the SWIG user manual.  The files also contain documentation.
-
-</ul>
-
-<hr>
+		<hr>
 </body>
 </html>

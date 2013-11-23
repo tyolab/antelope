@@ -1,42 +1,40 @@
 <?php
+require "example.php";
 
-	require "example.php";
+$v = new_vector ();
+vector_x_set ( $v, 1.0 );
+vector_y_set ( $v, 2.0 );
+vector_z_set ( $v, 3.0 );
 
+$w = new_vector ();
+vector_x_set ( $w, 10.0 );
+vector_y_set ( $w, 11.0 );
+vector_z_set ( $w, 12.0 );
 
-	$v = new_vector();
-        vector_x_set($v,1.0);
-        vector_y_set($v,2.0);
-        vector_z_set($v,3.0);
+echo "I just created the following vector\n";
+vector_print ( $v );
+vector_print ( $w );
 
-	$w = new_vector();
-        vector_x_set($w,10.0);
-        vector_y_set($w,11.0);
-        vector_z_set($w,12.0);
+echo "\nNow I'm going to compute the dot product\n";
 
-	echo "I just created the following vector\n";
-	vector_print($v);
-	vector_print($w);
+$d = dot_product ( $v, $w );
 
-	echo "\nNow I'm going to compute the dot product\n";
+echo "dot product = $d (should be 68)\n";
 
-	$d = dot_product($v, $w);
+echo "\nNow I'm going to add the vectors together\n";
 
-	echo "dot product = $d (should be 68)\n";
+$r = new_vector ();
+vector_add ( $v, $w, $r );
 
-	echo "\nNow I'm going to add the vectors together\n";
+vector_print ( $r );
 
-        $r = new_vector();
-	vector_add($v, $w, $r);
+echo "The value should be (11,13,15)\n";
 
-	vector_print($r);
+echo "\nNow I'm going to clean up the return result\n";
 
-	echo "The value should be (11,13,15)\n";
+// free($r);
 
-	echo "\nNow I'm going to clean up the return result\n";
-
-#	free($r);
-
-	echo "Good\n";
+echo "Good\n";
 
 ?>
 

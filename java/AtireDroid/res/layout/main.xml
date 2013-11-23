@@ -29,7 +29,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="Index" />
-    
+
     <Button
         android:id="@+id/atire_button"
         android:layout_width="match_parent"
@@ -48,6 +48,7 @@
         android:layout_height="wrap_content"
         android:layout_weight="0.12"
         android:text="TextView" />
+
     <TextView
         android:id="@+id/textViewStatus"
         android:layout_width="match_parent"
