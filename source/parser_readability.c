@@ -80,8 +80,13 @@ else											// everything else (that starts with a '<')
 	else
 		{
 		if (*current == '/')					// </tag>	(XML Close tag)
+			{
+			current_token.type = TT_TAG_CLOSE;
+			current_token.start = (char *)++current;
 			while (*current != '>')
 				current++;
+			current_token.string_length =  (char *)current - current_token.start;
+			}
 		else if (*current == '?')					// <? ... ?> (XML Processing Instructions)
 			{
 			current++; // current has to move to next character before we do the comparison again

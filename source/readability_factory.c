@@ -15,13 +15,24 @@
 ANT_readability_factory::ANT_readability_factory() 
 {
 measures_to_use = 0;
-number_of_measures = 3;
+number_of_measures = 5;
 
 measure = new ANT_readability*[number_of_measures];
 measure[0] = new ANT_readability_none();
 measure[1] = new ANT_readability_dale_chall();
 measure[2] = NULL;//new ANT_readability;
-measure[3] = new ANT_readability_tag_finder();
+measure[3] = NULL; // not existing
+measure[4] = new ANT_readability_tag_finder();
+}
+
+/*
+	ANT_READABILITY_FACTORY::ANT_READABILITY_FACTORY()
+	--------------------------------------------------
+*/
+ANT_readability_factory::ANT_readability_factory(ANT_parser *parser) : ANT_readability_factory()
+{
+this->parser = parser;
+measure[4]->set_parser(parser);
 }
 
 /*
@@ -99,40 +110,12 @@ parser->set_document(document);
 }
 
 /*
-	READABILITY_FACTORY::SET_PARSER()
-	---------------------------------
-*/
-void ANT_readability_factory::set_parser(ANT_parser *parser)
-{
-this->parser = parser;
-}
-
-/*
 	READABILITY_FACTORY::SET_MEASURE()
 	----------------------------------
 */
 void ANT_readability_factory::set_measure(unsigned long what_measure)
 {
 measures_to_use = what_measure;
-}
-
-/*
- 	READABILITY_FACTORY::GET_MEASURE()
-	----------------------------
- */
-unsigned long ANT_readability_factory::get_measure()
-{
-return measures_to_use;
-}
-
-
-/*
- 	READABILITY_FACTORY::GET_MEASURE_TO_USE()
-	----------------------------
- */
-ANT_readability *ANT_readability_factory::get_measure_to_use()
-{
-return measure[measures_to_use];
 }
 
 /*
@@ -149,6 +132,19 @@ if (measures_to_use == 0)
 for (which = 0; which < number_of_measures; which++)
 	if ((which & measures_to_use) != 0)
 		measure[which]->handle_node(node);
+}
+
+/*
+	READABILITY_FACTORY::HANDLE_TAG()
+	----------------------------------
+*/
+void ANT_readability_factory::handle_tag(ANT_string_pair* token)
+{
+if ((measures_to_use & TAG_FINDER) != 0)
+	{
+	measure[TAG_FINDER]->set_parser(parser);
+	measure[TAG_FINDER]->handle_tag(token);
+	}
 }
 
 /*

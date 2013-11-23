@@ -16,27 +16,59 @@
 
 char **ANT_readability_tag_finder::special_tags = (char *[]) {"category", "title"};
 
+/*
+	ANT_READABILITY_TAG_FINDER::~ANT_READABILITY_TAG_FINDER()
+	---------------------------------------------------
+*/
 ANT_readability_tag_finder::ANT_readability_tag_finder()
 {
-
+	matching_tag = NULL;
+	where = -1;
 }
 
+/*
+	ANT_READABILITY_TAG_FINDER::~ANT_READABILITY_TAG_FINDER()
+	---------------------------------------------------
+*/
 ANT_readability_tag_finder::~ANT_readability_tag_finder()
 {
 
 }
 
-unsigned long ANT_readability_tag_finder::is_the_tag_looking_for(
-		ANT_string_pair* token)
+/*
+	READABILITY_TAG_FINDER::HANDLE_TAG()
+	----------------------------------
+*/
+void ANT_readability_tag_finder::handle_tag(ANT_string_pair *tag)
 {
-	for (int i = 0; i < sizeof(special_tags); ++i)
-		if (strncmp(token->start, special_tags[i], token->string_length) == 0)
-			return TRUE;
-	return FALSE;
+ANT_parser_token *token;
+
+for (int i = 0; i < sizeof(*special_tags); ++i)
+	if (strncmp(tag->start, special_tags[i], tag->string_length) == 0)
+		{
+		matching_tag = special_tags[i];
+		where = i;
+		}
+
+if (where > -1)
+	while ((token = parser->get_next_token()) != NULL && token->type != TT_TAG_CLOSE)
+	if (where == 0)
+		{
+
+		}
+	else if (where == 1)
+		{
+
+		}
+
+where = -1;
 }
 
-void ANT_readability_tag_finder::handle_tag(ANT_memory_indexer* indexer,
-		ANT_string_pair* string, long long docno)
+/*
+	ANT_READABILITY_DALE_CHALL::INDEX()
+	-----------------------------------
+*/
+void ANT_readability_tag_finder::index(ANT_memory_indexer *indexer)
 {
 
 }

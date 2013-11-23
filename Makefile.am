@@ -184,6 +184,7 @@ core_sources =  \
 	$(SRC_DIR)/ranking_function_term_count.c \
 	$(SRC_DIR)/ranking_function_topsig_negative.c \
 	$(SRC_DIR)/ranking_function_topsig_positive.c \
+	$(SRC_DIR)/readability.c \
 	$(SRC_DIR)/readability_dale_chall.c \
 	$(SRC_DIR)/readability_factory.c \
 	$(SRC_DIR)/readability_tag_finder.c \

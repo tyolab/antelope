@@ -6,6 +6,7 @@
 #ifndef READABILITY_H_
 #define READABILITY_H_
 
+#include "parser.h"
 #include "string_pair.h"
 #include "memory_index.h"
 #include "memory_index_hash_node.h"
@@ -26,11 +27,16 @@ public:
 
 protected:
 	ANT_string_pair *measure_name;
+	ANT_parser *parser;
 	
 	virtual long score(void) { return 0; }
 
 	virtual void handle_token(ANT_string_pair *token) { (void)token; /* prevent compiler warning */ }
 	virtual void handle_node(ANT_memory_indexer_node *node) { (void)node; /* prevent compiler warning */ }
+	virtual void handle_tag(ANT_string_pair *token) { (void)token; /* prevent compiler warning */ }
+
+public:
+	void set_parser(ANT_parser *parser);
 } ;
 
 #endif  /* READABILITY_H_ */
