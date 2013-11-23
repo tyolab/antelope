@@ -18,7 +18,8 @@ public:
 	enum {
 		NONE           = 0,
 		DALE_CHALL     = 1,
-		FLESCH_KINCAID = 2
+		FLESCH_KINCAID = 2,
+		TAG_FINDER =3
 	};
 
 private:

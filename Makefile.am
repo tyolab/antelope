@@ -61,6 +61,7 @@ core_sources =  \
 	$(SRC_DIR)/btree_iterator.c \
 	$(SRC_DIR)/channel_file.c \
 	$(SRC_DIR)/channel_socket.c \
+	$(SRC_DIR)/channel_trec.c \
 	$(SRC_DIR)/compress_carryover12.c \
 	$(SRC_DIR)/compress_elias_delta.c \
 	$(SRC_DIR)/compress_elias_gamma.c \
@@ -185,6 +186,7 @@ core_sources =  \
 	$(SRC_DIR)/ranking_function_topsig_positive.c \
 	$(SRC_DIR)/readability_dale_chall.c \
 	$(SRC_DIR)/readability_factory.c \
+	$(SRC_DIR)/readability_tag_finder.c \
 	$(SRC_DIR)/relevance_feedback_blind_kl.c \
 	$(SRC_DIR)/relevance_feedback.c \
 	$(SRC_DIR)/relevance_feedback_factory.c \
@@ -263,6 +265,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/channel_file.h \
 	$(SRC_DIR)/channel.h \
 	$(SRC_DIR)/channel_socket.h \
+	$(SRC_DIR)/channel_trec.h \
 	$(SRC_DIR)/compress_carryover12.h \
 	$(SRC_DIR)/compress_carryover12_internals.h \
 	$(SRC_DIR)/compress_elias_delta.h \
@@ -441,6 +444,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/readability_dale_chall.h \
 	$(SRC_DIR)/readability_dale_chall_wordlist.h \
 	$(SRC_DIR)/readability_factory.h \
+	$(SRC_DIR)/readability_tag_finder.h \
 	$(SRC_DIR)/readability.h \
 	$(SRC_DIR)/readability_none.h \
 	$(SRC_DIR)/relevance_feedback_blind_kl.h \

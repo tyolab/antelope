@@ -6,6 +6,7 @@
 #include "readability_factory.h"
 #include "readability_none.h"
 #include "readability_dale_chall.h"
+#include "readability_tag_finder.h"
 
 /*
 	ANT_READABILITY_FACTORY::ANT_READABILITY_FACTORY()
@@ -20,6 +21,7 @@ measure = new ANT_readability*[number_of_measures];
 measure[0] = new ANT_readability_none();
 measure[1] = new ANT_readability_dale_chall();
 measure[2] = NULL;//new ANT_readability;
+measure[3] = new ANT_readability_tag_finder();
 }
 
 /*
