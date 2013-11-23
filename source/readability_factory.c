@@ -117,6 +117,25 @@ measures_to_use = what_measure;
 }
 
 /*
+ 	READABILITY_FACTORY::GET_MEASURE()
+	----------------------------
+ */
+unsigned long ANT_readability_factory::get_measure()
+{
+return measures_to_use;
+}
+
+
+/*
+ 	READABILITY_FACTORY::GET_MEASURE_TO_USE()
+	----------------------------
+ */
+ANT_readability *ANT_readability_factory::get_measure_to_use()
+{
+return measure[measures_to_use];
+}
+
+/*
 	READABILITY_FACTORY::HANDLE_NODE()
 	----------------------------------
 */

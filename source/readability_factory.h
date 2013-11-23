@@ -26,6 +26,8 @@ private:
 	long number_of_measures;
 	ANT_readability **measure;
 	unsigned long measures_to_use;
+
+protected:
 	ANT_parser *parser;
 
 public:
@@ -39,6 +41,9 @@ public:
 	void set_document(unsigned char *document);
 	void set_measure(unsigned long value);
 	void set_parser(ANT_parser *parser);
+
+	unsigned long get_measure();
+	ANT_readability *get_measure_to_use();
 };
 
 
