@@ -6,6 +6,7 @@
  */
 
 #include "readability_tag_finder.h"
+#include "unicode.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -51,14 +52,17 @@ for (int i = 0; i < sizeof(*special_tags); ++i)
 		}
 
 if (where > -1)
-	while ((token = parser->get_next_token()) != NULL && token->type != TT_TAG_CLOSE)
-	if (where == 0)
+	while ((token = parser->get_next_token()) != NULL && (token->type != TT_TAG_CLOSE ||
+					(token->type == TT_TAG_CLOSE && (strncmp(tag->start, matching_tag, tag->string_length) != 0))))
 		{
+		if (where == 0)
+			{
 
-		}
-	else if (where == 1)
-		{
+			}
+		else if (where == 1)
+			{
 
+			}
 		}
 
 where = -1;
