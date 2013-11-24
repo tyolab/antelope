@@ -6,7 +6,7 @@
 #ifndef READABILITY_TAG_FINDER_H_
 #define READABILITY_TAG_FINDER_H_
 
-#include "readability_factory.h"
+#include "readability.h"
 #include "btree_iterator.h"
 
 #define MAX_TERM_COUNT 1000
@@ -15,13 +15,14 @@ class ANT_memory_indexer;
 
 class ANT_string_pair;
 
-class ANT_readability_tag_finder : public ANT_readability_factory
+class ANT_readability_tag_finder : public ANT_readability
 {
 private:
 	static char 	**special_tags;
 
 private:
 	const char 	*matching_tag;
+	int				number_of_tags;
 	char				**terms;
 	int				where;
 	char				info_buf[MAX_TERM_LENGTH];

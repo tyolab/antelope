@@ -15,7 +15,7 @@
 	#define TRUE (!FALSE)
 #endif
 
-char **ANT_readability_tag_finder::special_tags = (char *[]) {"category", "title"};
+char **ANT_readability_tag_finder::special_tags = (char *[]) {"CATEGORY", "TITLE"};
 
 /*
 	ANT_READABILITY_TAG_FINDER::~ANT_READABILITY_TAG_FINDER()
@@ -23,6 +23,7 @@ char **ANT_readability_tag_finder::special_tags = (char *[]) {"category", "title
 */
 ANT_readability_tag_finder::ANT_readability_tag_finder()
 {
+	number_of_tags = 2;
 	matching_tag = NULL;
 	where = -1;
 	term_count = 0;
@@ -63,13 +64,14 @@ void ANT_readability_tag_finder::handle_tag(ANT_string_pair *tag, long tag_open)
 {
 if (tag_open)
 	{
-	for (int i = 0; i < sizeof(*special_tags); ++i)
+	for (int i = 0; i < number_of_tags; ++i)
 		if (strncmp(tag->start, special_tags[i], tag->string_length) == 0)
 			{
 			matching_tag = special_tags[i];
 			where = i;
 			prefix_char = ANT_toupper(matching_tag[0]);
 			tag_processing_on = TRUE;
+			break;
 			}
 	}
 else
