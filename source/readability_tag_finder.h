@@ -9,6 +9,8 @@
 #include "readability_factory.h"
 #include "btree_iterator.h"
 
+#define MAX_TERM_COUNT 1000
+
 class ANT_memory_indexer;
 
 class ANT_string_pair;
@@ -20,10 +22,12 @@ private:
 
 private:
 	const char 	*matching_tag;
+	char				**terms;
 	int				where;
 	char				info_buf[MAX_TERM_LENGTH];
 	long				tag_processing_on;
 	int				term_count;
+	char				prefix_char;
 
 private:
 	void clean_up();

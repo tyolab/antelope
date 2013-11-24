@@ -155,10 +155,11 @@ puts("");
 
 puts("READABILITY");
 puts("-----------");
-puts("-R[ndf]         Calculate readability using one of:");
+puts("-R[ndft]         Calculate readability using one of:");
 puts("   n            none [default]");
 puts("   d            Dale-Chall");
 puts("   f            Flesch-Kincaid");
+puts("   t            Tag Finder");
 puts("");
 
 ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', index_functions);

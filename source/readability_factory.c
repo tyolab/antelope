@@ -40,10 +40,9 @@ this->parser = parser;
 */
 ANT_readability_factory::~ANT_readability_factory()
 {
-ANT_readability **current;
-
-for (current = measure; *current != NULL; current++)
-	delete *current;
+for (int i = 0; i < number_of_measures; ++i)
+	if (measure[i] != NULL)
+		delete measure[i];
 
 delete [] measure;
 }
