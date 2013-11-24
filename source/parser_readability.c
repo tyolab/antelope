@@ -15,6 +15,8 @@ unsigned char *start;
 while (!ANT_isheadchar(*current) && !issentenceend(*current))
 	current++;
 
+current_token.string_length = 0;
+
 if (issentenceend(*current))
 	{
 	start = current++;
@@ -102,7 +104,8 @@ else											// everything else (that starts with a '<')
 				while (*current != '>')
 					current++;
 			}
-		return get_next_token();		// ditch and return the next character after where we are
+		if (current_token.string_length == 0)
+			return get_next_token();		// ditch and return the next character after where we are
 		}
 	}
 
