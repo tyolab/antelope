@@ -23,20 +23,16 @@ public:
 	ANT_readability() {}
 	virtual ~ANT_readability() {}
 	
-	virtual void index(ANT_memory_indexer *index) { (void)index; /* prevent compiler warning */ }
+	virtual void index(ANT_memory_indexer *index, long long doc) { (void)index; /* prevent compiler warning */ }
 
 protected:
 	ANT_string_pair *measure_name;
-	ANT_parser *parser;
 	
 	virtual long score(void) { return 0; }
 
 	virtual void handle_token(ANT_string_pair *token) { (void)token; /* prevent compiler warning */ }
 	virtual void handle_node(ANT_memory_indexer_node *node) { (void)node; /* prevent compiler warning */ }
-	virtual void handle_tag(ANT_string_pair *token) { (void)token; /* prevent compiler warning */ }
-
-public:
-	void set_parser(ANT_parser *parser);
+	virtual void handle_tag(ANT_string_pair *token, long tag_open) { (void)token; /* prevent compiler warning */ }
 } ;
 
 #endif  /* READABILITY_H_ */

@@ -25,6 +25,7 @@ private:
 	long number_of_measures;
 	ANT_readability **measure;
 	unsigned long measures_to_use;
+	ANT_parser *parser;
 
 public:
 	ANT_readability_factory();
@@ -33,11 +34,13 @@ public:
 	
 	ANT_parser_token *get_next_token(void);
 	void handle_node(ANT_memory_indexer_node *node);
-	void handle_tag(ANT_string_pair *token);
-	void index(ANT_memory_indexer *index);
+	void handle_tag(ANT_string_pair *token, long tag_open);
+	void index(ANT_memory_indexer *index, long long doc);
 
 	void set_document(unsigned char *document);
 	void set_measure(unsigned long value);
+
+	void set_parser(ANT_parser *parser);
 };
 
 

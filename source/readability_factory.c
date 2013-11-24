@@ -32,7 +32,6 @@ measure[4] = new ANT_readability_tag_finder();
 ANT_readability_factory::ANT_readability_factory(ANT_parser *parser) : ANT_readability_factory()
 {
 this->parser = parser;
-measure[4]->set_parser(parser);
 }
 
 /*
@@ -110,6 +109,15 @@ parser->set_document(document);
 }
 
 /*
+	READABILITY_FACTORY::SET_PARSER()
+	---------------------------------
+*/
+void ANT_readability_factory::set_parser(ANT_parser *parser)
+{
+this->parser = parser;
+}
+
+/*
 	READABILITY_FACTORY::SET_MEASURE()
 	----------------------------------
 */
@@ -138,20 +146,17 @@ for (which = 0; which < number_of_measures; which++)
 	READABILITY_FACTORY::HANDLE_TAG()
 	----------------------------------
 */
-void ANT_readability_factory::handle_tag(ANT_string_pair* token)
+void ANT_readability_factory::handle_tag(ANT_string_pair* token, long tag_open)
 {
 if ((measures_to_use & TAG_FINDER) != 0)
-	{
-	measure[TAG_FINDER]->set_parser(parser);
-	measure[TAG_FINDER]->handle_tag(token);
-	}
+	measure[TAG_FINDER]->handle_tag(token, tag_open);
 }
 
 /*
 	READABILITY_FACTORY::INDEX()
 	----------------------------
 */
-void ANT_readability_factory::index(ANT_memory_indexer *index)
+void ANT_readability_factory::index(ANT_memory_indexer *index, long long doc)
 {
 long which;
 
@@ -160,5 +165,5 @@ if (measures_to_use == 0)
 
 for (which = 0; which < number_of_measures; which++)
 	if ((which & measures_to_use) != 0)
-		measure[which]->index(index);
+		measure[which]->index(index, doc);
 }

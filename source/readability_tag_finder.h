@@ -1,5 +1,5 @@
 /*
-	readability_tag_finder.h
+	READABILITY_TAG_FINDER.H
 	------------------------
  */
 
@@ -22,14 +22,20 @@ private:
 	const char 	*matching_tag;
 	int				where;
 	char				info_buf[MAX_TERM_LENGTH];
+	long				tag_processing_on;
+	int				term_count;
+
+private:
+	void clean_up();
 
 public:
 	ANT_readability_tag_finder();
 	virtual ~ANT_readability_tag_finder();
 
-	void handle_tag(ANT_string_pair *token);
+	void handle_tag(ANT_string_pair *token, long tag_open);
+	void handle_token(ANT_string_pair *token);
 
-	void index(ANT_memory_indexer *index);
+	void index(ANT_memory_indexer *index, long long doc);
 };
 
 #endif /* READABILITY_TAG_FINDER_H_ */
