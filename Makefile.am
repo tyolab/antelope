@@ -696,6 +696,7 @@ index_CFLAGS = $(AM_CFLAGS)
 
 atire_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.c 
 atire_dictionary_LDADD = $(ATIRE_CORE_LIB)
+atire_dictionary_LDFLAGS = -static -export-dynamic
 atire_dictionary_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
 get_doclist_SOURCES = $(ATIRE_DIR)/get_doclist.c 
