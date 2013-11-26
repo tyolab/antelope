@@ -371,6 +371,7 @@ long ANT_indexer_param_block::parse(void)
 {
 long param;
 char *command;
+char *start;
 
 for (param = 1; param < argc; param++)
 	{
@@ -394,6 +395,15 @@ for (param = 1; param < argc; param++)
 			recursive = TREC;
 			if (strncmp(command + 5, ":clean", 6) == 0)
 				scrub("an");
+			else if (strncmp(command + 5, ":tag", 4) == 0)
+				{
+				doc_tag = command + 10;
+				if ((start = strchr(doc_tag, ':')) != NULL)
+					{
+					*start = '\0';
+					docno_tag = ++start;
+					}
+				}
 			}
 		else if (strncmp(command, "rrtrec", 6) == 0)
 			{
