@@ -56,6 +56,12 @@ ANT_parser_token *ANT_readability_factory::get_next_token()
 long which;
 ANT_parser_token *token = parser->get_next_token();
 
+/*
+	Starting with >, skip it
+*/
+if (token != NULL && *token->start == '>' && token->string_length == 1)
+	token = parser->get_next_token();
+
 if (measures_to_use == 0)
 	return token;
 

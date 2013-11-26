@@ -81,8 +81,28 @@ else
 
 void ANT_readability_tag_finder::handle_token(ANT_string_pair *token)
 {
+/*
+  the title may begin with "Wikipedia:", if term_count is greater than 1, then we ignoring it
+  it is not best solution, but we can live with it.
+ */
+static const char *wiki_prefix = "Wikipedia";
+
 if (tag_processing_on && term_count <= MAX_TERM_COUNT)
+	{
+	/*
+	 	Wikipedia abstract file dump give title in such a way "Wikipedia : XXXXX"
+		unicode colon ':' = "\357\274\232" in OCT
+	 */
+	if (term_count == 1 && (strncmp(token->start, "\357\274\232", token->string_length) == 0 || strncmp(token->start, ":", token->string_length) == 0)
+			&& strcmp(wiki_prefix, terms[0]) == 0)
+		{
+			delete terms[0];
+			term_count = 0;
+			return;
+		}
+
 	terms[term_count++] = strnnew(token->start, token->string_length);
+	}
 }
 
 /*
@@ -104,13 +124,6 @@ char *start, *info_buf_start;
 ANT_string_pair what;
 long long length = 0;
 int i;
-/*
-  the title may begin with "Wikipedia:", if term_count is greater than 1, then we ignoring it
-  it is not best solution, but we can live with it.
- */
-static const char *wiki_prefix = "Wikipedia";
-
-char *realterm;
 
 what.start = buffer;
 buffer[0] = info_buf[0] = prefix_char;
@@ -127,8 +140,8 @@ info_buf_start = info_buf + 3;
  */
 for (i = 1; i < term_count; ++i)
 	{
-	if (prefix_char == 'T' && i == 0 && strcmp(wiki_prefix, terms[0]) == 0)
-		continue;
+//	if (prefix_char == 'T' && i == 0)
+//		continue;
 
 	length = strlen(terms[i]);
 	memcpy(start, terms[i], length);

@@ -297,3 +297,21 @@ else											// everything else (that starts with a '<')
 
 return &current_token;
 }
+
+/*
+	ANT_PARSER::GET_SEGMENT_INFO()
+	----------------------------
+*/
+long ANT_parser::get_segment_info()
+{
+return this->should_segment;
+}
+
+/*
+	ANT_PARSER::SET_SEGMENT_INFO()
+	----------------------------
+*/
+void ANT_parser::set_segment_info(long should_segment)
+{
+this->should_segment = should_segment;
+}
