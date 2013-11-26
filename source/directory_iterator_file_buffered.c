@@ -24,6 +24,11 @@ read_buffer = new char [buffer_size + 1];
 *read_buffer = read_buffer[buffer_size] = '\0';			// null terminate the end of the buffer, and mark it as empty too
 read_buffer_used = buffer_size;
 this->auto_file_id = 0;
+
+doc_tag = new char*[2];
+docno_tag = new char*[2];
+set_doc_tag("DOC");
+set_docno_tag("DOCNO");
 }
 
 /*
@@ -33,6 +38,9 @@ this->auto_file_id = 0;
 ANT_directory_iterator_file_buffered::~ANT_directory_iterator_file_buffered()
 {
 delete [] read_buffer;
+free_tag();
+delete [] doc_tag;
+delete [] docno_tag;
 }
 
 /*
@@ -156,4 +164,31 @@ memcpy(object->file, document_start, (size_t)object->length);
 object->file[(size_t)object->length] = '\0';
 
 return object;
+}
+
+/*
+	ANT_DIRECTORY_ITERATOR_FILE_BUFFERED::FREE_TAG()
+	--------------------------------------------------------
+ */
+void ANT_directory_iterator_file_buffered::free_tag()
+{
+for (int i = 0; i < 2; ++i)
+	{
+	delete doc_tag[i];
+	delete docno_tag[i];
+	}
+}
+
+/*
+	ANT_DIRECTORY_ITERATOR_FILE_BUFFERED::SET_TAGS()
+	--------------------------------------------------------
+ */
+void ANT_directory_iterator_file_buffered::set_tags(char *doc_name, char *docno_name);)
+{
+	free_tag();
+	doc_tag[0] = new char[strlen(doc_name) + 2];   //"<"
+	doc_tag[1] = new char[strlen(doc_name) + 3];  // "</" plus end char
+	doc_tag[0] = new char[strlen(docno_name) + 3]; //"<DOCNO>", 3 includes < > \0
+	doc_tag[1] = new char[strlen(docno_name) + 2]; // </DOCNO>",
+	sprinf(doc_tag[0]
 }
