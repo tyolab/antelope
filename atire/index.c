@@ -205,7 +205,7 @@ index->set_static_pruning(param_block.static_prune_point);
 index->set_term_culling(param_block.stop_word_removal, param_block.stop_word_df_threshold, param_block.stop_word_df_frequencies);
 
 if (param_block.readability_measure == ANT_readability_factory::NONE
-		|| param_block.readability_measure == ANT_readability_factory::TAG_FINDER)
+		|| param_block.readability_measure == ANT_readability_factory::TAG_WEIGHTING)
 	parser = new ANT_parser(param_block.segmentation);
 else
 	parser = new ANT_parser_readability();

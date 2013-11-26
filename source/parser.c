@@ -251,6 +251,7 @@ else											// everything else (that starts with a '<')
 		if (*current != '\0')
 			if (*current == '/')					// </tag>	(XML Close tag)
 				{
+				start = ++current;
 				while (*current != '>' && *current != '\0')
 					{
 					*current = ANT_toupper(*current);

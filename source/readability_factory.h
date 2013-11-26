@@ -18,7 +18,7 @@ public:
 		NONE           = 0,
 		DALE_CHALL     = 1,
 		FLESCH_KINCAID = 2,
-		TAG_FINDER =4
+		TAG_WEIGHTING =4
 	};
 
 private:

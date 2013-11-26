@@ -11,7 +11,6 @@
 #include "string_pair.h"
 #include "parser_token.h"
 #include "unicode.h"
-#include "readability_tag_finder.h"
 
 /*
 	ANT_INDEX_DOCUMENT::INDEX_DOCUMENT()

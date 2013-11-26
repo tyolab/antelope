@@ -32,7 +32,7 @@ protected:
 
 	virtual void handle_token(ANT_string_pair *token) { (void)token; /* prevent compiler warning */ }
 	virtual void handle_node(ANT_memory_indexer_node *node) { (void)node; /* prevent compiler warning */ }
-	virtual void handle_tag(ANT_string_pair *token, long tag_open) { (void)token; /* prevent compiler warning */ }
+	virtual void handle_tag(ANT_string_pair *token, long tag_open, ANT_parser *parser) { (void)token; /* prevent compiler warning */ }
 } ;
 
 #endif  /* READABILITY_H_ */

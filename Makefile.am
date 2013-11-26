@@ -184,10 +184,9 @@ core_sources =  \
 	$(SRC_DIR)/ranking_function_term_count.c \
 	$(SRC_DIR)/ranking_function_topsig_negative.c \
 	$(SRC_DIR)/ranking_function_topsig_positive.c \
-	$(SRC_DIR)/readability.c \
 	$(SRC_DIR)/readability_dale_chall.c \
 	$(SRC_DIR)/readability_factory.c \
-	$(SRC_DIR)/readability_tag_finder.c \
+	$(SRC_DIR)/readability_tag_weighting.c \
 	$(SRC_DIR)/relevance_feedback_blind_kl.c \
 	$(SRC_DIR)/relevance_feedback.c \
 	$(SRC_DIR)/relevance_feedback_factory.c \
@@ -445,7 +444,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/readability_dale_chall.h \
 	$(SRC_DIR)/readability_dale_chall_wordlist.h \
 	$(SRC_DIR)/readability_factory.h \
-	$(SRC_DIR)/readability_tag_finder.h \
+	$(SRC_DIR)/readability_tag_weighting.h \
 	$(SRC_DIR)/readability.h \
 	$(SRC_DIR)/readability_none.h \
 	$(SRC_DIR)/relevance_feedback_blind_kl.h \

@@ -260,7 +260,7 @@ for (measure = measures; *measure != '\0'; measure++)
 		case 'n': readability_measure = ANT_readability_factory::NONE; break;
 		case 'd': readability_measure |= ANT_readability_factory::DALE_CHALL; break;
 		case 'f': readability_measure |= ANT_readability_factory::FLESCH_KINCAID; break;
-		case 't': readability_measure = ANT_readability_factory::TAG_FINDER; break;
+		case 't': readability_measure = ANT_readability_factory::TAG_WEIGHTING; break;
 		default : exit(printf("Unknown readability measure: '%c'\n", *measure)); break;
 		}
 }

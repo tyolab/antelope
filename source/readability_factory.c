@@ -6,7 +6,7 @@
 #include "readability_factory.h"
 #include "readability_none.h"
 #include "readability_dale_chall.h"
-#include "readability_tag_finder.h"
+#include "readability_tag_weighting.h"
 
 /*
 	ANT_READABILITY_FACTORY::ANT_READABILITY_FACTORY()
@@ -22,7 +22,7 @@ measure[0] = new ANT_readability_none();
 measure[1] = new ANT_readability_dale_chall();
 measure[2] = NULL;//new ANT_readability;
 measure[3] = NULL; // not existing
-measure[4] = new ANT_readability_tag_finder();
+measure[4] = new ANT_readability_TAG_WEIGHTING();
 }
 
 /*
@@ -68,9 +68,15 @@ if (measures_to_use == 0)
 /*
 	Each measure we're using should now handle the token
 */
-for (which = 0; which < number_of_measures; which++)
-	if ((which & measures_to_use) != 0)
-		measure[which]->handle_token(token);
+if (measures_to_use == TAG_WEIGHTING)
+	{
+	if (token != NULL && token->type != TT_TAG_CLOSE)
+		measure[TAG_WEIGHTING]->handle_token(token);
+	}
+else
+	for (which = 0; which < number_of_measures; which++)
+		if ((which & measures_to_use) != 0)
+			measure[which]->handle_token(token);
 
 /*
 	After we've handled all the tokens, clean it up and pass it on
@@ -153,8 +159,8 @@ for (which = 0; which < number_of_measures; which++)
 */
 void ANT_readability_factory::handle_tag(ANT_string_pair* token, long tag_open)
 {
-if ((measures_to_use & TAG_FINDER) != 0)
-	measure[TAG_FINDER]->handle_tag(token, tag_open);
+if ((measures_to_use & TAG_WEIGHTING) != 0)
+	measure[TAG_WEIGHTING]->handle_tag(token, tag_open, parser);
 }
 
 /*
