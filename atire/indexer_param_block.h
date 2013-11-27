@@ -58,7 +58,6 @@ protected:
 	void segment(char *segment_flag);
 	void term_removal(char *list);
 	void scrub(char *scrub_what);
-	void tag(char *what_tag);
 
 public:
 	ANT_indexer_param_block(int argc, char *argv[]);

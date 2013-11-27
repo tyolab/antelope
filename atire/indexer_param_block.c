@@ -393,6 +393,8 @@ for (param = 1; param < argc; param++)
 		else if (strncmp(command, "rtrec", 5) == 0)
 			{
 			recursive = TREC;
+			doc_tag = NULL;
+			docno_tag = NULL;
 			if (strncmp(command + 5, ":clean", 6) == 0)
 				scrub("an");
 			else if (strncmp(command + 5, ":tag", 4) == 0)

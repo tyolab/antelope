@@ -27,8 +27,7 @@ this->auto_file_id = 0;
 
 doc_tag = new char*[2];
 docno_tag = new char*[2];
-set_doc_tag("DOC");
-set_docno_tag("DOCNO");
+set_tags("DOC", "DOCNO");
 }
 
 /*
@@ -72,7 +71,7 @@ start = read_buffer + read_buffer_used;
 /*
 	Get the start tag
 */
-if ((document_start = strstr(start, "<DOC")) == NULL)
+if ((document_start = strstr(start, doc_tag[0])) == NULL)
 	{
 	/*
 		We might be at the end of a buffer and half-way through a tag so we copy the remainder of the file to the
@@ -80,14 +79,14 @@ if ((document_start = strstr(start, "<DOC")) == NULL)
 	*/
 	memmove(read_buffer, read_buffer + read_buffer_used, buffer_size - read_buffer_used);
 	bytes_read = read(read_buffer + (buffer_size - read_buffer_used), read_buffer_used);
-	if ((bytes_read == 0) || (document_start = strstr(read_buffer, "<DOC")) == NULL)
+	if ((bytes_read == 0) || (document_start = strstr(read_buffer, doc_tag[0])) == NULL)
 		return NULL;		// we are either at end of file of have a document that is too long to index (so pretend EOF)
 	}
 
 /*
 	Get the end tag
 */
-if ((document_end = strstr(document_start, "</DOC>")) == NULL)
+if ((document_end = strstr(document_start, doc_tag[1])) == NULL)
 	{
 	/*
 		This happens when we move find the start tag in the buffer, but the end tag is
@@ -98,10 +97,10 @@ if ((document_end = strstr(document_start, "</DOC>")) == NULL)
 	bytes_read = read(read_buffer + buffer_size - (document_start - read_buffer), document_start - read_buffer);
 
 	document_start = read_buffer;
-	if ((bytes_read == 0) || (document_end = strstr(document_start, "</DOC>")) == NULL)
+	if ((bytes_read == 0) || (document_end = strstr(document_start, doc_tag[1])) == NULL)
 		return NULL;		// we are either at end of file of have a document that is too long to index (so pretend EOF)
 	}
-document_end += 6;			// skip to end of tag
+document_end += strlen(doc_tag[1]);			// skip to end of tag
 
 /*
 	Take a note of how far through the buffer we are
@@ -113,18 +112,18 @@ read_buffer_used = document_end - read_buffer;
 */
 if (!auto_file_id)
 	{
-	if (*(document_start + 4) == '>')
+	if (*(document_start + strlen(doc_tag[0])) == '>')
 		{
-		document_id_start = strstr(document_start, "<DOCNO>");
+		document_id_start = strstr(document_start, docno_tag[0]);
 		if (document_id_start != NULL)
-			document_id_end = strstr(document_id_start += 7, "</DOCNO>");
+			document_id_end = strstr(document_id_start += strlen(docno_tag[0]), docno_tag[1]);
 		else
 			auto_file_id++;
 		}
 	else
 		{
 		document_id_start = strstr(document_start, "id=\"");
-		document_id_end = strchr(document_id_start += 4, '"');
+		document_id_end = strchr(document_id_start += strlen(doc_tag[0]), '"');
 		if (document_id_end)
 			document_start = strchr(document_id_end, '>') + 1;
 		}
@@ -183,12 +182,15 @@ for (int i = 0; i < 2; ++i)
 	ANT_DIRECTORY_ITERATOR_FILE_BUFFERED::SET_TAGS()
 	--------------------------------------------------------
  */
-void ANT_directory_iterator_file_buffered::set_tags(char *doc_name, char *docno_name);)
+void ANT_directory_iterator_file_buffered::set_tags(char *doc_name, char *docno_name)
 {
 	free_tag();
-	doc_tag[0] = new char[strlen(doc_name) + 2];   //"<"
-	doc_tag[1] = new char[strlen(doc_name) + 3];  // "</" plus end char
-	doc_tag[0] = new char[strlen(docno_name) + 3]; //"<DOCNO>", 3 includes < > \0
-	doc_tag[1] = new char[strlen(docno_name) + 2]; // </DOCNO>",
-	sprinf(doc_tag[0]
+	doc_tag[0] = new char[strlen(doc_name) + 2];   //"<" \0
+	doc_tag[1] = new char[strlen(doc_name) + 4];  // "</>" plus \0
+	docno_tag[0] = new char[strlen(docno_name) + 3];  //"<DOCNO>",  extra 3 bytes include < > \0
+	docno_tag[1] = new char[strlen(docno_name) + 4];  // </DOCNO>", extra 3 bytes include </ > \0
+	sprintf(doc_tag[0], "<%s", doc_name);
+	sprintf(doc_tag[1], "</%s", doc_name);
+	sprintf(docno_tag[0], "<%s>", docno_name);
+	sprintf(docno_tag[1], "</%s>", docno_name);
 }
