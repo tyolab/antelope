@@ -23,6 +23,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/bitstring_iterator.c \
 	$(SRC_DIR)/btree_iterator.c \
 	$(SRC_DIR)/channel_file.c \
+	$(SRC_DIR)/channel_trec.c \
 	$(SRC_DIR)/channel_socket.c \
 	$(SRC_DIR)/compress_carryover12.c \
 	$(SRC_DIR)/compress_elias_delta.c \
@@ -79,7 +80,9 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/instream_bz2.c \
 	$(SRC_DIR)/instream_deflate.c \
 	$(SRC_DIR)/instream_file.c \
+	$(SRC_DIR)/instream_file_star.c \
 	$(SRC_DIR)/instream_lzo.c \
+	$(SRC_DIR)/instream_memory.c \
 	$(SRC_DIR)/instream_scrub.c \
 	$(SRC_DIR)/maths.c \
 	$(SRC_DIR)/evaluator.c \
@@ -139,6 +142,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/ranking_function_inner_product.c \
 	$(SRC_DIR)/ranking_function_kbtfidf.c \
 	$(SRC_DIR)/ranking_function_lmd.c \
+	$(SRC_DIR)/ranking_function_lmds.c \
 	$(SRC_DIR)/ranking_function_lmjm.c \
 	$(SRC_DIR)/ranking_function_pregen.c \
 	$(SRC_DIR)/ranking_function_readability.c \
@@ -147,6 +151,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/ranking_function_topsig_positive.c \
 	$(SRC_DIR)/readability_dale_chall.c \
 	$(SRC_DIR)/readability_factory.c \
+	$(SRC_DIR)/readability_tag_weighting.c \
 	$(SRC_DIR)/relevance_feedback_blind_kl.c \
 	$(SRC_DIR)/relevance_feedback.c \
 	$(SRC_DIR)/relevance_feedback_factory.c \
@@ -232,7 +237,7 @@ include $(CLEAR_VARS)
 LOCAL_CPP_EXTENSION := .c
 
 API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
-			$(ATIRE_DIR)/atire.c \
+			$(ATIRE_DIR)/atire_atire.c \
 			$(ATIRE_DIR)/atire_api.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			
