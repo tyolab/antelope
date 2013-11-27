@@ -159,7 +159,7 @@ puts("-R[ndft]         Calculate readability using one of:");
 puts("   n            none [default]");
 puts("   d            Dale-Chall");
 puts("   f            Flesch-Kincaid");
-puts("   t            Tag Finder");
+puts("   t            Special tags (such as TITLE, CATEGORY) weighting");
 puts("");
 
 ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', index_functions);

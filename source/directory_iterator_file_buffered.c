@@ -190,7 +190,7 @@ void ANT_directory_iterator_file_buffered::set_tags(char *doc_name, char *docno_
 	docno_tag[0] = new char[strlen(docno_name) + 3];  //"<DOCNO>",  extra 3 bytes include < > \0
 	docno_tag[1] = new char[strlen(docno_name) + 4];  // </DOCNO>", extra 3 bytes include </ > \0
 	sprintf(doc_tag[0], "<%s", doc_name);
-	sprintf(doc_tag[1], "</%s", doc_name);
+	sprintf(doc_tag[1], "</%s>", doc_name);
 	sprintf(docno_tag[0], "<%s>", docno_name);
 	sprintf(docno_tag[1], "</%s>", docno_name);
 }
