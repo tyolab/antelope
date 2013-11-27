@@ -356,7 +356,7 @@ for (param = first_param; param < argc; param++)
 					"ORDER BY t.topic_id ASC ",
 					ANT_directory_iterator::READ_FILE);
 		else
-			source = new ANT_directory_iterator_mysql(argv[param + 2], argv[param]one, argv[param + 1], argv[param + 3],
+			source = new ANT_directory_iterator_mysql(argv[param + 2], argv[param], argv[param + 1], argv[param + 3],
 					"SELECT post_id, CONCAT('<id>', post_id, '</id><time>', post_time, '</time><subject>', REPLACE(post_subject, '\xC2\x80', '\xE2\x82\xAC'), "
 							"'</subject><title>', REPLACE(topic_title, '\xC2\x80', '\xE2\x82\xAC'), '</title><author>', u.username, '</author><forum>',"
 							"forum_name ,'</forum>'), "

@@ -4,9 +4,9 @@
 #
 
 #
-#	DEBUG. Comment out the line below to compile in DEBUG mode
+#	DEBUG. set DEBUG=1 for compile in DEBUG mode.  Set DEBUG=0 for RELEASE mode.
 #
-DEBUG = 0
+DEBUG = 1
 			
 #
 #	Which compiler are we using
@@ -220,6 +220,7 @@ PARTS = \
 	$(OBJDIR)\bitstring_iterator.obj 				\
 	$(OBJDIR)\channel_file.obj						\
 	$(OBJDIR)\channel_socket.obj					\
+	$(OBJDIR)\channel_trec.obj						\
 	$(OBJDIR)\parser.obj 							\
 	$(OBJDIR)\parser_readability.obj				\
 	$(OBJDIR)\index_document.obj					\
@@ -349,6 +350,7 @@ PARTS = \
 	$(OBJDIR)\ranking_function.obj					\
 	$(OBJDIR)\ranking_function_impact.obj			\
 	$(OBJDIR)\ranking_function_readability.obj		\
+	$(OBJDIR)\ranking_function_lmds.obj				\
 	$(OBJDIR)\ranking_function_lmd.obj				\
 	$(OBJDIR)\ranking_function_lmjm.obj				\
 	$(OBJDIR)\ranking_function_docid.obj			\
@@ -368,6 +370,8 @@ PARTS = \
 	$(OBJDIR)\ranking_function_dfiw.obj \
 	$(OBJDIR)\ranking_function_dfiw_idf.obj \
 	$(OBJDIR)\ranking_function_dfi_idf.obj \
+	$(OBJDIR)\instream_memory.obj						\
+	$(OBJDIR)\instream_file_star.obj						\
 	$(OBJDIR)\instream_file.obj						\
 	$(OBJDIR)\instream_deflate.obj					\
 	$(OBJDIR)\instream_bz2.obj						\
