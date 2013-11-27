@@ -427,8 +427,8 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 		else if (strncmp(command, ".listterm ", 10) == 0)
 			{
 			static ANT_compression_factory factory;
-			long long postings_list_size = 100 * 1024 * 1024;
-			static long long raw_list_size = 100 * 1024 * 1024;
+			long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,
+			static long long raw_list_size = 5 * 1024 * 1024; // same as above
 			char *term, *first_term;
 			long long max = 0;
 			long long global_trim;
@@ -442,6 +442,8 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			ANT_btree_iterator iterator(atire->get_search_engine());
 			ANT_search_engine_btree_leaf leaf;
 			global_trim = atire->get_search_engine()->get_global_trim_postings_k();
+			postings_list = (unsigned char *)malloc((size_t)postings_list_size);
+			raw = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
 
 			for (term = iterator.first(first_term); term != NULL && count < 10; term = iterator.next())
 				{
@@ -469,13 +471,12 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 						current = raw;
 						*current++;
 						docid += *current++;
-						outchannel->puts(term);
-						outchannel->puts(":");
-						*outchannel << docid;
-						outchannel->puts("\n");
+						*outchannel << term << ":" << docid << ANT_channel::endl;
 						}
 					}
 				}
+			delete postings_list;
+
 			delete [] command;
 			continue;
 			}
