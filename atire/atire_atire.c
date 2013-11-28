@@ -261,6 +261,9 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 		}
 	else if (strcmp(command, ".quit") == 0)
 		{
+		outchannel->puts("<ATIREresult>");
+		outchannel->puts("ATIRE is now existing.");
+		outchannel->puts("</ATIREresult>");
 		delete [] command;
 		break;
 		}
@@ -444,7 +447,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			global_trim = atire->get_search_engine()->get_global_trim_postings_k();
 			postings_list = (unsigned char *)malloc((size_t)postings_list_size);
 			raw = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
-
+			outchannel->puts("<ATIREresult>");
 			for (term = iterator.first(first_term); term != NULL && count < 10; term = iterator.next())
 				{
 				++count;
@@ -475,8 +478,11 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 						}
 					}
 				}
-			delete postings_list;
 
+			outchannel->puts("</ATIREresult>");
+
+			delete postings_list;
+			delete raw;
 			delete [] command;
 			continue;
 			}

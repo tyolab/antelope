@@ -131,6 +131,11 @@ public class AtireRemoteClient {
 		return got;
 	}
 	
+	public String sendCommand(String cmd) {
+		String result = 
+		return result;
+	}
+	
 	public ArrayList<String> search(String query) throws ConnectException {
 		ArrayList<String> list = new ArrayList<String>();
 		long hits;

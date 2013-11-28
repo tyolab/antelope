@@ -22,6 +22,15 @@ private:
 	char *connect_string;
 	ANT_socket *socket;
 
+#ifdef ATIRE_JNI
+	/*
+	 	  Create a memory buffer for storing the result return from ATIRE server, and free it after program exits.
+	 	  There is one major reason for this is that if this class is used by Java via JNI, the memory by native code
+	 	  won't be provided automatic garbage collection, so it is better to deal with it locally.
+	 */
+	char *result_buffer;
+#endif
+
 public:
 	/*
 		ATIRE_API_remote
@@ -65,6 +74,11 @@ public:
 		Given the ATIRE internal id of a document, retrieve that document (if it is in the repository)
 	*/
 	virtual char *get_document(long long docid, long long *length);
+
+	/*
+		Send command to ATIRE, and return results if any
+	*/
+	virtual char *send_command(char *command);
 } ;
 
 #endif /* ATIRE_API_REMOTE_H_ */

@@ -24,7 +24,7 @@ AM_LDFLAGS = -Wl,--gc-sections -fPIC -shared -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
 AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR \
+		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DATIRE_JNI \
        -Wno-endif-labels -Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings \
         -Wno-long-long
        
@@ -132,7 +132,9 @@ core_sources =  \
 	$(SRC_DIR)/instream_bz2.c \
 	$(SRC_DIR)/instream_deflate.c \
 	$(SRC_DIR)/instream_file.c \
+	$(SRC_DIR)/instream_file_star.c \
 	$(SRC_DIR)/instream_lzo.c \
+	$(SRC_DIR)/instream_memory.c \
 	$(SRC_DIR)/instream_scrub.c \
 	$(SRC_DIR)/maths.c \
 	$(SRC_DIR)/memory.c \
@@ -367,8 +369,10 @@ core_noinst_headers = \
 	$(SRC_DIR)/instream_deflate.h \
 	$(SRC_DIR)/instream_deflate_internals.h \
 	$(SRC_DIR)/instream_file.h \
+	$(SRC_DIR)/instream_file_star.h \
 	$(SRC_DIR)/instream.h \
 	$(SRC_DIR)/instream_lzo.h \
+	$(SRC_DIR)/instream_memory.h \
 	$(SRC_DIR)/instream_scrub.h \
 	$(SRC_DIR)/maths.h \
 	$(SRC_DIR)/memory.h \

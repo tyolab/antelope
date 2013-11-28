@@ -26,6 +26,14 @@ ATIRE_API_remote::ATIRE_API_remote(void)
 {
 connect_string = NULL;
 socket = new ANT_socket;
+
+#ifdef ATIRE_JNI
+	#ifdef ATIRE_MOBILE
+	result_buffer = new char[2 * 1024 * 1024];  // may be it can be bigger
+	#else
+	result_buffer = new char[20 * 1024 * 1024];  // even 200M?
+	#endif
+#endif
 }
 
 /*
@@ -36,6 +44,9 @@ ATIRE_API_remote::~ATIRE_API_remote()
 {
 delete socket;
 delete [] connect_string;
+#ifdef ATIRE_JNI
+delete [] result_buffer;
+#endif
 }
 
 /*
@@ -159,7 +170,12 @@ delete [] got;
 /*
 	Return the result
 */
+#ifdef ATIRE_JNI
+strcpy(result_buffer, result.str().c_str());
+return result_buffer;
+#else
 return strnew(result.str().c_str());
+#endif
 }
 
 /*
@@ -210,7 +226,12 @@ delete [] got;
 /*
 	Return the result
 */
+#ifdef ATIRE_JNI
+strcpy(result_buffer, result.str().c_str());
+return result_buffer;
+#else
 return strnew(result.str().c_str());
+#endif
 }
 
 /*
@@ -262,7 +283,12 @@ else
 	}
 
 *length = size;
+#ifdef ATIRE_JNI
+strcpy(result_buffer, result);
+return result_buffer;
+#else
 return result;
+#endif
 }
 
 /*
@@ -274,3 +300,30 @@ char *ATIRE_API_remote::get_connect_string()
 return connect_string == NULL ? NULL : strnew(connect_string);
 }
 
+/*
+	ATIRE_API_REMOTE::SEND_COMMAND()
+	--------------------------------------
+*/
+char *ATIRE_API_remote::send_command(char* command)
+{
+std::stringstream buffer, result;
+char *got;
+
+got = NULL;
+do
+	{
+	delete [] got;
+	if ((got = socket->gets()) == NULL)
+		return NULL;		// socket failure
+	result << got << '\n';
+	}
+while (strcmp(got, "</ATIREresult>") != 0 && strcmp(got, "</ATIREerror>") != 0);
+
+delete [] got;
+#ifdef ATIRE_JNI
+strcpy(result_buffer, result.str().c_str());
+return result_buffer;
+#else
+return strnew(result.str().c_str());
+#endif
+}
