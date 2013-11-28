@@ -40,7 +40,7 @@ public class AtireRemoteClient {
 	
 	private int index;
 	
-	public static String dylibName;
+	public static String dylibName = "atire_jni";
 	
 	private static AtireRemoteClient instance;
 	
@@ -132,8 +132,7 @@ public class AtireRemoteClient {
 	}
 	
 	public String sendCommand(String cmd) {
-		String result = 
-		return result;
+		return socket.send_command(cmd);
 	}
 	
 	public ArrayList<String> search(String query) throws ConnectException {
@@ -188,34 +187,40 @@ public class AtireRemoteClient {
             try {
 				while ((fromUser = stdIn.readLine()) != null) {
 				    System.out.println("Search: " + fromUser);
-				    if (fromUser.equals("Bye."))
+				    int pos = -1;
+				    if (fromUser.equalsIgnoreCase("Bye"))
 				        break;
-				    
-				    try {
-				    	results = atire.search(fromUser);
+				    else if ((pos = fromUser.indexOf("cmd ")) > -1) {
+				    	String cmd = fromUser.substring(pos + 4);
+				    	atire.sendCommand(cmd);
 				    }
-				    catch (ConnectException connEx) {
-				    	System.err.println(connEx.getMessage());
-				    	atire.initializeSocket();
-				    	
-				    	try {
-				    		results = atire.search(fromUser);
-				    	}
-				    	 catch (ConnectException connEx2) {
-				    		 System.err.println("re-attempt connection failed");
-				    		 System.exit(-1);
-				    	 }
-				    }
-				    catch (SocketException socketEx) {
-				    	atire.initializeSocket();
-				    	
-				    	try {
-				    		results = atire.search(fromUser);
-				    	}
-				    	 catch (ConnectException connEx2) {
-				    		 System.err.println("re-attempt connection failed");
-				    		 System.exit(-1);
-				    	 }
+				    else {
+					    try {
+					    	results = atire.search(fromUser);
+					    }
+					    catch (ConnectException connEx) {
+					    	System.err.println(connEx.getMessage());
+					    	atire.initializeSocket();
+					    	
+					    	try {
+					    		results = atire.search(fromUser);
+					    	}
+					    	 catch (ConnectException connEx2) {
+					    		 System.err.println("re-attempt connection failed");
+					    		 System.exit(-1);
+					    	 }
+					    }
+					    catch (SocketException socketEx) {
+					    	atire.initializeSocket();
+					    	
+					    	try {
+					    		results = atire.search(fromUser);
+					    	}
+					    	 catch (ConnectException connEx2) {
+					    		 System.err.println("re-attempt connection failed");
+					    		 System.exit(-1);
+					    	 }
+					    }
 				    }
 				}
 			} catch (IOException e) {
@@ -228,7 +233,7 @@ public class AtireRemoteClient {
 				e.printStackTrace();
 			}
 		atire.close();
-		atire.destroy();
+//		atire.destroy();
 			    
 	    if (results != null) {
 	    	System.out.println("Results: ");

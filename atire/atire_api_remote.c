@@ -309,6 +309,9 @@ char *ATIRE_API_remote::send_command(char* command)
 std::stringstream buffer, result;
 char *got;
 
+if (socket->puts(command) <= 0)
+	return NULL;
+
 got = NULL;
 do
 	{
