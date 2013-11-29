@@ -46,22 +46,31 @@ int main(int argc, char **argv) {
 	char *buffer = new char[BUFFER_SIZE];
 	ATIRE_API_remote client;
 	client.open("localhost:8088");
+	const char *result = 0;
 
 	while (get_line(">", buffer) == OK) {
 		if (strlen(buffer) > 0) {
 			printf("\n");
-			printf("cmd: %s", buffer);
+			printf("cmd: %s\n", buffer);
+
 
 			if (strcmp(buffer, "exit") == 0)
 				break;
 			else if (strncmp(buffer, "search ", 7) == 0)
-				client.search(buffer + 7, 3, 1);
+				result = client.search(buffer + 7, 3, 1);
 			else if (strncmp(buffer, "getdoc ", 7) == 0) {
 				long long len;
-				client.get_document(atol(buffer + 7), &len);
+				result = client.get_document(atol(buffer + 7), &len);
 			}
-			else
-				client.send_command(buffer);
+			else if (strncmp(buffer, "cmd ", 4) == 0)
+				result = client.send_command(buffer + 4);
+			else {
+				result = 0;
+				printf("Invalid comand: %s\n", buffer);
+			}
+
+			if (result != 0 && strlen(result) > 0)
+				printf("Result:\n%s", result);
 		}
 	}
 	delete [] buffer;
