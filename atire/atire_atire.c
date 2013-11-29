@@ -440,6 +440,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			long long docid;
 			ANT_compressable_integer *current;
 			int count;
+			long long tf;
 
 			first_term = command + 10;
 			ANT_btree_iterator iterator(atire->get_search_engine());
@@ -451,6 +452,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			for (term = iterator.first(first_term); term != NULL && count < 10; term = iterator.next())
 				{
 				++count;
+				docid = -1;
 				iterator.get_postings_details(&leaf);
 				if (first_term != NULL && strncmp(first_term, term, strlen(first_term)) != 0)
 					break;
@@ -472,7 +474,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 							}
 						factory.decompress(raw, postings_list, leaf.impacted_length);
 						current = raw;
-						*current++;
+						tf = *current++;
 						docid += *current++;
 						*outchannel << term << ":" << docid << ANT_channel::endl;
 						}
