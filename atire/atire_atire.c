@@ -480,7 +480,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				}
 
 			outchannel->puts("</ATIREresult>");
-
+			outchannel->puts("\n");
 			delete postings_list;
 			delete raw;
 			delete [] command;
@@ -544,6 +544,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				outchannel->puts("<length>0</length>");
 				outchannel->puts("</ATIREgetdoc>");
 				}
+			outchannel->puts("\n");
 			delete [] command;
 			continue;
 			}
