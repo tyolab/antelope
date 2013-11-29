@@ -304,7 +304,7 @@ return connect_string == NULL ? NULL : strnew(connect_string);
 	ATIRE_API_REMOTE::SEND_COMMAND()
 	--------------------------------------
 */
-char *ATIRE_API_remote::send_command(char* command)
+char *ATIRE_API_remote::send_command(char *command)
 {
 std::stringstream buffer, result;
 char *got;

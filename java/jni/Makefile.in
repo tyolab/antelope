@@ -53,7 +53,8 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 target_triplet = @target@
-noinst_PROGRAMS = index_test$(EXEEXT) atire_test$(EXEEXT)
+noinst_PROGRAMS = index_test$(EXEEXT) atire_test$(EXEEXT) \
+	atire_command$(EXEEXT)
 subdir = java/jni
 DIST_COMMON = $(srcdir)/Makefile.am $(srcdir)/Makefile.in
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
@@ -99,6 +100,12 @@ libatire_jni_la_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
 	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(libatire_jni_la_CFLAGS) \
 	$(CFLAGS) $(libatire_jni_la_LDFLAGS) $(LDFLAGS) -o $@
 PROGRAMS = $(noinst_PROGRAMS)
+am_atire_command_OBJECTS = atire_command-atire_command.$(OBJEXT) \
+	atire_command-atire_api_remote.$(OBJEXT)
+atire_command_OBJECTS = $(am_atire_command_OBJECTS)
+atire_command_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
+	$(LIBTOOLFLAGS) --mode=link $(CCLD) $(atire_command_CFLAGS) \
+	$(CFLAGS) $(atire_command_LDFLAGS) $(LDFLAGS) -o $@
 am_atire_test_OBJECTS = atire_test-atire_test.$(OBJEXT)
 atire_test_OBJECTS = $(am_atire_test_OBJECTS)
 atire_test_LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) \
@@ -122,10 +129,10 @@ CCLD = $(CC)
 LINK = $(LIBTOOL) --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) \
 	--mode=link $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
-SOURCES = $(libatire_jni_la_SOURCES) $(atire_test_SOURCES) \
-	$(index_test_SOURCES)
-DIST_SOURCES = $(libatire_jni_la_SOURCES) $(atire_test_SOURCES) \
-	$(index_test_SOURCES)
+SOURCES = $(libatire_jni_la_SOURCES) $(atire_command_SOURCES) \
+	$(atire_test_SOURCES) $(index_test_SOURCES)
+DIST_SOURCES = $(libatire_jni_la_SOURCES) $(atire_command_SOURCES) \
+	$(atire_test_SOURCES) $(index_test_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -283,6 +290,13 @@ atire_test_CFLAGS = -I$(srcdir)/include
 atire_test_LDADD = -L. -latire_jni -L../../ -latire_core -latire_api
 atire_test_LDFLAGS = -static -export-dynamic
 atire_test_DEPENDENCIES = libatire_jni.la ../../libatire_core.la ../../libatire_api.la
+atire_command_SOURCES = test/atire_command.c \
+						$(top_srcdir)/atire/atire_api_remote.c
+
+atire_command_CFLAGS = -I$(srcdir)/include -DATIRE_JNI -I$(top_srcdir)/source
+atire_command_LDADD = -L. -latire_jni -L../../ -latire_core -latire_api
+atire_command_LDFLAGS = -static -export-dynamic
+atire_command_DEPENDENCIES = libatire_jni.la ../../libatire_core.la ../../libatire_api.la
 all: all-am
 
 .SUFFIXES:
@@ -360,6 +374,9 @@ clean-noinstPROGRAMS:
 	list=`for p in $$list; do echo "$$p"; done | sed 's/$(EXEEXT)$$//'`; \
 	echo " rm -f" $$list; \
 	rm -f $$list
+atire_command$(EXEEXT): $(atire_command_OBJECTS) $(atire_command_DEPENDENCIES) $(EXTRA_atire_command_DEPENDENCIES) 
+	@rm -f atire_command$(EXEEXT)
+	$(atire_command_LINK) $(atire_command_OBJECTS) $(atire_command_LDADD) $(LIBS)
 atire_test$(EXEEXT): $(atire_test_OBJECTS) $(atire_test_DEPENDENCIES) $(EXTRA_atire_test_DEPENDENCIES) 
 	@rm -f atire_test$(EXEEXT)
 	$(atire_test_LINK) $(atire_test_OBJECTS) $(atire_test_LDADD) $(LIBS)
@@ -373,6 +390,8 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atire_command-atire_api_remote.Po@am__quote@
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atire_command-atire_command.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atire_test-atire_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/index_test-index_test.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libatire_jni_la-atire.Plo@am__quote@
@@ -420,6 +439,34 @@ libatire_jni_la-index.lo: $(top_srcdir)/atire/index.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/atire/index.c' object='libatire_jni_la-index.lo' libtool=yes @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(LIBTOOL)  --tag=CC $(AM_LIBTOOLFLAGS) $(LIBTOOLFLAGS) --mode=compile $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libatire_jni_la_CFLAGS) $(CFLAGS) -c -o libatire_jni_la-index.lo `test -f '$(top_srcdir)/atire/index.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/index.c
+
+atire_command-atire_command.o: test/atire_command.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -MT atire_command-atire_command.o -MD -MP -MF $(DEPDIR)/atire_command-atire_command.Tpo -c -o atire_command-atire_command.o `test -f 'test/atire_command.c' || echo '$(srcdir)/'`test/atire_command.c
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/atire_command-atire_command.Tpo $(DEPDIR)/atire_command-atire_command.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='test/atire_command.c' object='atire_command-atire_command.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -c -o atire_command-atire_command.o `test -f 'test/atire_command.c' || echo '$(srcdir)/'`test/atire_command.c
+
+atire_command-atire_command.obj: test/atire_command.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -MT atire_command-atire_command.obj -MD -MP -MF $(DEPDIR)/atire_command-atire_command.Tpo -c -o atire_command-atire_command.obj `if test -f 'test/atire_command.c'; then $(CYGPATH_W) 'test/atire_command.c'; else $(CYGPATH_W) '$(srcdir)/test/atire_command.c'; fi`
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/atire_command-atire_command.Tpo $(DEPDIR)/atire_command-atire_command.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='test/atire_command.c' object='atire_command-atire_command.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -c -o atire_command-atire_command.obj `if test -f 'test/atire_command.c'; then $(CYGPATH_W) 'test/atire_command.c'; else $(CYGPATH_W) '$(srcdir)/test/atire_command.c'; fi`
+
+atire_command-atire_api_remote.o: $(top_srcdir)/atire/atire_api_remote.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -MT atire_command-atire_api_remote.o -MD -MP -MF $(DEPDIR)/atire_command-atire_api_remote.Tpo -c -o atire_command-atire_api_remote.o `test -f '$(top_srcdir)/atire/atire_api_remote.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/atire_api_remote.c
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/atire_command-atire_api_remote.Tpo $(DEPDIR)/atire_command-atire_api_remote.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/atire/atire_api_remote.c' object='atire_command-atire_api_remote.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -c -o atire_command-atire_api_remote.o `test -f '$(top_srcdir)/atire/atire_api_remote.c' || echo '$(srcdir)/'`$(top_srcdir)/atire/atire_api_remote.c
+
+atire_command-atire_api_remote.obj: $(top_srcdir)/atire/atire_api_remote.c
+@am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -MT atire_command-atire_api_remote.obj -MD -MP -MF $(DEPDIR)/atire_command-atire_api_remote.Tpo -c -o atire_command-atire_api_remote.obj `if test -f '$(top_srcdir)/atire/atire_api_remote.c'; then $(CYGPATH_W) '$(top_srcdir)/atire/atire_api_remote.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/atire/atire_api_remote.c'; fi`
+@am__fastdepCC_TRUE@	$(am__mv) $(DEPDIR)/atire_command-atire_api_remote.Tpo $(DEPDIR)/atire_command-atire_api_remote.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	source='$(top_srcdir)/atire/atire_api_remote.c' object='atire_command-atire_api_remote.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_command_CFLAGS) $(CFLAGS) -c -o atire_command-atire_api_remote.obj `if test -f '$(top_srcdir)/atire/atire_api_remote.c'; then $(CYGPATH_W) '$(top_srcdir)/atire/atire_api_remote.c'; else $(CYGPATH_W) '$(srcdir)/$(top_srcdir)/atire/atire_api_remote.c'; fi`
 
 atire_test-atire_test.o: test/atire_test.c
 @am__fastdepCC_TRUE@	$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(atire_test_CFLAGS) $(CFLAGS) -MT atire_test-atire_test.o -MD -MP -MF $(DEPDIR)/atire_test-atire_test.Tpo -c -o atire_test-atire_test.o `test -f 'test/atire_test.c' || echo '$(srcdir)/'`test/atire_test.c

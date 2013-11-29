@@ -19,7 +19,7 @@ libatire_jni_la_DEPENDENCIES = ../../libatire_api.la  ../../libatire_ant_param.l
 #  -L../../ -latire_index_param -L../../ -latire_index 
 libatire_jni_la_LIBADD =   ../../libatire_api.la ../../libatire_ant_param.la
 
-noinst_PROGRAMS = index_test atire_test
+noinst_PROGRAMS = index_test atire_test atire_command
 
 index_test_SOURCES = test/index_test.c
 index_test_CFLAGS = -I$(srcdir)/include
@@ -32,3 +32,10 @@ atire_test_CFLAGS = -I$(srcdir)/include
 atire_test_LDADD = -L. -latire_jni -L../../ -latire_core -latire_api
 atire_test_LDFLAGS = -static -export-dynamic
 atire_test_DEPENDENCIES = libatire_jni.la ../../libatire_core.la ../../libatire_api.la
+
+atire_command_SOURCES = test/atire_command.c \
+						$(top_srcdir)/atire/atire_api_remote.c
+atire_command_CFLAGS = -I$(srcdir)/include -DATIRE_JNI -I$(top_srcdir)/source
+atire_command_LDADD = -L. -latire_jni -L../../ -latire_core -latire_api
+atire_command_LDFLAGS = -static -export-dynamic
+atire_command_DEPENDENCIES = libatire_jni.la ../../libatire_core.la ../../libatire_api.la
