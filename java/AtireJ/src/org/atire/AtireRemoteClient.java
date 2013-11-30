@@ -76,8 +76,6 @@ public class AtireRemoteClient {
 	}
 
 	private void init() {
-	    System.loadLibrary(dylibName);
-		
 		hits = 0;
 		socket = new ATIRE_API_remote();
 		initializeSocket();
@@ -174,6 +172,7 @@ public class AtireRemoteClient {
 
 	public static void main(String[] args) {
 		AtireRemoteClient.dylibName = "atire_jni";
+	    System.loadLibrary(dylibName);
 		
 		AtireRemoteClient atire = new AtireRemoteClient();
 	     
