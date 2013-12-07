@@ -436,11 +436,11 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			long long max = 0;
 			long long global_trim;
 			unsigned char *postings_list = NULL;
-			ANT_compressable_integer *raw;
-			long long docid;
+			ANT_compressable_integer *raw = NULL;
+			long long docid = -1;
 			ANT_compressable_integer *current;
-			int count;
-			long long tf;
+			int count = 0;
+			long long tf = 0;
 
 			first_term = command + 10;
 			ANT_btree_iterator iterator(atire->get_search_engine());
@@ -448,7 +448,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			global_trim = atire->get_search_engine()->get_global_trim_postings_k();
 			postings_list = (unsigned char *)malloc((size_t)postings_list_size);
 			raw = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
-			outchannel->puts("<ATIREresult>");
+			*outchannel << "<ATIREresult>" << ANT_channel::endl;
 			for (term = iterator.first(first_term); term != NULL && count < 10; term = iterator.next())
 				{
 				++count;
@@ -481,8 +481,8 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 					}
 				}
 
-			outchannel->puts("</ATIREresult>");
-			outchannel->puts("\n");
+			*outchannel << "</ATIREresult>" << ANT_channel::endl;
+//			outchannel->puts("\n");
 			delete postings_list;
 			delete raw;
 			delete [] command;
@@ -546,7 +546,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				outchannel->puts("<length>0</length>");
 				outchannel->puts("</ATIREgetdoc>");
 				}
-			outchannel->puts("\n");
+//			outchannel->puts("\n");
 			delete [] command;
 			continue;
 			}

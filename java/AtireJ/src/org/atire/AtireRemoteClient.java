@@ -1,7 +1,9 @@
 package org.atire;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.net.ConnectException;
@@ -11,6 +13,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 
 import org.atire.swig.ATIRE_API_remote;
+import org.atire.swig.SWIGTYPE_p_long_long;
 
 import au.com.tyo.utils.ByteArrayKMP;
 
@@ -44,12 +47,14 @@ public class AtireRemoteClient {
 	
 	private static AtireRemoteClient instance;
 	
+	private boolean connected;
+	
 	public static class SearchResult {
 		String name;
 		
 		int rank;
 		
-		String id;
+		long id;
 		
 		double rsv;
 		
@@ -64,6 +69,7 @@ public class AtireRemoteClient {
 		port = DEFAULT_PORT;
 		serverAddress = DEFAULT_SERVER;
 		pageSize = DEFAULT_PAGE_SIZE;
+		connected = false;
 		
 		results = new HashMap<String, SearchResult>();
 		init();
@@ -82,7 +88,9 @@ public class AtireRemoteClient {
 	}
 	
 	public void initializeSocket() {
-		socket.open(serverAddress + ":" + port);
+		int result = socket.open(serverAddress + ":" + port);
+		if (result != 0)
+			connected = true;
 	}
 
 	public void close() {
@@ -133,6 +141,47 @@ public class AtireRemoteClient {
 		return socket.send_command(cmd);
 	}
 	
+	public ArrayList<String> listTitle(String query) {
+		ArrayList<String> list = new ArrayList<String>();
+		
+		if (!connected) {
+			this.initializeSocket();
+		}
+		
+		if (connected) {
+			String result = socket.send_command(".listterm " + "TF:" + query);
+			
+			if (result != null && result.length() > 0) {
+				InputStream is = new ByteArrayInputStream(result.getBytes());
+				 
+				BufferedReader br = new BufferedReader(new InputStreamReader(is));
+			 
+				String line;
+				int count = 0;
+				try {
+					while ((line = br.readLine()) != null && line.length() > 3) {
+						String[] tokens = line.substring(3).split(":");
+						if (tokens != null && tokens.length > 1) {
+							list.add(tokens[0]);
+							
+							SearchResult search = new SearchResult();
+							search.name = tokens[0];
+							search.id = Long.parseLong(tokens[1]);
+							search.rank = ++count;
+							
+							results.put(tokens[0], search);
+						}
+					}
+					
+					br.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return list;	
+	}
+	
 	public ArrayList<String> search(String query) throws ConnectException {
 		ArrayList<String> list = new ArrayList<String>();
 		long hits;
@@ -159,7 +208,7 @@ public class AtireRemoteClient {
     		SearchResult result = new SearchResult();
     		index = kmpSearch.search(buffer, index);
     		result.rank = Integer.parseInt(between("<rank>", "</rank>", index));
-    		result.id = between("<id>", "</id>", index);
+    		result.id = Long.parseLong(between("<id>", "</id>", index));
     		result.name = between("<name>", "</name>", index);
     		result.rsv = Double.parseDouble(between("<rsv>", "</rsv>", index));
     		
@@ -240,5 +289,14 @@ public class AtireRemoteClient {
 	    		System.out.println(results.get(i));
 	    	System.out.println("");
 	    }
+	}
+
+	public String getDocumentAbstract(String id) {
+		long docid = Long.parseLong(id);
+		SWIGTYPE_p_long_long length = new SWIGTYPE_p_long_long();
+		String result = socket.get_document(docid, length);
+		
+		
+		return result;
 	}
 }
