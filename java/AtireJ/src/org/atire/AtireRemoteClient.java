@@ -6,6 +6,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
+import java.math.BigInteger;
 import java.net.ConnectException;
 import java.net.SocketException;
 import java.util.ArrayList;
@@ -291,12 +292,13 @@ public class AtireRemoteClient {
 	    }
 	}
 
-	public String getDocumentAbstract(String id) {
-		long docid = Long.parseLong(id);
-		SWIGTYPE_p_long_long length = new SWIGTYPE_p_long_long();
-		String result = socket.get_document(docid, length);
-		
-		
+	public String getDocumentAbstract(String name) {
+		SearchResult search = results.get(name);
+		String result  = null;
+		if (search != null) {
+			SWIGTYPE_p_long_long length =  null;
+			result = socket.get_document(search.id, length);
+		}
 		return result;
 	}
 }

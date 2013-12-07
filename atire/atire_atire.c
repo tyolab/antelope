@@ -439,9 +439,10 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			ANT_compressable_integer *raw = NULL;
 			long long docid = -1;
 			ANT_compressable_integer *current;
-			int count = 0;
+			int count ;
 			long long tf = 0;
 
+			count = 0;
 			first_term = command + 10;
 			ANT_btree_iterator iterator(atire->get_search_engine());
 			ANT_search_engine_btree_leaf leaf;

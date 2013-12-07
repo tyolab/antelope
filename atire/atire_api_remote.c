@@ -244,7 +244,8 @@ std::stringstream buffer;
 char *got, *result;
 long size;
 
-*length = 0;
+if (length != NULL)
+	*length = 0;
 /*
 	Send the request
 */
@@ -282,7 +283,8 @@ else
 	delete [] got;				// </ATIREgetdoc>
 	}
 
-*length = size;
+if (length != NULL)
+	*length = size;
 #ifdef ATIRE_JNI
 strcpy(result_buffer, result);
 return result_buffer;
