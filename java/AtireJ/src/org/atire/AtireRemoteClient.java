@@ -219,6 +219,29 @@ public class AtireRemoteClient {
 
 		return list;	
 	}
+	
+	public String getDocumentAbstract(String name) {
+		SearchResult search = results.get(name);
+		String abs  = null;
+		if (search != null) {
+			SWIGTYPE_p_long_long length =  null;
+			String result = socket.get_document(search.id, length);
+			
+			byte[] bytes = result.getBytes();
+			
+			ByteArrayKMP kmp1 = new ByteArrayKMP("<abstract>".getBytes());
+			ByteArrayKMP kmp2 = new ByteArrayKMP("</abstract>".getBytes());
+			
+			int start = -1, end = -1;
+			
+			start = kmp1.search(bytes);
+			end = kmp2.search(bytes);
+			
+			if (start > -1 && end > -1 && end > start) 
+				abs = result.substring(start + 10, end);
+		}
+		return abs;
+	}
 
 	public static void main(String[] args) {
 		AtireRemoteClient.dylibName = "atire_jni";
@@ -290,15 +313,5 @@ public class AtireRemoteClient {
 	    		System.out.println(results.get(i));
 	    	System.out.println("");
 	    }
-	}
-
-	public String getDocumentAbstract(String name) {
-		SearchResult search = results.get(name);
-		String result  = null;
-		if (search != null) {
-			SWIGTYPE_p_long_long length =  null;
-			result = socket.get_document(search.id, length);
-		}
-		return result;
 	}
 }
