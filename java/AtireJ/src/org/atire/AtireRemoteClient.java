@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
-import java.math.BigInteger;
 import java.net.ConnectException;
 import java.net.SocketException;
 import java.util.ArrayList;
@@ -36,7 +35,7 @@ public class AtireRemoteClient {
 	
 	private HashMap<String, SearchResult> results;
 	
-	private int hits;
+	private long hits;
 	
 	private ByteArrayKMP kmpSearch;
 	
@@ -149,6 +148,8 @@ public class AtireRemoteClient {
 			this.initializeSocket();
 		}
 		
+		results.clear();
+		
 		if (connected) {
 			String result = socket.send_command(".listterm " + "TF:" + query);
 			
@@ -167,7 +168,12 @@ public class AtireRemoteClient {
 							
 							SearchResult search = new SearchResult();
 							search.name = tokens[0];
-							search.id = Long.parseLong(tokens[1]);
+							try {
+								search.id = Long.parseLong(tokens[tokens.length - 1]);
+							}
+							catch (Exception ex) {
+								search.id = -1;
+							}
 							search.rank = ++count;
 							
 							results.put(tokens[0], search);
@@ -180,42 +186,54 @@ public class AtireRemoteClient {
 				}
 			}
 		}
-		return list;	
+		if (list.size() == 0)
+			try {
+				return search(query);
+			} catch (ConnectException e) {
+				return list;
+			}
+		return list;
 	}
 	
 	public ArrayList<String> search(String query) throws ConnectException {
 		ArrayList<String> list = new ArrayList<String>();
-		long hits;
+		
+		if (!connected) {
+			this.initializeSocket();
+		}
 		
 		results.clear();
 		
+		if (connected) {
+		
 //			out.writeBytes(query + "\n");
+				
+			String line = socket.search(query, 1, 10);
 			
-		String line = socket.search(query, 1, 10);
-		
-    	System.err.println("rvsc:" + line);
-		
-//			while ((line = in.readLine()) != null) {
-    	
-    	buffer = line.getBytes();
-		
-    	hits = Long.parseLong(between("<numhits>", "</numhits>"));
-
-    	index = 0;
-    	int current = index;
-    	long upBound = Math.min(pageSize, hits);
-    	for (current = 0; current < pageSize; current++)  {
-    		kmpSearch.setPattern("<hit>".getBytes());
-    		SearchResult result = new SearchResult();
-    		index = kmpSearch.search(buffer, index);
-    		result.rank = Integer.parseInt(between("<rank>", "</rank>", index));
-    		result.id = Long.parseLong(between("<id>", "</id>", index));
-    		result.name = between("<name>", "</name>", index);
-    		result.rsv = Double.parseDouble(between("<rsv>", "</rsv>", index));
-    		
-    		results.put(result.name, result);
-    		list.add(result.name);
-    	}
+	    	System.err.println("rvsc:" + line);
+			
+	//			while ((line = in.readLine()) != null) {
+	    	
+	    	buffer = line.getBytes();
+			
+	    	hits = Long.parseLong(between("<numhits>", "</numhits>"));
+	
+	    	index = 0;
+	    	int current = index;
+	    	long upBound = Math.min(pageSize, hits);
+	    	for (current = 0; current < pageSize; current++)  {
+	    		kmpSearch.setPattern("<hit>".getBytes());
+	    		SearchResult result = new SearchResult();
+	    		index = kmpSearch.search(buffer, index);
+	    		result.rank = Integer.parseInt(between("<rank>", "</rank>", index));
+	    		result.id = Long.parseLong(between("<id>", "</id>", index));
+	    		result.name = between("<name>", "</name>", index);
+	    		result.rsv = Double.parseDouble(between("<rsv>", "</rsv>", index));
+	    		
+	    		results.put(result.name, result);
+	    		list.add(result.name);
+	    	}
+		}
 
 		return list;	
 	}
@@ -223,7 +241,7 @@ public class AtireRemoteClient {
 	public String getDocumentAbstract(String name) {
 		SearchResult search = results.get(name);
 		String abs  = null;
-		if (search != null) {
+		if (search != null && search .id > -1) {
 			SWIGTYPE_p_long_long length =  null;
 			String result = socket.get_document(search.id, length);
 			
@@ -237,8 +255,14 @@ public class AtireRemoteClient {
 			start = kmp1.search(bytes);
 			end = kmp2.search(bytes);
 			
-			if (start > -1 && end > -1 && end > start) 
-				abs = result.substring(start + 10, end);
+			if (start > -1 && end > -1 && end > start) {
+				byte[] absBytes = Arrays.copyOfRange(bytes, start + 10, end);
+				try {
+					abs = new String(absBytes, "UTF-8");
+				} catch (UnsupportedEncodingException e) {
+					abs = new String(absBytes);
+				}
+			}
 		}
 		return abs;
 	}

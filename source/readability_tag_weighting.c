@@ -13,6 +13,9 @@
 	#define TRUE (!FALSE)
 #endif
 
+/*
+ * to add special term into vocab, it can't contain upper case letter, because it is for tag
+ */
 char *ANT_readability_TAG_WEIGHTING::special_tags[] = {"CATEGORY", "TITLE"};
 
 /*
@@ -67,7 +70,7 @@ if (tag_open)
 			{
 			matching_tag = special_tags[i];
 			where = i;
-			prefix_char = ANT_toupper(matching_tag[0]);
+			prefix_char = ANT_tolower(matching_tag[0]);
 			tag_processing_on = TRUE;
 			should_segment = parser->get_segment_info();
 			parser->set_segment_info(0);
@@ -161,7 +164,7 @@ if (term_count > 1)
    we will put "TF:bill clinton" into dictionary
  */
 
-info_buf[1] = 'F';
+info_buf[1] = 'f';
 info_buf[2] = ':';
 
 info_buf_start = info_buf + 3;
