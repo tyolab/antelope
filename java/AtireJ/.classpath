@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-	<classpathentry kind="src" path="src" />
-	<classpathentry exported="true" kind="src" path="/atire_jni" />
-	<classpathentry kind="con"
-		path="org.eclipse.jdt.launching.JRE_CONTAINER" />
-	<classpathentry kind="src" path="/CommonUtils" />
-	<classpathentry kind="output" path="bin" />
+	<classpathentry kind="src" path="src"/>
+	<classpathentry exported="true" kind="src" path="/atire_jni"/>
+	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="src" path="/CommonUtils"/>
+	<classpathentry kind="src" path="/Chinese"/>
+	<classpathentry kind="output" path="bin"/>
 </classpath>

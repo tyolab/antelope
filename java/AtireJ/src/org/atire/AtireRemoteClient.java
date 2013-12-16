@@ -15,6 +15,8 @@ import java.util.HashMap;
 import org.atire.swig.ATIRE_API_remote;
 import org.atire.swig.SWIGTYPE_p_long_long;
 
+import au.com.tyo.lang.chinese.ChineseUtils;
+import au.com.tyo.lang.chinese.ZHConverter;
 import au.com.tyo.utils.ByteArrayKMP;
 
 public class AtireRemoteClient {
@@ -49,6 +51,10 @@ public class AtireRemoteClient {
 	
 	private boolean connected;
 	
+	private boolean needsConvertChinese;
+	
+	private String preQuery;
+	
 	public static class SearchResult {
 		String name;
 		
@@ -82,9 +88,10 @@ public class AtireRemoteClient {
 	}
 
 	private void init() {
+		this.needsConvertChinese = false;
 		hits = 0;
 		socket = new ATIRE_API_remote();
-		initializeSocket();
+//		initializeSocket();
 	}
 	
 	public void initializeSocket() {
@@ -101,6 +108,14 @@ public class AtireRemoteClient {
 		socket.delete();
 	}
 	
+	public boolean isNeedsConvertChinese() {
+		return needsConvertChinese;
+	}
+
+	public void setNeedsConvertChinese(boolean needsConvertChinese) {
+		this.needsConvertChinese = needsConvertChinese;
+	}
+
 	private String between(String open_tag, String close_tag) {
 		return between(open_tag, close_tag, 0);
 	}
@@ -144,6 +159,10 @@ public class AtireRemoteClient {
 	public ArrayList<String> listTitle(String query) {
 		ArrayList<String> list = new ArrayList<String>();
 		
+		String newQuery = query;
+		if (this.needsConvertChinese)
+			newQuery = ZHConverter.getInstance(ZHConverter.TRADITIONAL).convert(query);
+		
 		if (!connected) {
 			this.initializeSocket();
 		}
@@ -151,7 +170,7 @@ public class AtireRemoteClient {
 		results.clear();
 		
 		if (connected) {
-			String result = socket.send_command(".listterm " + "TF:" + query);
+			String result = socket.send_command(".listterm " + "tf:" + newQuery);
 			
 			if (result != null && result.length() > 0) {
 				InputStream is = new ByteArrayInputStream(result.getBytes());
@@ -192,6 +211,8 @@ public class AtireRemoteClient {
 			} catch (ConnectException e) {
 				return list;
 			}
+		
+		preQuery = query;
 		return list;
 	}
 	
@@ -207,8 +228,8 @@ public class AtireRemoteClient {
 		if (connected) {
 		
 //			out.writeBytes(query + "\n");
-				
-			String line = socket.search(query, 1, 10);
+			String queryTerms = buildSearchQueries(query);
+			String line = socket.search(queryTerms, 1, 10);
 			
 	    	System.err.println("rvsc:" + line);
 			
@@ -235,33 +256,75 @@ public class AtireRemoteClient {
 	    	}
 		}
 
+		preQuery = query;
 		return list;	
 	}
 	
+	private String buildSearchQueries(String query) {
+		StringBuffer buffer = new StringBuffer();
+		String[] tokens = query.split("\\s");
+		if (tokens != null)
+			for (int i = 0; i < tokens.length; ++i) {
+				String term = tokens[i];
+
+				ArrayList<String> list = ChineseUtils.charToList(term);
+				if (list.size() > 0) {
+					for (int j = 0; j < list.size(); ++j) {
+						buffer.append("t:" + list.get(j) + " ");
+						buffer.append(list.get(j) + " ");
+					}
+				}
+			}
+		else {
+			buffer.append("tf:" + query + " ");
+			buffer.append(query);
+		}
+		return buffer.toString();
+	}
+	
+	public long getDocumentId(String name) {
+		SearchResult search = results.get(name);
+		if (search != null && search.id > -1) 
+			return search.id;
+		return -1;
+	}
+
 	public String getDocumentAbstract(String name) {
 		SearchResult search = results.get(name);
-		String abs  = null;
-		if (search != null && search .id > -1) {
-			SWIGTYPE_p_long_long length =  null;
-			String result = socket.get_document(search.id, length);
-			
-			byte[] bytes = result.getBytes();
-			
-			ByteArrayKMP kmp1 = new ByteArrayKMP("<abstract>".getBytes());
-			ByteArrayKMP kmp2 = new ByteArrayKMP("</abstract>".getBytes());
-			
-			int start = -1, end = -1;
-			
-			start = kmp1.search(bytes);
-			end = kmp2.search(bytes);
-			
-			if (start > -1 && end > -1 && end > start) {
-				byte[] absBytes = Arrays.copyOfRange(bytes, start + 10, end);
-				try {
-					abs = new String(absBytes, "UTF-8");
-				} catch (UnsupportedEncodingException e) {
-					abs = new String(absBytes);
-				}
+		if (search != null && search.id > -1) 
+			return getDocumentAbstractById(search.id);
+		return "";
+	}
+	
+	public String getDocument(long id) {
+		if (id < 0)
+			return "";
+		SWIGTYPE_p_long_long length =  null;
+		return socket.get_document(id, length);
+	}
+	
+	public String getDocumentAbstractById(long id) {
+
+		String abs  = "";
+
+		String result = getDocument(id);
+		
+		byte[] bytes = result.getBytes();
+		
+		ByteArrayKMP kmp1 = new ByteArrayKMP("<ABSTRACT>".getBytes());
+		ByteArrayKMP kmp2 = new ByteArrayKMP("</ABSTRACT>".getBytes());
+		
+		int start = -1, end = -1;
+		
+		start = kmp1.search(bytes);
+		end = kmp2.search(bytes);
+		
+		if (start > -1 && end > -1 && end > start) {
+			byte[] absBytes = Arrays.copyOfRange(bytes, start + 10, end);
+			try {
+				abs = new String(absBytes, "UTF-8");
+			} catch (UnsupportedEncodingException e) {
+				abs = new String(absBytes);
 			}
 		}
 		return abs;
