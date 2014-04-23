@@ -987,7 +987,7 @@ return end;
 */
 void ANT_memory_index::open_index_file(char *filename)
 {
-char file_header[] = "ATIRE Search Engine Index File\n\0\0";
+char file_header[] = "@@$$\n\0\0";
 
 if (index_file == NULL && filename != NULL)
 	{
