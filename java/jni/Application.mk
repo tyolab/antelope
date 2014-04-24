@@ -1,8 +1,8 @@
-APP_OPTIM := release
-#APP_OPTIM := debug
-APP_CFLAGS := 
-#APP_CFLAGS := -DDEBUG -g
-APP_CPPFLAGS += -frtti # -fexceptions
+#APP_OPTIM := release
+APP_OPTIM := debug
+#APP_CFLAGS := 
+APP_CFLAGS := -DDEBUG -g
+APP_CPPFLAGS += -frtti -fexceptions
 
 ifeq ($(NO_NEON),)
 APP_ABI := armeabi-v7a

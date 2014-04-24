@@ -48,12 +48,15 @@ delete [] terms;
 */
 void ANT_readability_TAG_WEIGHTING::clean_up()
 {
-for (int i = 0; i < term_count; ++i)
-		delete terms[i];
+if (term_count > 0)
+	{
+	for (int i = 0; i < term_count; ++i)
+			delete terms[i];
+	term_count = 0;
+	}
 tag_processing_on = FALSE;
 where = -1;
 matching_tag = NULL;
-term_count = 0;
 }
 
 
@@ -97,13 +100,16 @@ char *term, *start;
 if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 	{
 	/*
-	 	Wikipedia abstract file dump give title in such a way "wikipedia : XXXXX"
-		unicode colon ':' = "\357\274\232" in OCT
+	 	Wikipedia abstract file dump give title in such a way "wikipedia : XXXXX", term count is 1 when encounter the colon;
+		for for Chinese, the unicode colon ':' = "\357\274\232" in OCT, and the term count for word Wikipedia is 4.
 	 */
-	if (term_count == 1 && (strncmp(token->start, "\357\274\232", token->string_length) == 0 || strncmp(token->start, ":", token->string_length) == 0)
-			&& strcmp(wiki_prefix, terms[0]) == 0)
+	if ((term_count == 1 && strncmp(token->start, ":", token->string_length) == 0)
+			|| (term_count == 4 && strncmp(token->start, "\357\274\232", token->string_length) == 0)
+			/*&& strcmp(wiki_prefix, terms[0]) == 0*/)
 		{
-			delete terms[0];
+			while (term_count > 0)
+				delete terms[--term_count];
+
 			term_count = 0;
 			return;
 		}
