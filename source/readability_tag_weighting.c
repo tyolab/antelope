@@ -4,7 +4,6 @@
  */
 
 #include "readability_tag_weighting.h"
-#include "ctypes.h"
 #include "unicode.h"
 
 #ifndef FALSE

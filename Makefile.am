@@ -1,7 +1,7 @@
 #AUTOMAKE_OPTIONS = foreign
 #SUBDIRS = plugins
 
-#ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4
 
 ###############################################################################
 # source files and compile commands

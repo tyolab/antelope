@@ -3,6 +3,7 @@
 
 AC_PREREQ([2.63])
 AC_INIT([Atire], [0.3], [BUG-REPORT-ADDRESS])
+
 AC_CONFIG_SRCDIR([atire/atire.c])
 #AC_CONFIG_HEADERS([config.h])
 #AC_CONFIG_MACRO_DIR([m4])
@@ -10,7 +11,7 @@ AC_CONFIG_SRCDIR([atire/atire.c])
 dnl for target_os
 AC_CANONICAL_SYSTEM
 
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([subdir-objects])
 AC_PROG_LIBTOOL
 
 # Checks for programs.
@@ -21,6 +22,8 @@ AM_PROG_CC_C_O
 
 # Check for macros
 AC_FUNC_MALLOC
+
+AC_CONFIG_MACRO_DIR([m4])
 
 AC_ARG_WITH([pi],
             AC_HELP_STRING([--with-pi],
