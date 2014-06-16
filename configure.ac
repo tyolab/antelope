@@ -11,7 +11,7 @@ AC_CONFIG_SRCDIR([atire/atire.c])
 dnl for target_os
 AC_CANONICAL_SYSTEM
 
-AM_INIT_AUTOMAKE([subdir-objects])
+AM_INIT_AUTOMAKE
 AC_PROG_LIBTOOL
 
 # Checks for programs.

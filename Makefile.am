@@ -644,16 +644,16 @@ libatire_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 
 # this lists the binaries to produce, the (non-PHONY, binary) targets in
 # the previous manual Makefile
-bin_PROGRAMS = index atire atire_client atire_broker atire_dictionary get_doclist
+bin_PROGRAMS = index atire_atire atire_client atire_broker atire_dictionary get_doclist
 
-atire_SOURCES = \
+atire_atire_SOURCES = \
 	$(ATIRE_DIR)/atire_atire.c 
 #	$(ATIRE_DIR)/indexer_param_block_rank.c \
 #	$(ATIRE_DIR)/ant_param_block.c
-atire_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
+atire_atire_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
 #atire_LDFLAGS = -rdynamic
-atire_LDFLAGS = -static -export-dynamic
-atire_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
+atire_atire_LDFLAGS = -static -export-dynamic
+atire_atire_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 
 #atire_atire_SOURCES = \
 #	$(ATIRE_DIR)/atire_ant.c \
