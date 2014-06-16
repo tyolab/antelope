@@ -4,6 +4,7 @@
  */
 
 #include "readability_tag_weighting.h"
+#include "ctypes.h"
 #include "unicode.h"
 
 #ifndef FALSE
@@ -185,7 +186,7 @@ what.string_length = length + 3;
 
 for (i = 1; i < term_count; ++i)
 	{
-	if (!ischinese(terms[i]))
+	if (!ischinese(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
 		{
 		*info_buf_start++ = ' ';
 		what.string_length++;
