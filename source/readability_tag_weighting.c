@@ -183,13 +183,16 @@ info_buf_start += length;
 what.start = info_buf;
 what.string_length = length + 3;
 
+int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
+
 for (i = 1; i < term_count; ++i)
 	{
-	if (!ischinese(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
+	if (!is_first_term_punct && !ischinese(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
 		{
 		*info_buf_start++ = ' ';
 		what.string_length++;
 		}
+        is_first_term_punct = ANT_ispunct(terms[i][0]) || utf8_ispuntuation(terms[i]);
 	length = strlen(terms[i]);
 	memcpy(info_buf_start, terms[i], length);
 	info_buf_start += length;
