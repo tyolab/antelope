@@ -192,7 +192,7 @@ for (i = 1; i < term_count; ++i)
 		*info_buf_start++ = ' ';
 		what.string_length++;
 		}
-        is_first_term_punct = ANT_ispunct(terms[i][0]) || utf8_ispuntuation(terms[i]);
+    is_first_term_punct = ANT_ispunct(terms[i][0]) || utf8_ispuntuation(terms[i]);
 	length = strlen(terms[i]);
 	memcpy(info_buf_start, terms[i], length);
 	info_buf_start += length;
