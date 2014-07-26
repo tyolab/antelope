@@ -177,8 +177,8 @@ void ANT_directory_iterator_file_buffered::free_tag()
 {
 for (int i = 0; i < 2; ++i)
 	{
-	delete doc_tag[i];
-	delete docno_tag[i];
+	delete [] doc_tag[i];
+	delete [] docno_tag[i];
 	}
 }
 
