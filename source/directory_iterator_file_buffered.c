@@ -42,8 +42,8 @@ ANT_directory_iterator_file_buffered::~ANT_directory_iterator_file_buffered()
 {
 delete [] read_buffer;
 free_tag();
-delete [] *doc_tag;
-delete [] *docno_tag;
+delete [] doc_tag;
+delete [] docno_tag;
 }
 
 /*
