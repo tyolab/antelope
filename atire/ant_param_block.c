@@ -695,8 +695,14 @@ for (param = 1; param < argc; param++)
 			if (quantization_bits > 16)
 				exit(printf("Cannot quantize using more than 16 bits"));
 			}
-		else if (strcmp(command, "findex") == 0)
+		else if (strncmp(command, "findex", 6) == 0)
 			{
+			if (strlen(command) > 7)
+				{
+				command += 7;
+				header_offset = atol(command);
+				}
+
 			delete [] index_filename;
 			index_filename = strnew(argv[++param]);
 			}

@@ -8,7 +8,7 @@ then
 	mkdir -p src/org/atire/swig/
 fi
 
-\rm src/org/atire/swig/*
+\rm -f src/org/atire/swig/*
 mv *.java src/org/atire/swig/
 
 for i in `ls *.cxx`

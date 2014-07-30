@@ -799,9 +799,9 @@ if (params.logo)
 	puts(atire->version());				// print the version string is we parsed the parameters OK
 
 if (params.ranking_function == ANT_ANT_param_block::READABLE)
-	fail = atire->open(ANT_ANT_param_block::READABLE | params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits);
+	fail = atire->open(ANT_ANT_param_block::READABLE | params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits, params.header_offset);
 else
-	fail = atire->open(params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits);
+	fail = atire->open(params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits, params.header_offset);
 
 if (params.inversion_type == ANT_indexer_param_block_topsig::TOPSIG)
 	atire->load_topsig(params.topsig_width, params.topsig_density, params.topsig_global_stats);

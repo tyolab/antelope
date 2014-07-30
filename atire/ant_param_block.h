@@ -92,6 +92,8 @@ public:
 	long processing_strategy;			// term-at-a-time or quantum-at-a-time
 	uint8_t quantum_stopping;           // the early termination strategy for quantum-at-a-time
 
+	unsigned long header_offset;					// for looking for the actual position of header
+
 private:
 	void export_format(char *forum);
 	void set_stats(char *which);

@@ -261,7 +261,7 @@ return id_list;
 	ATIRE_API::OPEN()
 	-----------------
 */
-long ATIRE_API::open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits)
+long ATIRE_API::open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits, unsigned long header_offset )
 {
 ANT_search_engine_readability *readable_search_engine;
 
@@ -287,7 +287,7 @@ if (type & READABILITY_SEARCH_ENGINE)
 else
 	{
 	search_engine = new ANT_search_engine(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
-	if (search_engine->open(index_filename) == 0)
+	if (search_engine->open(index_filename, header_offset ) == 0)
 		return 1; //fail
 
 	/*

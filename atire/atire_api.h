@@ -153,7 +153,7 @@ public:
 		Load all the necessary stuff for the search engine to start up
 		This assumes we are in same directory as the index
 	*/
-	long open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits);		// see the enum above for possible types (ORed together)
+	long open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits, unsigned long header_offset = 0);		// see the enum above for possible types (ORed together)
 
 	ANT_search_engine *get_search_engine(void) { return search_engine; }
 
