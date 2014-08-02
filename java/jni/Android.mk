@@ -248,13 +248,13 @@ INDEX_SOURCES =	$(ATIRE_DIR)/index.c \
 			 
 JNI_SOURCES = ./atire_wrap.c
 
-LOCAL_MODULE    := atire_android_jni
+LOCAL_MODULE    := search4m_android_jni
 LOCAL_SRC_FILES := \
 			$(JNI_SOURCES) \
 			$(API_SOURCES) \
 			$(INDEX_SOURCES)
 			
-LOCAL_STATIC_LIBRARIES := atire_android
+LOCAL_STATIC_LIBRARIES := search4m_android
 
 LOCAL_LDLIBS += -llog -lz
 
