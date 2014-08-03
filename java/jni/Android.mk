@@ -209,7 +209,7 @@ CORE_SOURCES =  \
 
 OTHER_SOURCES := glob.c
 
-LOCAL_MODULE    := atire_android
+LOCAL_MODULE    := search4m_android
 
 LOCAL_SRC_FILES := $(OTHER_SOURCES) \
 				$(CORE_SOURCES) 
