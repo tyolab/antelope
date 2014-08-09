@@ -5,6 +5,7 @@
 
 #include "readability_tag_weighting.h"
 #include "unicode.h"
+#include "directory_iterator_object.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -126,7 +127,7 @@ if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 	ANT_READABILITY_DALE_CHALL::INDEX()
 	-----------------------------------
 */
-void ANT_readability_TAG_WEIGHTING::index(ANT_memory_indexer *indexer, long long doc)
+void ANT_readability_TAG_WEIGHTING::index(ANT_memory_indexer *indexer, long long doc, ANT_directory_iterator_object *current_file)
 {
 if (term_count == 0)
 	return;
@@ -183,6 +184,17 @@ info_buf_start += length;
 what.start = info_buf;
 what.string_length = length + 3;
 
+std::string title(current_file->filename);
+unscape_xml(title);
+
+length = title.length();
+memcpy(info_buf_start, title.c_str(), length);
+info_buf_start += length;
+*info_buf_start = '\0';
+what.string_length += length;
+
+/* the following solution doesn't work well. we have to have the exact title as it is */
+/*
 int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
 
 for (i = 1; i < term_count; ++i)
@@ -199,8 +211,28 @@ for (i = 1; i < term_count; ++i)
 	*info_buf_start = '\0';
 	what.string_length += length;
 	}
+*/
 
-indexer->add_term(&what, doc, 10); // avoid being culled of optimization
+indexer->add_term(&what, doc, 100); // avoid being culled of optimization
 
 clean_up();
 }
+
+/*
+	ANT_READABILITY_DALE_CHALL::UNSCAPE_XML()
+	-----------------------------------
+*/
+void ANT_readability_TAG_WEIGHTING::unscape_xml(std::string source)
+{
+	static const char *entities[] = {"&quot;", "&lt;", "&gt;", "&apos;", "&amp;" };
+	static const char *to_chars[] = {"\"", "<", ">", "'", "&" };
+	static const std::size_t num = sizeof(entities)/sizeof(entities[0]);
+
+	std::size_t j = 0;
+	for (std::size_t i = 0; i < num; ++i)
+		for (;(j = source.find(entities[i], j)) != std::string::npos;)
+			{
+			source.replace(j, strlen(entities[i]), to_chars[i]);
+			}
+}
+

@@ -7,6 +7,7 @@
 #include "readability_none.h"
 #include "readability_dale_chall.h"
 #include "readability_tag_weighting.h"
+#include "directory_iterator_object.h"
 
 /*
 	ANT_READABILITY_FACTORY::ANT_READABILITY_FACTORY()
@@ -129,6 +130,15 @@ measures_to_use = what_measure;
 }
 
 /*
+	READABILITY_FACTORY::SET_CURRENT_FILE()
+	----------------------------------
+*/
+void ANT_readability_factory::set_current_file(	ANT_directory_iterator_object* object)
+{
+current_file = object;
+}
+
+/*
 	READABILITY_FACTORY::HANDLE_NODE()
 	----------------------------------
 */
@@ -167,5 +177,5 @@ if (measures_to_use == 0)
 
 for (which = 0; which < number_of_measures; which++)
 	if ((which & measures_to_use) != 0)
-		measure[which]->index(index, doc);
+		measure[which]->index(index, doc, current_file);
 }
