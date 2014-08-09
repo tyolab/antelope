@@ -177,10 +177,6 @@ info_buf[2] = ':';
 info_buf_start = info_buf + 3;
 *info_buf_start = '\0';
 
-length = strlen(terms[0]);
-memcpy(info_buf_start, terms[0], length);
-info_buf_start += length;
-*info_buf_start = '\0';
 what.start = info_buf;
 what.string_length = length + 3;
 
@@ -195,6 +191,12 @@ what.string_length += length;
 
 /* the following solution doesn't work well. we have to have the exact title as it is */
 /*
+
+length = strlen(terms[0]);
+memcpy(info_buf_start, terms[0], length);
+info_buf_start += length;
+*info_buf_start = '\0';
+
 int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
 
 for (i = 1; i < term_count; ++i)
