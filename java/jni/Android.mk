@@ -207,7 +207,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/unicode_tables.c \
 	$(SRC_DIR)/version.c 
 
-OTHER_SOURCES := glob.c
+OTHER_SOURCES := glob.c atire_helper.c
 
 LOCAL_MODULE    := search4m_android
 

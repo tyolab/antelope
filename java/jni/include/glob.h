@@ -40,6 +40,26 @@
 #include <sys/_types.h>
 #include <unistd.h>
 
+/* We need `size_t' for the following definitions.  */
+#ifndef __size_t
+# if defined __GNUC__ && __GNUC__ >= 2
+typedef __SIZE_TYPE__ __size_t;
+#  ifdef __USE_XOPEN
+typedef __SIZE_TYPE__ size_t;
+#  endif
+# else
+#  include <stddef.h>
+#  ifndef __size_t
+#   define __size_t size_t
+#  endif
+# endif
+#else
+/* The GNU CC stddef.h version defines __size_t as empty.  We need a real
+   definition.  */
+# undef __size_t
+# define __size_t size_t
+#endif
+
 #ifndef	_SIZE_T_DECLARED
 typedef	__size_t	size_t;
 #define	_SIZE_T_DECLARED

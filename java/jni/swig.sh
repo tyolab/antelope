@@ -14,5 +14,5 @@ mv *.java src/org/atire/swig/
 for i in `ls *.cxx`
 do
 	name=`echo $i | cut -f 1 -d "."`
-	cp $i $name.c
+	#cp $i $name.c
 done

@@ -79,6 +79,11 @@ public:
 		Send command to ATIRE, and return results if any
 	*/
 	virtual char *send_command(char *command);
+
+	/*
+	 	 Exit the program if the search engine run on the same process
+	 */
+	void exit();
 } ;
 
 #endif /* ATIRE_API_REMOTE_H_ */

@@ -8,8 +8,8 @@
 #ifndef ATIRE_H_
 #define ATIRE_H_
 
-
 extern int run_atire(char *options);
 
+extern void exit_atire();
 
 #endif /* ATIRE_H_ */

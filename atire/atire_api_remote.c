@@ -4,6 +4,7 @@
 */
 #include <stdio.h>
 #include <stdlib.h>
+ #include <unistd.h>
 #include <cstdlib>
 #include <sstream>
 #include "ctypes.h"
@@ -335,4 +336,13 @@ return result_buffer;
 #else
 return strnew(result.str().c_str());
 #endif
+}
+
+/*
+	ATIRE_API_REMOTE::EXIT()
+	--------------------------------------
+*/
+void ATIRE_API_remote::exit()
+{
+	::exit(0);
 }
