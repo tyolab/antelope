@@ -162,7 +162,7 @@ if (term_count > 1)
 		start += length;
 		*start = '\0';
 		what.string_length = length + 2; // including prefix string "C:" or "T:"
-		indexer->add_term(&what, doc, 10);
+		indexer->add_term(&what, doc, 20);
 		start =  buffer + 2;
 		}
 
@@ -215,7 +215,7 @@ for (i = 1; i < term_count; ++i)
 	}
 */
 
-indexer->add_term(&what, doc, 100); // avoid being culled of optimization
+indexer->add_term(&what, doc, 20); // avoid being culled of optimization
 
 clean_up();
 }
@@ -224,7 +224,7 @@ clean_up();
 	ANT_READABILITY_DALE_CHALL::UNSCAPE_XML()
 	-----------------------------------
 */
-void ANT_readability_TAG_WEIGHTING::unscape_xml(std::string source)
+void ANT_readability_TAG_WEIGHTING::unscape_xml(std::string& source)
 {
 	static const char *entities[] = {"&quot;", "&lt;", "&gt;", "&apos;", "&amp;" };
 	static const char *to_chars[] = {"\"", "<", ">", "'", "&" };
