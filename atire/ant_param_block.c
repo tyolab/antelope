@@ -70,6 +70,7 @@ expander_query_types = ANT_thesaurus_relationship::SYNONYM;
 processing_strategy = TERM_AT_A_TIME;								// term at a time by default
 quantization = false; // by default don't quantize
 quantization_bits = -1; // by default use the maths to calculate the bits we need
+header_offset = 0;
 }
 
 /*
@@ -701,6 +702,9 @@ for (param = 1; param < argc; param++)
 				{
 				command += 7;
 				header_offset = atol(command);
+
+				if (header_offset < 0)
+					header_offset = 0;
 				}
 
 			delete [] index_filename;

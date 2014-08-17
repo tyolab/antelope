@@ -70,6 +70,7 @@ __FBSDID("$FreeBSD$");
  *    cast to wchar_t.
  * 3. State-dependent encodings are not currently supported.
  */
+#include "glob.h""
 
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -77,7 +78,6 @@ __FBSDID("$FreeBSD$");
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
-#include <glob.h>
 #include <limits.h>
 #include <pwd.h>
 #include <stdint.h>
@@ -127,6 +127,11 @@ typedef char Char;
 
 #endif
 
+#ifndef ARG_MAX
+
+#define ARG_MAX 131072
+
+#endif
 
 #define	CHAR(c)		((Char)((c)&M_CHAR))
 #define	META(c)		((Char)((c)|M_QUOTE))
