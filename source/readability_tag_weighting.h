@@ -47,7 +47,7 @@ public:
 
 	void index(ANT_memory_indexer *index, long long doc, ANT_directory_iterator_object *current_file);
 
-	static void unscape_xml(std::string text);
+	static void unscape_xml(std::string& text);
 };
 
 #endif /* READABILITY_TAG_WEIGHTING_H_ */
