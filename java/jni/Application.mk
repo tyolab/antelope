@@ -1,5 +1,5 @@
-APP_OPTIM := debug
-APP_CFLAGS := -DDEBUG -g
+APP_OPTIM := release
+APP_CFLAGS := 
 APP_CPPFLAGS += -frtti -fexceptions
 
 ifeq ($(NO_NEON),)
