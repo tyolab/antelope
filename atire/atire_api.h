@@ -283,6 +283,11 @@ public:
 	char *get_document(char *buffer, unsigned long *length, long long id);
 
 	/*
+		Get the document file name / title
+	*/
+	char *get_document_name(long long id);
+
+	/*
 		Extract the best query terms from the given document
 	*/
 	char *extract_query_terms(char *document, long terms);

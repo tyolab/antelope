@@ -184,10 +184,13 @@ std::string title(current_file->filename);
 unscape_xml(title);
 
 length = title.length();
+
 memcpy(info_buf_start, title.c_str(), length);
 info_buf_start += length;
 *info_buf_start = '\0';
 what.string_length += length;
+
+info_buf_start = utf8_tolower(info_buf);
 
 /* the following solution doesn't work well. we have to have the exact title as it is */
 /*

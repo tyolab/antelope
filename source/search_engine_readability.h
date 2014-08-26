@@ -24,7 +24,7 @@ private:
 
 private:
 	void initialise(ANT_memory *memory);
-	virtual int open(const char *filename = "index.aspt");
+	virtual int open(const char *filename = INDEX_FILENAME);
 public:
 	ANT_search_engine_readability(ANT_memory *memory, long memory_model) : ANT_search_engine(memory, memory_model) {}
 	virtual ~ANT_search_engine_readability() {};

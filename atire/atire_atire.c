@@ -477,7 +477,8 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 						current = raw;
 						tf = *current++;
 						docid += *current++;
-						*outchannel << term << ":" << docid << ANT_channel::endl;
+
+						*outchannel << atire->get_document_name(docid) << ":" << docid << ANT_channel::endl;
 						}
 					}
 				}

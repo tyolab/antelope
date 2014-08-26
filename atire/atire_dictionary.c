@@ -144,7 +144,7 @@ ANT_search_engine search_engine(&memory);
 for (param = 1; param < argc; param++)
 	if (*argv[param] != '-')
 		filename = param;
-search_engine.open(filename == 0 ? "index.aspt" : argv[1]);
+search_engine.open(filename == 0 ? INDEX_FILENAME : argv[1]);
 
 global_trim = search_engine.get_global_trim_postings_k();
 ANT_btree_iterator iterator(&search_engine);

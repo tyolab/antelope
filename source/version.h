@@ -13,6 +13,14 @@ extern char *ANT_version_string;
 static const uint32_t ANT_file_signature = 0x54505341UL;	//"ASPT" (Intel Byte Order)
 static const uint64_t ANT_file_signature_index = 0x494e444558000000ULL; // "INDEX" (Intel Byte Order)
 
+#ifndef DOCLIST_FILENAME
+#define DOCLIST_FILENAME "doclist.aspt"
+#endif
+
+#ifndef INDEX_FILENAME
+#define INDEX_FILENAME  "index.aspt"
+#endif
+
 void ANT_credits(void);
 
 #endif  /* VERSION_H_ */

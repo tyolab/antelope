@@ -1792,3 +1792,11 @@ delete [] feedback_terms;
 return strnew(query.str().c_str());
 }
 
+/*
+	ATIRE_API::GET_DOCUMENT_NAME()
+	-------------------------
+*/
+char *ATIRE_API::get_document_name(long long id)
+{
+return document_list[id];
+}
