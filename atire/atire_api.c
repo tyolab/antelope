@@ -94,6 +94,10 @@
 	#define TRUE (!FALSE)
 #endif
 
+#ifndef MAX_ANSWER_LIST_SIZE
+	#define MAX_ANSWER_LIST_SIZE 1000
+#endif
+
 /*
  * This created just for the purpose of automatic atire api library checking
  * for configure.ac, it must use AC_LANG(C++) to force library check with g++
@@ -215,7 +219,7 @@ return ANT_version_string;
 	Read the docid list from the given file and return it, or NULL if the file could
 	not be read.
 */
-char **ATIRE_API::read_docid_list(char *doclist_filename, long long *documents_in_id_list, char ***filename_list, char **mem1, char **mem2)
+char **ATIRE_API::(char *doclist_filename, long long *documents_in_id_list, char ***filename_list, char **mem1, char **mem2)
 {
 char *document_list_buffer, *filename_list_buffer;
 char **id_list, **current;
@@ -268,11 +272,18 @@ ANT_search_engine_readability *readable_search_engine;
 if (document_list != NULL)
 	return 1;		//we're already open;
 
+
+long long answer_list_size =  MAX_ANSWER_LIST_SIZE;
+
 document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
 if (document_list == NULL)
-	return 1;		//document list could not be read
+	documents_in_id_list = -1;
+	// return 1;		//document list could not be read
+else
+	answer_list_size = documents_in_id_list;
 
-answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
+if (documents_int)
+answer_list = (char **)memory->malloc(sizeof(*answer_list) * answer_list_size);
 if (type & READABILITY_SEARCH_ENGINE)
 	{
 	search_engine = readable_search_engine = new ANT_search_engine_readability(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
@@ -608,7 +619,7 @@ void ATIRE_API::write_to_forum_file(long topic_id)
 if (forum_writer == NULL)
 	return;
 
-search_engine->generate_results_list(document_list, answer_list, hits);
+search_engine->generate_results_list(document_list, answer_list, hits > answer_list_size ? answer_list_size : hits); // if the top_k is bigger than the pre-set answer list size, we ignore it
 forum_writer->write(topic_id, answer_list, forum_results_list_length > hits ? hits : forum_results_list_length, search_engine, NULL);
 }
 

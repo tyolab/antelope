@@ -83,6 +83,8 @@ private:
 	long long documents_in_id_list;			// the length of the above two lists (the number of docs in the collection)
 	char *mem1, *mem2;						// arrays of memory holding the above;
 
+	long long answer_list_size;				// the length of the answer list if we don't want it be the length of entire id list for the reason of memory restriction
+
 	ANT_assessment_factory *assessment_factory;			// the machinery to read different formats of assessments (INEX and TREC)
 	ANT_relevant_document *assessments;		// assessments for measuring percision (at TREC and INEX)
 	long long number_of_assessments;		// length of the assessments array
