@@ -25,10 +25,9 @@ void ANT_ranking_function_DFRee::relevance_rank_one_quantum(ANT_ranking_function
 {
 long long docid;
 double prior, posterior, InvPriorCollection, norm;
-double tf, cf, score;
+double tf, score;
 ANT_compressable_integer *current;
 
-cf = (double)quantum_parameters->term_details->global_collection_frequency;
 tf = quantum_parameters->tf;
 
 docid = -1;
@@ -51,14 +50,13 @@ while (current < quantum_parameters->quantum_end)
 	ANT_RANKING_FUNCTION_DFREE::RELEVANCE_RANK_TOP_K()
 	--------------------------------------------------
 */
-void ANT_ranking_function_DFRee::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_DFRee::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
 long long docid;
 double prior, posterior, InvPriorCollection, norm;
-double tf, cf, score;
+double tf, score;
 ANT_compressable_integer *current, *end;
 
-cf = (double)term_details->global_collection_frequency;
 impact_header->impact_value_ptr = impact_header->impact_value_start;
 impact_header->doc_count_ptr = impact_header->doc_count_start;
 current = impact_ordering;
@@ -87,16 +85,15 @@ while (impact_header->doc_count_ptr < impact_header->doc_count_trim_ptr)
 #pragma ANT_PRAGMA_UNUSED_PARAMETER
 }
 #else
-void ANT_ranking_function_DFRee::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_DFRee::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
 long long docid;
 double prior, posterior, InvPriorCollection, norm;
-double tf, cf, score;
+double tf, score;
 ANT_compressable_integer *current, *end;
 
 current = impact_ordering;
 end = impact_ordering + (term_details->local_document_frequency >= trim_point ? trim_point : term_details->local_document_frequency);
-cf = (double)term_details->global_collection_frequency;
 while (current < end)
 	{
 	end += 2;		// account for the impact_order and the terminator
@@ -124,7 +121,7 @@ while (current < end)
 	ANT_RANKING_FUNCTION_DFREE::RANK()
 	----------------------------------
 */
-double ANT_ranking_function_DFRee::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency)
+double ANT_ranking_function_DFRee::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency, double query_frequency)
 {
 double tf = term_frequency;
 double prior = tf / (double)length;

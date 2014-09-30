@@ -10,6 +10,7 @@
 #include "pragma.h"
 #include "ctypes.h"
 #include "directory_iterator_tar.h"
+#include "maths.h"
 
 /*
 	ANT_DIRECTORY_ITERATOR_TAR::FILENAME()
@@ -17,13 +18,26 @@
 */
 void ANT_directory_iterator_tar::filename(ANT_directory_iterator_object *object)
 {
-if (header.filename_prefix[0] != '\0')
+char *dot, *slash;
+
+if (filename_mode == FULL)
 	{
-	object->filename = new char[strlen(header.filename_prefix) + 1 + strlen(header.filename) + 1];
-	sprintf(object->filename, "%s/%s", header.filename_prefix, header.filename);
+	if (header.filename_prefix[0] != '\0')
+		{
+		object->filename = new char[strlen(header.filename_prefix) + 1 + strlen(header.filename) + 1];
+		sprintf(object->filename, "%s/%s", header.filename_prefix, header.filename);
+		}
+	else
+		object->filename = strnew(header.filename);
 	}
-else
-	object->filename = strnew(header.filename);
+else			// filename_mode == NAME
+	{
+	object->filename = new char[strlen(header.filename) + 1];
+	slash = ANT_max(strrchr(header.filename, '/'), strrchr(header.filename, '\\'));
+	sprintf(object->filename, "%s", slash == NULL ? header.filename : slash + 1);
+	if ((dot = strchr(object->filename, '.')) != NULL)
+		*dot = '\0';						// remove the dot (and everything after it) from the filename
+	}
 }
 
 /*

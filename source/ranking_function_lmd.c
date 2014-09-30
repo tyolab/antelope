@@ -28,7 +28,7 @@ double idf, n;
 double left_hand_side, rsv;
 ANT_compressable_integer *current;
 
-n = 3.0;						// this is a hack and should be the length of the query
+n = quantum_parameters->accumulator->get_term_count();
 idf = ((double)collection_length_in_terms / (double)quantum_parameters->term_details->global_collection_frequency);
 left_hand_side = log (1.0 + (quantum_parameters->prescalar * quantum_parameters->tf / u) * idf);
 
@@ -47,7 +47,7 @@ while (current < quantum_parameters->quantum_end)
 	------------------------------------------------
 	Language Models with Dirichlet smoothing
 */
-void ANT_ranking_function_lmd::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_lmd::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
 long long docid;
 double tf, idf, n;
@@ -55,15 +55,15 @@ double left_hand_side, rsv;
 ANT_compressable_integer *current, *end;
 
 /*
-								 tf(td)   len(c)              len(d)
+	               tf(td)   len(c)              len(d)
 	 rsv = log(1 + ------ * ------) - n log(1 + ------)
-										u     cf(t)                 u
+	                 u     cf(t)                 u
 
 	where  len(c) is the length of the collection (in terms), len(d) is the length of the document
 	tf(td) is the term frequency of the term and cf(t) is the collection_frequency of the term
 	and n is the length of the querty in terms.
 */
-n = 3.0;						// this is a hack and should be the length of the query
+n = accumulator->get_term_count();
 idf = ((double)collection_length_in_terms / (double)term_details->global_collection_frequency);
 impact_header->impact_value_ptr = impact_header->impact_value_start;
 impact_header->doc_count_ptr = impact_header->doc_count_start;
@@ -92,7 +92,7 @@ while (impact_header->doc_count_ptr < impact_header->doc_count_trim_ptr)
 	------------------------------------------------
 	Language Models with Dirichlet smoothing
 */
-void ANT_ranking_function_lmd::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_lmd::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
 long long docid;
 double tf, idf, n;
@@ -108,7 +108,7 @@ ANT_compressable_integer *current, *end;
 	tf(td) is the term frequency of the term and cf(t) is the collection_frequency of the term
 	and n is the length of the querty in terms.
 */
-n = 3.0;						// this is a hack and should be the length of the query
+n = accumulator->get_term_count();
 current = impact_ordering;
 end = impact_ordering + (term_details->local_document_frequency >= trim_point ? trim_point : term_details->local_document_frequency);
 idf = ((double)collection_length_in_terms / (double)term_details->global_collection_frequency);
@@ -133,15 +133,8 @@ while (current < end)
 	ANT_RANKING_FUNCTION_LMD::RANK()
 	--------------------------------
 */
-double ANT_ranking_function_lmd::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency)
+double ANT_ranking_function_lmd::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency, double query_frequency)
 {
-double tf, idf, n, left_hand_side;
-
-n = 3.0;						// this is a hack and should be the length of the query
-tf = term_frequency;
-idf = ((double)collection_length_in_terms / (double)collection_frequency);
-left_hand_side = log (1.0 + (tf / u) * idf);
-
-return left_hand_side - n * log(1.0 + ((double)document_lengths[docid] / u));
+exit(printf("Cannot pre-compute the impact score of the LMD language model as it truely depends on query length and query frequencies"));
 #pragma ANT_PRAGMA_UNUSED_PARAMETER
 }

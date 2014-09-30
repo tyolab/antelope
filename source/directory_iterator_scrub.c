@@ -34,15 +34,12 @@ void ANT_directory_iterator_scrub::scrub(unsigned char *data, long long size, lo
 {
 long long i = 0, byte, bytes, bytes_found;
 
-if (scrubbing == NONE)
-	return;
-
 for (; i < size; i++)
 	if (scrubbing & NUL && *(data + i) == '\0')
 		*(data + i) = ' ';
-	else if (scrubbing & NON_ASCII && *(data + i) & 0x80)
+	if (scrubbing & NON_ASCII && *(data + i) & 0x80)
 		*(data + i) = ' ';
-	else if (scrubbing & UTF8 && *(data + i) >= 0x80)
+	if (scrubbing & UTF8 && *(data + i) >= 0x80)
 		{
 		if ((*(data + i) & 0xC0) == 0x80)
 			{

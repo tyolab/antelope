@@ -2,6 +2,8 @@
 	INDEX_DOCUMENT.C
 	----------------
 */
+#include <math.h>
+#include "maths.h"
 #include "btree_iterator.h"
 #include "index_document.h"
 #include "memory_indexer.h"
@@ -42,7 +44,7 @@ is_previous_token_chinese = FALSE;
 readability->set_document(file);
 while ((token = readability->get_next_token()) != NULL)
 	{
-//	printf("%*.*s\n", token->string_length, token->string_length, token->start);
+	//	printf("%*.*s\n", token->string_length, token->string_length, token->start);
 	/*
 	 * a bit redudant, the code below.
 	 * I think the original code from revision 656 should be fine, except the chinese handling part
@@ -94,10 +96,11 @@ while ((token = readability->get_next_token()) != NULL)
 				is_previous_token_chinese = FALSE;
 				previous_token_start = NULL;
 
+				if ((stopword_mode & ANT_memory_index::PRUNE_STOPWORDS_BEFORE_INDEXING) && indexer->stopwords->isstop(token->normalized_pair()->string(), token->normalized_pair()->length()))
+					break;
+
 				if (stemmer == NULL || token->string_length <= 3)
-					{
 					readability->handle_node(indexer->add_term(token->normalized_pair(), doc));			// indexable the term
-					}
 				else
 					{
 					token->normalized_pair()->strncpy(term, MAX_TERM_LENGTH);
@@ -132,6 +135,9 @@ while ((token = readability->get_next_token()) != NULL)
 
 if (terms_in_document != 0)
 	{
+	/*
+		Set the true length
+	*/
 	indexer->set_document_length(doc, terms_in_document);
 	readability->index(indexer, doc);
 	}

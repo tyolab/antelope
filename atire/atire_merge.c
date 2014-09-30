@@ -9,6 +9,7 @@
 #include "btree.h"
 #include "btree_head_node.h"
 #include "btree_iterator.h"
+#include "disk.h"
 #include "file.h"
 #include "impact_header.h"
 #include "maths.h"
@@ -31,7 +32,16 @@ unsigned char *postings_list = new unsigned char[postings_list_size];
 unsigned char *new_postings_list;
 unsigned char *temp;
 
-ANT_stop_word stop_words;
+ANT_stop_word *stop_words;
+
+/*
+	TERM_COMPARE()
+	--------------
+*/
+int term_compare(const void *term, const void *list_term_pointer)
+{
+	return strcmp((char *)term, *(char **)list_term_pointer);
+}
 
 /*
 	SHOULD_PRUNE()
@@ -55,7 +65,7 @@ else if (param->stop_word_removal & ANT_memory_index::PRUNE_TAGS && ANT_isupper(
 	return true;
 else if (param->stop_word_removal & ANT_memory_index::PRUNE_DF_FREQUENTS && (double)leaf->local_document_frequency / (double)largest_docno >= param->stop_word_df_threshold)
 	return true;
-else if (param->stop_word_removal & ANT_memory_index::PRUNE_NCBI_STOPLIST && stop_words.isstop(term))
+else if (param->stop_word_removal & (ANT_memory_index::PRUNE_NCBI_STOPLIST | ANT_memory_index::PRUNE_PUURULA_STOPLIST) && stop_words->isstop(term))
 	return true;
 else
 	return false;
@@ -178,6 +188,12 @@ if (node->document_frequency <= 2)
 	if (node->string[0] == '~')
 		{
 		raw[5] = 0;
+#ifdef IMPACT_HEADER
+		raw[4] = raw[3] = 0;
+		raw[2] = raw[1];
+		raw[1] = raw[0];
+		raw[0] = 1;
+#else
 		if (node->document_frequency == 2)
 			{
 			raw[4] = raw[1];
@@ -188,6 +204,7 @@ if (node->document_frequency <= 2)
 		raw[2] = 0;
 		raw[1] = raw[0];
 		raw[0] = 2;
+#endif
 		}
 
 	node->in_disk.docids_pos_on_disk = ((long long)raw[1]) << 32 | raw[0];
@@ -418,6 +435,12 @@ long long this_trimpoint;
 long long terms_so_far = 0;
 double dummy;
 
+char *intersection_file_buffer;
+char *intersection_filename;
+char **intersection_term_list = NULL;
+int skip_intersection = true;
+long long intersection_term_count = 0;
+
 uint64_t current_disk_position;
 char file_header[] = "ATIRE Search Engine Index File\n\0\0";
 
@@ -434,6 +457,25 @@ char *document_compress_buffer;
 
 ANT_compression_factory *factory = new ANT_compression_factory;
 factory->set_scheme(param_block.compression_scheme);
+
+if (param_block.stop_word_removal & ANT_memory_index::PRUNE_PUURULA_STOPLIST)
+	stop_words = new ANT_stop_word(ANT_stop_word::PUURULA);
+else
+	stop_words = new ANT_stop_word(ANT_stop_word::NCBI);
+
+/*
+	If performing an intersection, need to load list of terms from disk
+*/
+if (param_block.skip_intersection == false)
+	{
+	skip_intersection = false;
+	intersection_filename = param_block.intersection_filename;
+	intersection_file_buffer = ANT_disk::read_entire_file(intersection_filename);
+	if (intersection_file_buffer == NULL)
+		exit(printf("Cannot read %s for intersecting\n", intersection_filename));
+	intersection_term_list = ANT_disk::buffer_to_list(intersection_file_buffer, &intersection_term_count);
+	qsort(intersection_term_list, intersection_term_count, sizeof(*intersection_term_list), char_star_star_strcmp);
+	}
 
 ANT_stats_time stats;
 ANT_search_engine **search_engines = new ANT_search_engine*[number_engines];
@@ -480,6 +522,12 @@ leaves[number_engines] = new ANT_search_engine_btree_leaf;
 	Worst case, all documents and all tf values for impact ordering, all documents for impact header
 */
 raw[number_engines] = new ANT_compressable_integer[510 + combined_docs];
+
+#ifdef FILENAME_INDEX
+long long *filename_index_offsets = new long long[combined_docs];
+long long filename_offset_sum = 0;
+long long filename_offset = 0;
+#endif
 
 /*
 	global_trimpoint could be 0 if none of the given indexes are pruned
@@ -533,7 +581,9 @@ long should_continue = false;
 long long do_documents = param_block.document_compression_scheme != ANT_merger_param_block::NONE;
 long long stemmer;
 
-ANT_file *doclist = new ANT_file;
+#ifndef FILENAME_INDEX
+	ANT_file *doclist = new ANT_file;
+#endif
 ANT_file *index = new ANT_file;
 
 compress_buffer_size = longest_document;
@@ -548,10 +598,13 @@ long previous_docid;
 long process_this_tf;
 ANT_compressable_integer *current = raw[number_engines];
 
-puts(ANT_version_string);
+if (param_block.logo)
+	puts(ANT_version_string);
 
 index->open(param_block.index_filename, "w");
-doclist->open(param_block.doclist_filename, "w");
+#ifndef FILENAME_INDEX
+	doclist->open(param_block.doclist_filename, "w");
+#endif
 
 index->write((unsigned char *)file_header, sizeof(file_header));
 
@@ -580,6 +633,9 @@ if (do_documents)
 			upto++;
 			}
 	raw[number_engines][upto] = (ANT_compressable_integer)(index->tell() - sum);
+#ifdef FILENAME_INDEX
+	}
+#endif
 	
 	/*
 		Before we write out the "postings" for offsets, we should put the document filenames
@@ -606,7 +662,12 @@ if (do_documents)
 		*/
 		for (document = 0; document < search_engines[engine]->document_count(); document++)
 			{
+#ifdef FILENAME_INDEX
+			filename_index_offsets[filename_offset++] = filename_offset_sum;
+			filename_offset_sum += strlen(doc_filenames[document]) + 1;
+#else
 			doclist->puts(strip_space_inplace(doc_filenames[document]));
+#endif
 			index->write((unsigned char *)doc_filenames[document], strlen(doc_filenames[document]) + 1);
 			}
 		}
@@ -620,6 +681,24 @@ if (do_documents)
 		term_list[terms_so_far++] = p;
 	if ((p = write_variable("~documentfilenamesfinish", document_filenames_finish, memory_stats, index, leaves[number_engines], &param_block, combined_docs, &longest_postings, factory)) != NULL)
 		term_list[terms_so_far++] = p;
+
+#ifdef FILENAME_INDEX
+
+document_filenames_start = index->tell();
+
+index->write((unsigned char *)filename_index_offsets, sizeof(*filename_index_offsets) * combined_docs);
+index->write((unsigned char *)&filename_offset_sum, sizeof(filename_offset_sum));
+
+document_filenames_finish = index->tell();
+
+if ((p = write_variable("~documentfilenamesindexstart", document_filenames_start, memory_stats, index, leaves[number_engines], &param_block, combined_docs, &longest_postings, factory)) != NULL)
+	term_list[terms_so_far++] = p;
+if ((p = write_variable("~documentfilenamesindexfinish", document_filenames_finish, memory_stats, index, leaves[number_engines], &param_block, combined_docs, &longest_postings, factory)) != NULL)
+	term_list[terms_so_far++] = p;
+
+if (do_documents)
+	{
+#endif
 	
 	/*
 		Update stats, because this is a difference encoded list, we start with 1, then substract one
@@ -722,8 +801,10 @@ while (should_continue)
 		Now next_term_to_process contains the smallest string of the lists we're merging together
 		
 		Ignore all ~ terms, they've already been dealt with
+
+		Add term if skipping intersection, else add if it is in intersection list
 	*/
-	if (*next_term_to_process != '~')
+	if (*next_term_to_process != '~' && (skip_intersection || (bsearch(next_term_to_process, intersection_term_list, intersection_term_count, sizeof(*intersection_term_list), term_compare) != NULL)))
 		{
 		/*
 			Preload the postings lists for each engine
@@ -1045,7 +1126,9 @@ four_byte = (uint32_t)ANT_file_signature;
 index->write((unsigned char *)&four_byte, sizeof(four_byte));
 
 index->close();
-doclist->close();
+#ifndef FILENAME_INDEX
+	doclist->close();
+#endif
 
 if (param_block.reporting_frequency != 0)
 	{
@@ -1053,11 +1136,13 @@ if (param_block.reporting_frequency != 0)
 	stats.print_elapsed_time();
 	}
 
+#ifndef FILENAME_INDEX
 if (!do_documents)
 	{
 	printf("Warning: empty doclist generated because not all indexes had filenames or merge was run with -C-.\n");
 	printf("Combine the doclists for the indexes merged in the same order given to doclist file: %s.\n", param_block.doclist_filename);
 	}
+#endif
 
 /*
 	Cleanup
@@ -1098,7 +1183,9 @@ delete [] trimpoints;
 
 delete [] postings_list;
 
-delete doclist;
+#ifndef FILENAME_INDEX
+	delete doclist;
+#endif
 delete factory;
 delete index;
 delete memory_stats;
