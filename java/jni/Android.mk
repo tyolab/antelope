@@ -12,7 +12,6 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/arithmetic_model_bigram.c \
 	$(SRC_DIR)/arithmetic_model_tables.c \
 	$(SRC_DIR)/arithmetic_model_unigram.c \
-	$(SRC_DIR)/assessment_ANT.c \
 	$(SRC_DIR)/assessment.c \
 	$(SRC_DIR)/assessment_factory.c \
 	$(SRC_DIR)/assessment_INEX.c \
@@ -23,18 +22,25 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/bitstring_iterator.c \
 	$(SRC_DIR)/btree_iterator.c \
 	$(SRC_DIR)/channel_file.c \
-	$(SRC_DIR)/channel_trec.c \
+	$(SRC_DIR)/channel_inex.c \
 	$(SRC_DIR)/channel_socket.c \
+	$(SRC_DIR)/channel_trec.c \
 	$(SRC_DIR)/compress_carryover12.c \
 	$(SRC_DIR)/compress_elias_delta.c \
 	$(SRC_DIR)/compress_elias_gamma.c \
+	$(SRC_DIR)/compress_four_integer_variable_byte.c \
 	$(SRC_DIR)/compress_golomb.c \
 	$(SRC_DIR)/compression_factory.c \
 	$(SRC_DIR)/compression_text_factory.c \
 	$(SRC_DIR)/compress_none.c \
 	$(SRC_DIR)/compress_relative10.c \
 	$(SRC_DIR)/compress_sigma.c \
+	$(SRC_DIR)/compress_simple16.c \
+	$(SRC_DIR)/compress_simple16_packed.c \
+	$(SRC_DIR)/compress_simple8b.c \
+	$(SRC_DIR)/compress_simple8b_packed.c \
 	$(SRC_DIR)/compress_simple9.c \
+	$(SRC_DIR)/compress_simple9_packed.c \
 	$(SRC_DIR)/compress_text_bz2.c \
 	$(SRC_DIR)/compress_text_deflate.c \
 	$(SRC_DIR)/compress_text_none.c \
@@ -46,8 +52,8 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/directory_iterator_compressor.c \
 	$(SRC_DIR)/directory_iterator_csv.c \
 	$(SRC_DIR)/directory_iterator_deflate.c \
-	$(SRC_DIR)/directory_iterator_file.c \
 	$(SRC_DIR)/directory_iterator_file_buffered.c \
+	$(SRC_DIR)/directory_iterator_file.c \
 	$(SRC_DIR)/directory_iterator_filter.c \
 	$(SRC_DIR)/directory_iterator_filter_spam.c \
 	$(SRC_DIR)/directory_iterator_internals.c \
@@ -64,6 +70,21 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/directory_iterator_warc.c \
 	$(SRC_DIR)/directory_iterator_warc_gz_recursive.c \
 	$(SRC_DIR)/disk.c \
+	$(SRC_DIR)/evaluation_binary_preference.c \
+	$(SRC_DIR)/evaluation.c \
+	$(SRC_DIR)/evaluation_discounted_cumulative_gain.c \
+	$(SRC_DIR)/evaluation_expected_reciprocal_rank.c \
+	$(SRC_DIR)/evaluation_intent_aware_expected_reciprocal_rank.c \
+	$(SRC_DIR)/evaluation_intent_aware_mean_average_precision.c \
+	$(SRC_DIR)/evaluation_intent_aware_normalised_discounted_cumulative_gain.c \
+	$(SRC_DIR)/evaluation_intent_aware_precision_at_n.c \
+	$(SRC_DIR)/evaluation_mean_average_generalised_precision_document.c \
+	$(SRC_DIR)/evaluation_mean_average_precision.c \
+	$(SRC_DIR)/evaluation_normalised_discounted_cumulative_gain.c \
+	$(SRC_DIR)/evaluation_precision_at_n.c \
+	$(SRC_DIR)/evaluation_rank_effectiveness.c \
+	$(SRC_DIR)/evaluation_success_at_n.c \
+	$(SRC_DIR)/evaluator.c \
 	$(SRC_DIR)/event.c \
 	$(SRC_DIR)/file.c \
 	$(SRC_DIR)/file_internals.c \
@@ -83,26 +104,13 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/instream_file_star.c \
 	$(SRC_DIR)/instream_lzo.c \
 	$(SRC_DIR)/instream_memory.c \
+	$(SRC_DIR)/instream_pkzip.c \
 	$(SRC_DIR)/instream_scrub.c \
 	$(SRC_DIR)/maths.c \
-	$(SRC_DIR)/evaluator.c \
-	$(SRC_DIR)/evaluation_binary_preference.c \
-	$(SRC_DIR)/evaluation.c \
-	$(SRC_DIR)/evaluation_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_expected_reciprocal_rank.c \
-	$(SRC_DIR)/evaluation_intent_aware_expected_reciprocal_rank.c \
-	$(SRC_DIR)/evaluation_intent_aware_mean_average_precision.c \
-	$(SRC_DIR)/evaluation_intent_aware_normalised_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_intent_aware_precision_at_n.c \
-	$(SRC_DIR)/evaluation_mean_average_generalised_precision_document.c \
-	$(SRC_DIR)/evaluation_mean_average_precision.c \
-	$(SRC_DIR)/evaluation_normalised_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_precision_at_n.c \
-	$(SRC_DIR)/evaluation_rank_effectiveness.c \
-	$(SRC_DIR)/evaluation_success_at_n.c \
 	$(SRC_DIR)/memory.c \
 	$(SRC_DIR)/memory_index.c \
 	$(SRC_DIR)/memory_indexer.c \
+	$(SRC_DIR)/memory_index_filename_index.c \
 	$(SRC_DIR)/memory_index_hash_node.c \
 	$(SRC_DIR)/memory_index_one.c \
 	$(SRC_DIR)/mersenne_twister.c \
@@ -126,7 +134,11 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/query_boolean.c \
 	$(SRC_DIR)/query.c \
 	$(SRC_DIR)/query_parse_tree.c \
+	$(SRC_DIR)/ranking_function_bm25adpt.c \
 	$(SRC_DIR)/ranking_function_bm25.c \
+	$(SRC_DIR)/ranking_function_bm25l.c \
+	$(SRC_DIR)/ranking_function_bm25plus.c \
+	$(SRC_DIR)/ranking_function_bm25t.c \
 	$(SRC_DIR)/ranking_function_bose_einstein.c \
 	$(SRC_DIR)/ranking_function.c \
 	$(SRC_DIR)/ranking_function_dfi.c \
@@ -138,6 +150,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/ranking_function_dlh13.c \
 	$(SRC_DIR)/ranking_function_docid.c \
 	$(SRC_DIR)/ranking_function_dph.c \
+	$(SRC_DIR)/ranking_function_factory.c \
 	$(SRC_DIR)/ranking_function_impact.c \
 	$(SRC_DIR)/ranking_function_inner_product.c \
 	$(SRC_DIR)/ranking_function_kbtfidf.c \
@@ -145,20 +158,25 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/ranking_function_lmds.c \
 	$(SRC_DIR)/ranking_function_lmjm.c \
 	$(SRC_DIR)/ranking_function_pregen.c \
+	$(SRC_DIR)/ranking_function_puurula.c \
+	$(SRC_DIR)/ranking_function_puurula_idf.c \
 	$(SRC_DIR)/ranking_function_readability.c \
 	$(SRC_DIR)/ranking_function_term_count.c \
+	$(SRC_DIR)/ranking_function_tflodop.c \
 	$(SRC_DIR)/ranking_function_topsig_negative.c \
 	$(SRC_DIR)/ranking_function_topsig_positive.c \
+	$(SRC_DIR)/readability.c \
 	$(SRC_DIR)/readability_dale_chall.c \
 	$(SRC_DIR)/readability_factory.c \
 	$(SRC_DIR)/readability_tag_weighting.c \
 	$(SRC_DIR)/relevance_feedback_blind_kl.c \
+	$(SRC_DIR)/relevance_feedback_blind_kl_rm.c \
 	$(SRC_DIR)/relevance_feedback.c \
 	$(SRC_DIR)/relevance_feedback_factory.c \
 	$(SRC_DIR)/relevance_feedback_topsig.c \
 	$(SRC_DIR)/relevant_document.c \
-	$(SRC_DIR)/relevant_topic.c \
 	$(SRC_DIR)/relevant_subtopic.c \
+	$(SRC_DIR)/relevant_topic.c \
 	$(SRC_DIR)/search_engine_accumulator.c \
 	$(SRC_DIR)/search_engine.c \
 	$(SRC_DIR)/search_engine_forum.c \
@@ -170,6 +188,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/search_engine_memory_index.c \
 	$(SRC_DIR)/search_engine_readability.c \
 	$(SRC_DIR)/search_engine_result.c \
+	$(SRC_DIR)/search_engine_result_id_iterator.c \
 	$(SRC_DIR)/search_engine_result_iterator.c \
 	$(SRC_DIR)/semaphores.c \
 	$(SRC_DIR)/snippet_beginning.c \
@@ -219,7 +238,7 @@ LOCAL_LDLIBS    := -llog -lz
 
 LOCAL_CFLAGS    += -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
 		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DANT_WITHOUT_STL \
-		-DATIRE_MOBILE -DATIRE_JNI -DANT_HAS_ZLIB \
+		-DATIRE_MOBILE -DATIRE_JNI -DANT_HAS_ZLIB -DFILENAME_INDEX\
 		-I ./include
 		
 #LOCAL_C_INCLUDES := ./include $(SRC_DIR)
@@ -259,7 +278,7 @@ LOCAL_STATIC_LIBRARIES := search4m_android
 LOCAL_LDLIBS += -llog -lz
 
 LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DATIRE_MOBILE -DATIRE_JNI \
+		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DATIRE_MOBILE -DATIRE_JNI -DFILENAME_INDEX \
 		-I $(SRC_DIR) -I ./include -I $(ATIRE_DIR)
 		
 LOCAL_C_INCLUDES += $(SRC_DIR)

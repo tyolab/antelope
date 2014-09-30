@@ -14,7 +14,7 @@
 	-------------------------------------------------
 	Evaluate the results from search_engine for given topic and subtopic
 */
-double ANT_evaluation_mean_average_precision::evaluate(ANT_search_engine *search_engine, long topic, long subtopic)
+double ANT_evaluation_mean_average_precision::evaluate(ANT_search_engine *search_engine, long topic, long *valid, long subtopic)
 {
 ANT_search_engine_result_iterator iterator;
 ANT_relevant_subtopic *got;
@@ -22,10 +22,13 @@ ANT_relevant_document key, *relevance_data;
 long long found_and_relevant, current;
 double precision;
 
+*valid = false;
 if ((got = setup(topic, subtopic)) == NULL)
 	return 0;
 if (got->number_of_relevant_documents == 0)
 	return 0;
+
+*valid = true;
 
 key.topic = topic;
 key.subtopic = subtopic;
@@ -33,13 +36,17 @@ key.subtopic = subtopic;
 precision = 0;
 current = found_and_relevant = 0;
 
+#ifdef FILENAME_INDEX
+for (key.docid = iterator.first(search_engine); key.docid != NULL && current < precision_point; key.docid = iterator.next())
+#else
 for (key.docid = iterator.first(search_engine); key.docid >= 0 && current < precision_point; key.docid = iterator.next())
+#endif
 	{
 	current++;
 	if ((relevance_data = (ANT_relevant_document *)bsearch(&key, got->document_list, (size_t)got->number_of_documents, sizeof(*got->document_list), ANT_relevant_document::compare)) != NULL)
 		{
 		/*
-			At this point we have an assessment for the document, but it might have been assessed are irrelevant
+			At this point we have an assessment for the document, but it might have been assessed as irrelevant
 		*/
 		if (relevance_data->relevant_characters != 0)
 			{

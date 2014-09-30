@@ -9,10 +9,17 @@
 #else
 	#include <stddef.h>
 #endif
+#include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
 #include <limits.h>
 #include <limits>
+
+/*
+	ANT_ROUND()
+	-----------
+*/
+template <class Type> inline Type ANT_round(Type x) { return floor(x + 0.5); }
 
 /*
 	ANT_SIGN()
@@ -170,7 +177,140 @@ return (*seed ^= (*seed << 17));
 }
 
 /*
-	ANT_compiletime_floor_log_to_base
+	ANT_SECANT()
+	------------
+*/
+static inline double ANT_secant(double x1, double x2, double (*function)(double, void *parameter), void *function_param)
+{
+static const double E = 0.00001;
+double x3, f1, f2;
+
+f1 = function(x1, function_param);
+do
+	{
+	f2 = function(x2, function_param);
+
+	if (fabs(f2 - f1) < E)
+		return x2;
+
+	x3 = (f2 * x1 - f1 * x2) / (f2 - f1);
+
+	x1 = x2;
+	f1 = f2;
+	x2 = x3;
+	}
+while (fabs((x1 - x2) / x2) > E);
+
+return x2;
+}
+
+/*
+	ANT_FALSI_METHOD()
+	------------------
+	This code came from the Wikipedia article "False Position Method".
+
+	s,t: endpoints of an interval where we search
+	e: half of upper bound for relative error
+	m: maximal number of iterations
+*/
+static inline double ANT_falsi_method(double s, double t, double e, int m, double (*function)(double, void *parameter), void *function_param)
+{
+double r = 0, fr;
+int n, side = 0;
+/* starting values at endpoints of interval */
+double fs = function(s, function_param);
+double ft = function(t, function_param);
+
+for (n = 0; n < m; n++)
+	{
+	r = (fs * t - ft * s) / (fs - ft);
+	if (fabs(t - s) < e * fabs(t + s))
+		break;
+	fr = function(r, function_param);
+
+	if (fr * ft > 0)
+		{
+		/* fr and ft have same sign, copy r to t */
+		t = r;
+		ft = fr;
+		if (side == -1)
+			fs /= 2;
+		side = -1;
+		}
+	else if (fs * fr > 0)
+		{
+		/* fr and fs have same sign, copy r to s */
+		s = r;
+		fs = fr;
+		if (side == +1)
+			ft /= 2;
+		side = +1;
+		}
+	else
+		{
+		/* fr * f_ very small (looks like zero) */
+		break;
+		}
+	}
+
+return r;
+}
+
+/*
+	ANT_BISECTION_METHOD()
+	----------------------
+	From: http://www.dailyfreecode.com/code/bisection-method-2361.aspx
+*/
+static inline double ANT_bisection_method(double x0, double x1, double (*function)(double, void *parameter), void *function_parameter)
+{
+static const double ESP = 0.001;
+int i = 1;
+double x2, f2, f0;
+
+do
+	{
+	x2 = (x0 + x1) / 2;
+	f0 = function(x0, function_parameter);
+	f2 = function(x2, function_parameter);
+	if (f0 * f2 < 0)
+		x1 = x2;
+	else
+		x0 = x2;
+	i++;
+	}
+while (fabs(f2) > ESP);
+
+return x2;
+}
+
+/*
+	ANT_GRADIENT_DESCENT()
+	----------------------
+	Based on the Python code from the Wikipedia
+	eps = step size
+	precison = required precision of result
+	d_gap = when computing the derivative from the sample, use f(x+d_gap) - f(x) as the gradient
+*/
+static inline double ANT_gradient_descent(double guess, double eps, double precision, double d_gap, double (*function)(double, void *parameter), void *function_parameter)
+{
+double f_prime;
+double x_old, x_new;
+
+x_new = guess;
+
+do
+	{
+	x_old = x_new;
+	f_prime = (function(x_old + d_gap, function_parameter) - function(x_old, function_parameter)) / d_gap;
+	x_new = x_old - eps * f_prime;
+	}
+while (fabs(x_new - x_old) > precision);
+
+return x_new;
+}
+
+/*
+	ANT_COMPILETIME_FLOOR_LOG_TO_BASE
 	---------------------------------
 	Code for computing logs of arbitrary bases at compile-time. This allows logs to be computed as part of constant expressions.
 */
@@ -187,7 +327,7 @@ enum { value = 0 };
 };
 
 /*
-	ANT_compiletime_ispowerof2
+	ANT_COMPILETIME_ISPOWEROF2
 	--------------------------
 */
 template <int n>
@@ -197,7 +337,7 @@ enum { value = !(n & (n-1)) };
 };
 
 /*
-	ANT_compiletime_floor_log2
+	ANT_COMPILETIME_FLOOR_LOG2
 	--------------------------
 */
 template <unsigned long long n>
@@ -219,7 +359,7 @@ enum { value = 0 };
 };
 
 /*
-	ANT_compiletime_pow
+	ANT_COMPILETIME_POW
 	-------------------
 */
 template <unsigned int base, unsigned int exponent>
@@ -241,7 +381,7 @@ static const unsigned long long value = 1;
 };
 
 /*
-	ANT_compiletime_int_max
+	ANT_COMPILETIME_INT_MAX
 	-----------------------
 	This is needed because numeric_limits<T>::max() is unavailable at compile-time:
 */
@@ -252,7 +392,7 @@ static const T value = (T) (std::numeric_limits<T>::is_signed ? ~(T) (1ULL << (s
 };
 
 /*
-	ANT_compiletime_int_floor_log_to_base
+	ANT_COMPILETIME_INT_FLOOR_LOG_TO_BASE
 	-------------------------------------
 	How many 'base' digits would fit into an integer of type T? This is required in addition to ANT_compiletime_floor_log_to_base,
 	because we need to be able to compute it precisely for the largest supported integral type, too.
@@ -269,7 +409,7 @@ enum { value = (ANT_compiletime_ispowerof2<base>::value ? (sizeof(T) * CHAR_BIT 
 };
 
 /*
-	ANT_compiletime_int_floor_log_to_base_has_remainder
+	ANT_COMPILETIME_INT_FLOOR_LOG_TO_BASE_HAS_REMAINDER
 	---------------------------------------------------
 	Is there a remainder when computing the log of the integer type T (i.e. 2^(num_bits_in_T)) to the given base?
 */
@@ -283,7 +423,7 @@ enum { value = (ANT_compiletime_ispowerof2<base>::value ? ((sizeof(T) * CHAR_BIT
 };
 
 /*
-	ANT_compiletime_int_floor_log_to_base_remainder
+	ANT_COMPILETIME_INT_FLOOR_LOG_TO_BASE_REMAINDER
 	-----------------------------------------------
 	Computes 2^(num_bits_in_T) / pow(base, floor(log_base(2^(num_bits_in_T), base))))
 */
@@ -299,4 +439,20 @@ struct ANT_compiletime_int_floor_log_to_base_remainder<T, base, 0>
 enum { value = 1 } ;
 };
 
+/*
+	ANT_LOGSUM()
+	------------
+	Compute the log of the sum of two logs.  That is,
+	ANT_logsum(a,b) = log(exp(a) + exp(b)), but worry (a little bit) about rounding.
+*/
+static inline double ANT_logsum(double val1, double val2)
+{
+if (val1 > val2)
+	return log(exp(val2 - val1) + 1.0) + val1;
+else
+	return log(exp(val1 - val2) + 1.0) + val2;
+}
+
 #endif  /* MATHS_H_ */
+
+

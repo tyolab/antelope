@@ -5,13 +5,13 @@
 #ifndef ANT_PARAM_BLOCK_H_
 #define ANT_PARAM_BLOCK_H_
 
+#include "fundamental_types.h"
 #include "indexer_param_block_rank.h"
 #include "indexer_param_block_stem.h"
 #include "indexer_param_block_topsig.h"
 #include "evaluator.h"
 
 #define MAX_PREGEN_COUNT 128
-
 
 /*
 	class ANT_ANT_PARAM_BLOCK
@@ -21,7 +21,7 @@ class ANT_ANT_param_block : public ANT_indexer_param_block_rank, public ANT_inde
 {
 public:
 	enum { NONE = 0, QUERY = 1, SUM = 2, SHORT = 4, PRECISION = 8 };					// statistics to print (bitstring)
-	enum { /* NONE = 0, */ INEX = 1, TREC, INEX_EFFICIENCY, INEX_FOCUS, INEX_BEP } ;	// evaluation forum
+	enum { /* NONE = 0, */ INEX = 1, TREC, INEX_EFFICIENCY, INEX_FOCUS, INEX_BEP }; 	// evaluation forum
 	enum { INDEX_IN_FILE, INDEX_IN_MEMORY};												// read the index from disk or load at startup
 	enum { /* NONE = 0, */ ARTICLE = 1, RANGE };										// focused retrieval method
 	enum { TERM_AT_A_TIME, QUANTUM_AT_A_TIME };											// processing strategy (term or quantum at a time)
@@ -29,13 +29,13 @@ public:
 			 QUANTUM_STOP_DIFF = 1,             // early terminated based on the difference of the top k and k+1
 			 QUANTUM_STOP_DIFF_SMALLEST = 2,    // early terminated based on the smallest difference among the top k documents
 			 QUANTUM_STOP_DIFF_LARGEST = 4      // early terminated based on the difference between the largest and second largest in the top documents
-	};
+			};
+	enum { /*NONE = 0, */ STOPWORDS_PUURULA = 1,  STOPWORDS_NCBI = 2, STOPWORDS_SHORT = 4, STOPWORDS_NUMBERS = 8, STOPWORDS_ATIRE = 16 };
 
-private:
+public:
 	int argc;
 	char **argv;
 
-public:
 	long logo;								// display the ANT banner logo or not
 	long long sort_top_k;				// accurate rank point in the accumulator sort (in the call to sort_results_list())
 	long trim_postings_k;				// trim the postigs lists at no fewer than k
@@ -80,9 +80,11 @@ public:
 
 	long query_type;					// NEXI, Boolean, and optionally additionally with relevance feedback
 	char *query_fields;					// in the case of a TREC topic file, which fields should we use (i.e. title, etc).
+	long query_stopping;				// type of stop word removal to apply.
 	long feedbacker;					// relevance feedback algorithm to use
 	long feedback_documents;			// documents to analyse for feedback terms
 	long feedback_terms;				// terms to add to the query in relevance feedback
+	double feedback_lambda;				// used for linear interpolation of initial and feedback result sets
 
 	long accumulator_sort;				// the method to be used to sort accumulators
 
@@ -91,6 +93,8 @@ public:
 
 	long processing_strategy;			// term-at-a-time or quantum-at-a-time
 	uint8_t quantum_stopping;           // the early termination strategy for quantum-at-a-time
+	long quantization_bits;				// how many bits to quantize into
+	long quantization;					// whether or not we should quantize
 
 	unsigned long header_offset;					// for looking for the actual position of header
 

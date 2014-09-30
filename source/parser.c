@@ -59,18 +59,21 @@ segmentation = (unsigned char *)ANT_plugin_manager::instance().do_segmentation(s
 	ANT_PARSER::GET_NEXT_TOKEN()
 	----------------------------
 */
-#define ASPT_UTF8_METHODS
+//#define ASPT_UTF8_METHODS
 ANT_parser_token *ANT_parser::get_next_token(void)
 {
-long bytes;
 unsigned char *start, *here;
-long word_count = 0, pre_length_of_token = 0;
+long word_count, pre_length_of_token;
 unsigned long character;
-unsigned char chartype;
-size_t bufferlen;
-char *bufferpos;
+unsigned char character_type;
+size_t buffer_length;
+char *buffer_pos;
 
-// Most return paths will not offer a normalized form.
+#ifdef ASPT_UTF8_METHODS
+long bytes;
+char *buffer_end;
+#endif
+
 current_token.normalized.string_length = 0;
 
 if (segmentation != NULL)
@@ -108,88 +111,152 @@ if (segmentation != NULL)
 /*
 	We skip over non-indexable characters before the start of the first token
 */
+#ifdef ASPT_UTF8_METHODS
+/*
+	Start with the assumption that we're skipping over ASCII white space
+*/
+while (!ANT_isalnumpunczero(*current))
+	current++;
+
+/*
+	If we've hit a non-white space then either its an ASCII non-white space,
+	else we have to skip over UNICODE white space
+*/
+if (ANT_isascii(*current))
+	{
+	character_type = unicode_chartype_ASCII(*current);
+	bytes = 1;
+	}
+else
+	{
+	/*
+		Skipping over UNICODE whitespace
+	*/
+	for (;;)
+		{
+		character_type = (unsigned char)unicode_chartype_utf8(current, &character, &bytes);
+
+		if (character == 0)
+			return NULL;
+
+		/*
+			This is ordered on the most probable character we're going to see (so it isn't that dumb)
+		*/
+		if (character_type == CT_LETTER || character_type == CT_NUMBER || character_type == CT_PUNCTUATION || (character_type == CT_OTHER && (character == SPECIAL_TERM_CHAR || ischinese(character))))
+			break;
+
+		current += bytes;
+		}
+	}
+#else
 for (;;)
 	{
-#ifdef ASPT_UTF8_METHODS
-	chartype = (unsigned char)unicode_chartype_utf8(current, &character, &bytes);
-
-	if (character == 0)
-		return NULL;
-
-	/*
-		This is ordered on the most probable character we're going to see (so it isn't that dumb)
-	*/
-	if (chartype == CT_LETTER || chartype == CT_NUMBER || chartype == CT_PUNCTUATION || (chartype == CT_OTHER && (character == SPECIAL_TERM_CHAR || ischinese(character))))
-		break;
-
-	current += bytes;
-#else
 	character = utf8_to_wide(current);
 
 	if (character == 0)
 		return NULL;
 
-	chartype = unicode_chartype_set(character);
+	character_type = unicode_chartype_set(character);
 
-	if (chartype == CT_LETTER || chartype == CT_NUMBER || chartype == CT_PUNCTUATION || (chartype == CT_OTHER && (character == SPECIAL_TERM_CHAR || ischinese(character))))
+	if (character_type == CT_LETTER || character_type == CT_NUMBER || character_type == CT_PUNCTUATION || (character_type == CT_OTHER && (character == SPECIAL_TERM_CHAR || ischinese(character))))
 		break;
 
 	current += utf8_bytes(current);
-#endif
 	}
+#endif
 
 /*
 	Now we look at the first character as it defines how parse the next token
 */
-
-if (chartype == CT_LETTER)
+if (character_type == CT_LETTER)
 	{
+#ifdef ASPT_UTF8_METHODS
+	start = current;
+
+	//normalize the word into this buffer
+	buffer_pos = current_token.normalized_buf;
+	buffer_end = buffer_pos + sizeof(current_token.normalized_buf);
+
+	if (bytes == 1)
+		{
+		current++;
+		/*
+			If the first character is ASCII then assume the remainder will be
+		*/
+		*buffer_pos++ = ANT_tolower(*start);
+
+		while (ANT_isalpha(*current))
+			{
+			if (buffer_pos < buffer_end)
+				*buffer_pos++ = ANT_tolower(*current);
+			current++;
+			}
+		/*
+			We might have terminated when we found a non-ASCII so keep processing from here on
+			using UNICODE (i.e. the slow way)
+		*/
+		if ((*current & 0x80) != 0)
+			{
+			buffer_length = buffer_end - buffer_pos;
+			while (unicode_chartype_utf8(current, &character, &bytes) == CT_LETTER)
+				{
+				ANT_UNICODE_normalize_lowercase_toutf8(&buffer_pos, &buffer_length, character);
+				current += bytes;
+				}
+			}
+		}
+	else
+		{
+		current += bytes;
+		/*
+			The first character is not ASCII so assume more of the string won't be
+			i.e. do it the slow way
+		*/
+		ANT_UNICODE_normalize_lowercase_toutf8(&buffer_pos, &buffer_length, character);
+		while (unicode_chartype_utf8(current, &character, &bytes) == CT_LETTER)
+			{
+			ANT_UNICODE_normalize_lowercase_toutf8(&buffer_pos, &buffer_length, character);
+			current += bytes;
+			}
+		}
+	current_token.type = TT_WORD;
+	current_token.normalized.string_length = buffer_pos - current_token.normalized_buf;
+	current_token.start = (char *)start;
+	current_token.string_length = current - start;
+#else
 	start = current;
 	current += utf8_bytes(character);
 
 	//normalize the word into this buffer
-	bufferpos = &current_token.normalized_buf[0];
-	bufferlen = sizeof(current_token.normalized_buf);
+	buffer_pos = &current_token.normalized_buf[0];
+	buffer_length = sizeof(current_token.normalized_buf);
 
-	ANT_UNICODE_normalize_lowercase_toutf8(&bufferpos, &bufferlen, character);
-#ifdef ASPT_UTF8_METHODS
-	while (unicode_chartype_utf8(current, &character, &bytes) == CT_LETTER)
-		{
-		if (bytes == 1)
-			{
-			*bufferpos = ANT_tolower(*current);
-			bufferpos++;
-			bufferlen--;
-			current++;
-			}
-		else
-			{
-			ANT_UNICODE_normalize_lowercase_toutf8(&bufferpos, &bufferlen, character);
-			current += bytes;
-			}
-		}
-#else
+	ANT_UNICODE_normalize_lowercase_toutf8(&buffer_pos, &buffer_length, character);
+
 	while (character = utf8_to_wide(current), unicode_chartype(character) == CT_LETTER)
 		{
 		current += utf8_bytes(current);
-		ANT_UNICODE_normalize_lowercase_toutf8(&bufferpos, &bufferlen, character);
+		ANT_UNICODE_normalize_lowercase_toutf8(&buffer_pos, &buffer_length, character);
 		}
-#endif
 
 	current_token.type = TT_WORD;
-	current_token.normalized.string_length = bufferpos - current_token.normalized_buf;
+	current_token.normalized.string_length = buffer_pos - current_token.normalized_buf;
 	current_token.start = (char *)start;
 	current_token.string_length = current - start;
+#endif
 	}
-else if (chartype == CT_NUMBER)
+else if (character_type == CT_NUMBER)
 	{
 	start = current;
-	current += utf8_bytes(current);
 
 #ifdef ASPT_UTF8_METHODS
+	current += bytes;
+
 	while (unicode_chartype_utf8(current, &character, &bytes) == CT_NUMBER)
 		current += bytes;
 #else
+	current += utf8_bytes(current);
+
 	while (character = utf8_to_wide(current), unicode_chartype(character)==CT_NUMBER)
 		current += utf8_bytes(current);
 #endif
@@ -198,15 +265,16 @@ else if (chartype == CT_NUMBER)
 	current_token.start = (char *)start;
 	current_token.string_length = current - start;
 	}
-else if (chartype == CT_PUNCTUATION && *current != '<')
+else if (character_type == CT_PUNCTUATION && *current != '<')
 	{
 	start = current;
-	current += utf8_bytes(current);
 
 #ifdef ASPT_UTF8_METHODS
+	current += bytes;
 	while (unicode_chartype_utf8(current, &character, &bytes) == CT_PUNCTUATION && character != '<')		// this catches the case of punction before a tag "blah.</b>"
 		current += utf8_bytes(current);
 #else
+	current += utf8_bytes(current);
 	while (character = utf8_to_wide(current), unicode_chartype(character) == CT_PUNCTUATION && character != '<')		// this catches the case of punction before a tag "blah.</b>"
 		current += utf8_bytes(current);
 #endif
@@ -215,13 +283,19 @@ else if (chartype == CT_PUNCTUATION && *current != '<')
 	current_token.start = (char *)start;
 	current_token.string_length = current - start;
 	}
-else if (chartype == CT_OTHER && character == SPECIAL_TERM_CHAR)
+else if (character_type == CT_ZERO)
+	return NULL;			// at end of document
+else if (character_type == CT_OTHER && character == SPECIAL_TERM_CHAR)
 	{
 	/* Special term which begins with the 0x80 marker and ends after the first non-alnum or non -: */
 	start = current;
 
 	//The term marker is multi-byte, but the following characters will be single byte
+#ifdef ASPT_UTF8_METHODS
+	current += bytes;
+#else
 	current += utf8_bytes(current);
+#endif
 
 	while (ANT_isalnum(*current) || *current == '-' || *current == ':')
 		current += sizeof(*current);
@@ -230,11 +304,17 @@ else if (chartype == CT_OTHER && character == SPECIAL_TERM_CHAR)
 	current_token.start = (char *)start;
 	current_token.string_length = current - start;
 	}
-else if (chartype == CT_OTHER && ischinese(character))
+else if (character_type == CT_OTHER && ischinese(character))
 	{
+	pre_length_of_token = 0;
 	word_count = 1;
 	start = current;
-	current += utf8_bytes(current);		// move on to the next character
+
+#ifdef ASPT_UTF8_METHODS
+	current += bytes;
+#else
+	current += utf8_bytes(current);
+#endif
 
 	if (should_segment)
 		{
@@ -265,6 +345,7 @@ else if (chartype == CT_OTHER && ischinese(character))
 else											// everything else (that starts with a '<')
 	{
 	start = ++current;
+
 	if (ANT_isXMLnamestartchar(*current))
 		{
 		while (ANT_isXMLnamechar(*current))

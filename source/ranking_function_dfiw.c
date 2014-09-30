@@ -18,23 +18,71 @@
 */
 void ANT_ranking_function_DFIW::relevance_rank_one_quantum(ANT_ranking_function_quantum_parameters *quantum_parameters)
 {
-#pragma ANT_PRAGMA_UNUSED_PARAMETER
+long long docid;
+double cf, tf, ef, rsv;
+ANT_compressable_integer *current;
+
+cf = (double)quantum_parameters->term_details->global_collection_frequency;
+tf = quantum_parameters->tf * quantum_parameters->prescalar;
+
+docid = -1;
+current = quantum_parameters->the_quantum;
+while (current < quantum_parameters->quantum_end)
+	{
+	docid += *current++;
+
+	ef = cf * ((double)document_lengths[(size_t)docid] / (double)collection_length_in_terms);
+	rsv = ANT_log2((tf - ef) / sqrt(ef) + 1) * -ANT_log2(tf / (double)document_lengths[(size_t)docid]);
+
+	if (tf - ef > 0)
+		quantum_parameters->accumulator->add_rsv(docid, quantize(quantum_parameters->postscalar * rsv, maximum_collection_rsv, minimum_collection_rsv));
+	}
 }
 
 /*
 	ANT_RANKING_FUNCTION_DFI_IFW::RELEVANCE_RANK_TOP_K()
-	-------------------------------------------------
+	----------------------------------------------------
 */
-void ANT_ranking_function_DFIW::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_DFIW::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_impact_header *impact_header, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
-#pragma ANT_PRAGMA_UNUSED_PARAMETER
+long long docid;
+double cf, tf, ef, rsv;
+ANT_compressable_integer *current, *end;
+
+cf = (double)term_details->global_collection_frequency;
+
+impact_header->impact_value_ptr = impact_header->impact_value_start;
+impact_header->doc_count_ptr = impact_header->doc_count_start;
+current = impact_ordering;
+while (impact_header->doc_count_ptr < impact_header->doc_count_trim_ptr)
+	{
+	tf = *impact_header->impact_value_ptr * prescalar;
+
+	docid = -1;
+	end = current + *impact_header->doc_count_ptr;
+	while (current < end)
+		{
+		docid += *current++;
+
+		ef = cf * ((double)document_lengths[(size_t)docid] / (double)collection_length_in_terms);
+		rsv = ANT_log2((tf - ef) / sqrt(ef) + 1) * -ANT_log2(tf / (double)document_lengths[(size_t)docid]);
+
+		if (tf - ef > 0)
+			accumulator->add_rsv(docid, quantize(postscalar * rsv, maximum_collection_rsv, minimum_collection_rsv));
+		}
+	current = end;
+	impact_header->impact_value_ptr++;
+	impact_header->doc_count_ptr++;
+	}
 }
+
 #else
+
 /*
 	ANT_RANKING_FUNCTION_DFIW::RELEVANCE_RANK_TOP_K()
 	-------------------------------------------------
 */
-void ANT_ranking_function_DFIW::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar)
+void ANT_ranking_function_DFIW::relevance_rank_top_k(ANT_search_engine_result *accumulator, ANT_search_engine_btree_leaf *term_details, ANT_compressable_integer *impact_ordering, long long trim_point, double prescalar, double postscalar, double query_frequency)
 {
 long long docid;
 double tf, cf, ef, score;
@@ -69,7 +117,7 @@ while (current < end)
 	ANT_RANKING_FUNCTION_DFIW::RANK()
 	---------------------------------
 */
-double ANT_ranking_function_DFIW::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency)
+double ANT_ranking_function_DFIW::rank(ANT_compressable_integer docid, ANT_compressable_integer length, unsigned short term_frequency, long long collection_frequency, long long document_frequency, double query_frequency)
 {
 double tf = (double)term_frequency;
 double cf = (double)collection_frequency;

@@ -15,7 +15,11 @@
 #include "search_engine_btree_leaf.h"
 #include "search_engine_accumulator.h"
 #include "search_engine_result.h"
-#include "search_engine_result_iterator.h"
+#ifdef FILENAME_INDEX
+	#include "search_engine_result_id_iterator.h"
+#else
+	#include "search_engine_result_iterator.h"
+#endif
 #include "stats_search_engine.h"
 #include "ranking_function_bm25.h"
 #include "stemmer.h"
@@ -57,7 +61,7 @@ this->memory_model = memory_model;
 	ANT_SEARCH_ENGINE::OPEN()
 	-------------------------
 */
-int ANT_search_engine::open(const char *filename, unsigned long header_offset)
+int ANT_search_engine::open(const char *filename)
 {
 int32_t four_byte;
 int64_t eight_byte;
@@ -84,11 +88,11 @@ index_filename = filename;
 	long: the length of the longest compressed postings list
 	long long: the maximum number of postings in a postings list (the highest DF)
 */
-end = index->file_length() - header_offset;
+end = index->file_length();
 #ifdef IMPACT_HEADER
-index->seek(end - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte));
+	index->seek(end - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte));
 #else
-index->seek(end - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte));
+	index->seek(end - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte));
 #endif
 
 index->read(&eight_byte);
@@ -98,8 +102,8 @@ index->read(&four_byte);
 string_length_of_longest_term = four_byte;
 
 #ifdef IMPACT_HEADER
-index->read(&four_byte);
-unique_terms = four_byte;
+	index->read(&four_byte);
+	unique_terms = four_byte;
 #endif
 
 index->read(&four_byte);
@@ -188,10 +192,14 @@ get_postings_details("~length", &collection_details);
 documents = collection_details.local_document_frequency;
 
 if (this->memory_model) //INDEX_IN_MEMORY, no need to allocate memory
+	{
 	postings_buffer = NULL;
+	special_compression_buffer = (unsigned char *)memory->malloc(1024);// must be long enough to store the worst case of two posintgs + impact_headers, etc.  1024 is probably way too large.
+	}
 else
 	{
 	postings_buffer = (unsigned char *)memory->malloc(postings_buffer_length);
+	special_compression_buffer = NULL;
 	memory->realign();
 	}
 
@@ -201,14 +209,14 @@ else
 	decompress_buffer = (ANT_compressable_integer *)memory->malloc(sizeof(*decompress_buffer) * (documents + ANT_COMPRESSION_FACTORY_END_PADDING));
 	memory->realign();
 #else
-/*
-	Allocate space for decompression.
-	NOTES:
-		Add 512 because of the tf and 0 at each end of each impact ordered list.
-		Further add ANT_COMPRESSION_FACTORY_END_PADDING so that compression schemes that don't know when to stop (such as Simple-9) can overflow without problems.
-*/
-decompress_buffer = (ANT_compressable_integer *)memory->malloc(sizeof(*decompress_buffer) * (512 + documents + ANT_COMPRESSION_FACTORY_END_PADDING));
-memory->realign();
+	/*
+		Allocate space for decompression.
+		NOTES:
+			Add 512 because of the tf and 0 at each end of each impact ordered list.
+			Further add ANT_COMPRESSION_FACTORY_END_PADDING so that compression schemes that don't know when to stop (such as Simple-9) can overflow without problems.
+	*/
+	decompress_buffer = (ANT_compressable_integer *)memory->malloc(sizeof(*decompress_buffer) * (512 + documents + ANT_COMPRESSION_FACTORY_END_PADDING));
+	memory->realign();
 #endif
 
 document_lengths = (ANT_compressable_integer *)memory->malloc(documents * sizeof(*document_lengths));
@@ -255,14 +263,14 @@ if (get_postings_details("~documentoffsets", &collection_details) != NULL)
 	document_decompress_buffer = (char *)memory->malloc(document_longest_compressed);
 
 #ifdef IMPACT_HEADER
-	document_longest_raw_length = get_variable("~documentlongest");
+	document_longest_raw_length = (long)get_variable("~documentlongest");
 #else
 	if ((value = get_decompressed_postings("~documentlongest", &collection_details)) != NULL)
-#ifdef SPECIAL_COMPRESSION
-		document_longest_raw_length = *(value + 1);
-#else
-		document_longest_raw_length = *value;
-#endif
+		#ifdef SPECIAL_COMPRESSION
+			document_longest_raw_length = *(value + 1);
+		#else
+			document_longest_raw_length = *value;
+		#endif
 #endif
 	}
 
@@ -286,6 +294,16 @@ if ((global_trim_postings_k = get_variable("~trimpoint")) == 0)
 	global_trim_postings_k = LONG_MAX;									// trim at 0 means no trimming
 
 stats_for_all_queries->add_disk_bytes_read_on_init(index->get_bytes_read());
+
+#ifdef FILENAME_INDEX
+	/*
+		Get the location of the filename and the index to the filenames.
+	*/
+	filename_start = get_variable("~documentfilenamesstart");
+	filename_finish = get_variable("~documentfilenamesfinish");
+	filename_index_start = get_variable("~documentfilenamesindexstart");
+	filename_index_finish = get_variable("~documentfilenamesindexfinish");
+#endif
 
 return 1;
 }
@@ -368,7 +386,13 @@ void ANT_search_engine::init_accumulators(long long top_k)
 long long now;
 
 now = stats->start_timer();
-results_list->init_accumulators(top_k > documents ? documents + 1 : top_k);		// we add 1 here to prevent the unfortunate repeated re-organisation of the heap when there are number-of-documents in it
+
+/*
+	The line of code below used to add one to documents to prevent a slow-down when every document is in the 
+	results list, however this lead to a crash as it would fill the list and then overflow (with a duplicate
+	document). So we no longer add one.
+*/
+results_list->init_accumulators(top_k > documents ? documents : top_k);
 stats->add_accumulator_init_time(stats->stop_timer(now));
 }
 
@@ -499,7 +523,8 @@ else
 	ANT_SEARCH_ENGINE::GET_ONE_QUANTUM()
 	-------------------------------------
 */
-unsigned char *ANT_search_engine::get_one_quantum(ANT_search_engine_btree_leaf *term_details, ANT_impact_header *the_impact_header, ANT_quantum *the_quantum, unsigned char *destination) {
+unsigned char *ANT_search_engine::get_one_quantum(ANT_search_engine_btree_leaf *term_details, ANT_impact_header *the_impact_header, ANT_quantum *the_quantum, unsigned char *destination)
+{
 #ifdef SPECIAL_COMPRESSION
 	if (term_details->local_document_frequency <= 2)
 		{
@@ -514,7 +539,7 @@ unsigned char *ANT_search_engine::get_one_quantum(ANT_search_engine_btree_leaf *
 			{
 			*postings++ = term_details->postings_position_on_disk >> 32;
 			if (term_details->local_document_frequency == 2)
-				*postings = term_details->impacted_length;
+				*postings = (ANT_compressable_integer)term_details->impacted_length;
 			term_details->impacted_length = term_details->local_document_frequency;
 			}
 		else
@@ -522,7 +547,7 @@ unsigned char *ANT_search_engine::get_one_quantum(ANT_search_engine_btree_leaf *
 			*postings++ = term_details->postings_position_on_disk >> 32; // first docid
 			*(unsigned char *)postings = 0; // no compression for second docid list
 			postings = (ANT_compressable_integer *)((unsigned char *)postings + 1); // move past the compression scheme byte
-			*postings = term_details->impacted_length; // second docid
+			*postings = (ANT_compressable_integer)term_details->impacted_length; // second docid
 			term_details->impacted_length = 2;
 			}
 		}
@@ -555,7 +580,7 @@ unsigned char *ANT_search_engine::get_impact_header(ANT_search_engine_btree_leaf
 		quantum_count_type the_quantum_count = 1;
 		beginning_of_the_postings_type beginning_of_the_postings = ANT_impact_header::INFO_SIZE + 1;
 		ANT_compressable_integer impact_one = term_details->postings_position_on_disk & 0xFFFFFFFF;
-		ANT_compressable_integer impact_two = term_details->postings_length;
+		ANT_compressable_integer impact_two = (ANT_compressable_integer)term_details->postings_length;
 
 		if (impact_one != impact_two && term_details->local_document_frequency == 2)
 			the_quantum_count = 2;
@@ -573,7 +598,7 @@ unsigned char *ANT_search_engine::get_impact_header(ANT_search_engine_btree_leaf
 		if (the_quantum_count == 1)
 			{
 			// document counts
-			*into++ = term_details->local_document_frequency;
+			*into++ = (ANT_compressable_integer)term_details->local_document_frequency;
 			// offsets
 			*into++ = 0;
 			}
@@ -618,12 +643,18 @@ unsigned char *ANT_search_engine::get_postings(ANT_search_engine_btree_leaf *ter
 	ANT_compressable_integer *into;
 	if (term_details->local_document_frequency <= 2)
 		{
+		/*
+			We can't return a pointer to a location in the file because there isn't one... so we have to decode the postings and put them somewhere.
+		*/
+		if (special_compression_buffer != NULL)
+			destination = special_compression_buffer;
+
 #ifdef IMPACT_HEADER
 		ANT_compressable_integer *postings;
 		quantum_count_type the_quantum_count = 1;
 		beginning_of_the_postings_type beginning_of_the_postings = ANT_impact_header::INFO_SIZE + 1;
 		ANT_compressable_integer impact_one = term_details->postings_position_on_disk & 0xFFFFFFFF;
-		ANT_compressable_integer impact_two = term_details->postings_length;
+		ANT_compressable_integer impact_two = (ANT_compressable_integer)term_details->postings_length;
 
 		if (impact_one != impact_two && term_details->local_document_frequency == 2)
 			the_quantum_count = 2;
@@ -644,13 +675,13 @@ unsigned char *ANT_search_engine::get_postings(ANT_search_engine_btree_leaf *ter
 		if (the_quantum_count == 1)
 			{
 			// document counts
-			*into++ = term_details->local_document_frequency;
+			*into++ = (ANT_compressable_integer)term_details->local_document_frequency;
 			// offsets
 			*into++ = 0;
 			// fill in postings
 			*postings++ = term_details->postings_position_on_disk >> 32;
 			if (term_details->local_document_frequency == 2)
-				*postings = term_details->impacted_length;
+				*postings = (ANT_compressable_integer)term_details->impacted_length;
 			term_details->impacted_length = term_details->local_document_frequency;
 			}
 		else
@@ -666,7 +697,7 @@ unsigned char *ANT_search_engine::get_postings(ANT_search_engine_btree_leaf *ter
 			*postings++ = term_details->postings_position_on_disk >> 32; // first docid
 			*(unsigned char *)postings = 0; // no compression for second docid list
 			postings = (ANT_compressable_integer *)((unsigned char *)postings + 1); // move past the compression scheme byte
-			*postings = term_details->impacted_length; // second docid
+			*postings = (ANT_compressable_integer)term_details->impacted_length; // second docid
 			term_details->impacted_length = 2;
 			}
 #else
@@ -806,11 +837,7 @@ return stemmed_term_details;
 	ANT_SEARCH_ENGINE::READ_AND_DECOMPRESS_FOR_ONE_QUANTUM()
 	--------------------------------------------------------
 */
-void *ANT_search_engine::read_and_decompress_for_one_quantum(ANT_search_engine_btree_leaf *term_details,
-					unsigned char *raw_postings_buffer,
-					ANT_impact_header *the_impact_header,
-					ANT_quantum *the_quantum,
-					ANT_compressable_integer *the_decompressed_buffer)
+void *ANT_search_engine::read_and_decompress_for_one_quantum(ANT_search_engine_btree_leaf *term_details, unsigned char *raw_postings_buffer, ANT_impact_header *the_impact_header, ANT_quantum *the_quantum, ANT_compressable_integer *the_decompressed_buffer)
 {
 void *verify = NULL;
 long long now, bytes_already_read;
@@ -842,9 +869,7 @@ return verify;
 	ANT_SEARCH_ENGINE::READ_AND_DECOMPRESS_FOR_ONE_IMPACT_HEADER()
 	--------------------------------------------------------------
 */
-void *ANT_search_engine::read_and_decompress_for_one_impact_header(ANT_search_engine_btree_leaf *term_details,
-					unsigned char *raw_postings_buffer,
-					ANT_impact_header *the_impact_header)
+void *ANT_search_engine::read_and_decompress_for_one_impact_header(ANT_search_engine_btree_leaf *term_details, unsigned char *raw_postings_buffer, ANT_impact_header *the_impact_header)
 {
 void *verify = NULL;
 long long now, bytes_already_read;
@@ -889,14 +914,9 @@ return verify;
 	ANT_SEARCH_ENGINE::READ_AND_DECOMPRESS_FOR_ONE_TERM()
 	-----------------------------------------------------
 */
-void *ANT_search_engine::read_and_decompress_for_one_term(ANT_search_engine_btree_leaf *term_details,
-					unsigned char *raw_postings_buffer,
-					ANT_impact_header *the_impact_header,
-					ANT_compressable_integer *the_decompressed_buffer)
+void *ANT_search_engine::read_and_decompress_for_one_term(ANT_search_engine_btree_leaf *term_details, unsigned char *raw_postings_buffer, ANT_impact_header *the_impact_header, ANT_compressable_integer *the_decompressed_buffer)
 #else
-void *ANT_search_engine::read_and_decompress_for_one_term(ANT_search_engine_btree_leaf *term_details,
-					unsigned char *raw_postings_buffer,
-					ANT_compressable_integer *the_decompressed_buffer)
+void *ANT_search_engine::read_and_decompress_for_one_term(ANT_search_engine_btree_leaf *term_details, unsigned char *raw_postings_buffer, ANT_compressable_integer *the_decompressed_buffer)
 #endif
 {
 void *verify = NULL;
@@ -1013,7 +1033,7 @@ if (term_details != NULL && term_details->local_document_frequency > 0)
 					then we want to check, and modify the header so that future processing doesn't go awry
 				*/
 				if (*the_impact_header->doc_count_ptr > end)
-					*the_impact_header->doc_count_ptr = end;
+					*the_impact_header->doc_count_ptr = (ANT_compressable_integer)end;
 
 				factory.decompress(the_decompressed_buffer + sum, raw_postings_buffer + the_impact_header->beginning_of_the_postings + *the_impact_header->impact_offset_ptr, *the_impact_header->doc_count_ptr);
 				sum += *the_impact_header->doc_count_ptr;
@@ -1039,7 +1059,7 @@ return verify;
 	ANT_SEARCH_ENGINE::PROCESS_ONE_TERM_DETAIL()
 	--------------------------------------------
 */
-void ANT_search_engine::process_one_term_detail(ANT_search_engine_btree_leaf *term_details, ANT_ranking_function *ranking_function, ANT_bitstring *bitstring)
+void ANT_search_engine::process_one_term_detail(ANT_search_engine_btree_leaf *term_details, ANT_ranking_function *ranking_function, double prescalar, double postscalar, double query_frequency, ANT_bitstring *bitstring)
 {
 void *verify;
 long long now;
@@ -1059,18 +1079,18 @@ if (verify != NULL)
 	if (bitstring == NULL)
 		{ // it bitstring != NULL then we're boolean ranking hybrid
 		#ifdef IMPACT_HEADER
-			//ranking_function->relevance_rank_top_k(results_list, term_details, &impact_header, decompress_buffer, trim_postings_k);
-			ranking_function->relevance_rank_quantum(results_list, term_details, &impact_header, decompress_buffer, trim_postings_k);
+			ranking_function->relevance_rank_top_k(results_list, term_details, &impact_header, decompress_buffer, trim_postings_k, prescalar, postscalar, query_frequency);
+			//ranking_function->relevance_rank_quantum(results_list, term_details, &impact_header, decompress_buffer, trim_postings_k);
 		#else
-			ranking_function->relevance_rank_top_k(results_list, term_details, decompress_buffer, trim_postings_k);
+			ranking_function->relevance_rank_top_k(results_list, term_details, decompress_buffer, trim_postings_k, prescalar, postscalar, query_frequency);
 		#endif
 		}
 	else
 		{
 		#ifdef IMPACT_HEADER
-			ranking_function->relevance_rank_boolean(bitstring, results_list, term_details, &impact_header, decompress_buffer, trim_postings_k);
+			ranking_function->relevance_rank_boolean(bitstring, results_list, term_details, &impact_header, decompress_buffer, trim_postings_k, prescalar, postscalar, query_frequency);
 		#else
-			ranking_function->relevance_rank_boolean(bitstring, results_list, term_details, decompress_buffer, trim_postings_k);
+			ranking_function->relevance_rank_boolean(bitstring, results_list, term_details, decompress_buffer, trim_postings_k, prescalar, postscalar, query_frequency);
 		#endif
 		}
 	stats->add_rank_time(stats->stop_timer(now));
@@ -1081,11 +1101,11 @@ if (verify != NULL)
 	ANT_SEARCH_ENGINE::PROCESS_ONE_SEARCH_TERM()
 	--------------------------------------------
 */
-void ANT_search_engine::process_one_search_term(char *term, ANT_ranking_function *ranking_function, ANT_bitstring *bitstring)
+void ANT_search_engine::process_one_search_term(char *term, ANT_ranking_function *ranking_function, double prescalar, double postscalar, double query_frequency, ANT_bitstring *bitstring)
 {
 ANT_search_engine_btree_leaf term_details;
 
-process_one_term_detail(process_one_term(term, &term_details), ranking_function, bitstring);
+process_one_term_detail(process_one_term(term, &term_details), ranking_function, prescalar, postscalar, query_frequency, bitstring);
 }
 
 /*
@@ -1268,7 +1288,7 @@ return collection_frequency;
 	ANT_SEARCH_ENGINE::PROCESS_ONE_STEMMED_SEARCH_TERM()
 	----------------------------------------------------
 */
-void ANT_search_engine::process_one_stemmed_search_term(ANT_stemmer *stemmer, char *base_term, ANT_ranking_function *ranking_function, ANT_bitstring *bitstring)
+void ANT_search_engine::process_one_stemmed_search_term(ANT_stemmer *stemmer, char *base_term, ANT_ranking_function *ranking_function, double prescalar, double postscalar, double query_frequency, ANT_bitstring *bitstring)
 {
 long long bytes_already_read;
 ANT_search_engine_btree_leaf stemmed_term_details;
@@ -1299,7 +1319,7 @@ if (collection_frequency != 0)
 	{
 	now = stats->start_timer();
 	stemmed_term_details.local_collection_frequency = collection_frequency;
-	ranking_function->relevance_rank_tf(bitstring, results_list, &stemmed_term_details, stem_buffer, ANT_min(trim_postings_k, global_trim_postings_k), 1, 1);
+	ranking_function->relevance_rank_tf(bitstring, results_list, &stemmed_term_details, stem_buffer, ANT_min(trim_postings_k, global_trim_postings_k), prescalar, postscalar, query_frequency);
 	stats->add_rank_time(stats->stop_timer(now));
 	}
 
@@ -1313,7 +1333,7 @@ stats->add_disk_bytes_read_on_search(index->get_bytes_read() - bytes_already_rea
 	ANT_SEARCH_ENGINE::PROCESS_ONE_THESAURUS_SEARCH_TERM()
 	------------------------------------------------------
 */
-void ANT_search_engine::process_one_thesaurus_search_term(ANT_thesaurus *expander, ANT_stemmer *stemmer, char *base_term, ANT_ranking_function *ranking_function, ANT_bitstring *bitstring)
+void ANT_search_engine::process_one_thesaurus_search_term(ANT_thesaurus *expander, ANT_stemmer *stemmer, char *base_term, ANT_ranking_function *ranking_function, double prescalar, double postscalar, double query_frequency, ANT_bitstring *bitstring)
 {
 ANT_thesaurus_relationship *expansion;
 void *verify;
@@ -1350,9 +1370,9 @@ if (number_of_terms_in_expansion == 0)
 		its more efficient than decoding and re-encoding
 	*/
 	if (stemmer == NULL)
-		process_one_search_term(base_term, ranking_function, bitstring);
+		process_one_search_term(base_term, ranking_function, prescalar, postscalar, query_frequency, bitstring);
 	else
-		process_one_stemmed_search_term(stemmer, base_term, ranking_function, bitstring);
+		process_one_stemmed_search_term(stemmer, base_term, ranking_function, prescalar, postscalar, query_frequency, bitstring);
 	return;
 	}
 
@@ -1400,7 +1420,7 @@ if (collection_frequency != 0)
 	{
 	now = stats->start_timer();
 	stemmed_term_details.local_collection_frequency = collection_frequency;
-	ranking_function->relevance_rank_tf(bitstring, results_list, &stemmed_term_details, stem_buffer, ANT_min(trim_postings_k, global_trim_postings_k), 1, 1);
+	ranking_function->relevance_rank_tf(bitstring, results_list, &stemmed_term_details, stem_buffer, ANT_min(trim_postings_k, global_trim_postings_k), prescalar, postscalar, query_frequency);
 	stats->add_rank_time(stats->stop_timer(now));
 	}
 
@@ -1457,24 +1477,66 @@ stats->add_rank_time(stats->stop_timer(now));
 return hits;
 }
 
-/*
-	ANT_SEARCH_ENGINE::GENERATE_RESULTS_LIST()
-	------------------------------------------
-*/
-char **ANT_search_engine::generate_results_list(char **document_id_list, char **sorted_id_list, long long top_k)
-{
-ANT_search_engine_accumulator **current, **end;
-char **into = sorted_id_list;
+#ifdef FILENAME_INDEX
+	/*
+		ANT_SEARCH_ENGINE::GET_DOCUMENT_FILENAME()
+		------------------------------------------
+	*/
+	char *ANT_search_engine::get_document_filename(char *filename, long long internal_document_id)
+	{
+	long long offset[2];
 
-end = results_list->accumulator_pointers + (results_list->results_list_length < top_k ? results_list->results_list_length : top_k);
-for (current = results_list->accumulator_pointers; current < end; current++)
-	if (results_list->is_zero_rsv(*current - results_list->accumulator))
-		break;
-	else
-		*into++ = document_id_list[*current - results_list->accumulator];
+	/*
+		Read the location of the filename
+	*/
+	index->seek(filename_index_start + internal_document_id * sizeof (long long));
+	index->read((unsigned char *)&offset, sizeof(offset));
 
-return sorted_id_list;
-}
+	/*
+		Fix the byte order (for portability to ARM)
+	*/
+	offset[0] = ANT_get_long_long((unsigned char *)offset);
+	offset[1] = ANT_get_long_long((unsigned char *)(offset + 1));
+
+	/*
+		Get the filename
+	*/
+	index->seek(filename_start + offset[0]);
+	index->read((unsigned char *)filename, offset[1] - offset[0]);
+
+	return filename;
+	}
+#else
+	/*
+		ANT_SEARCH_ENGINE::GENERATE_RESULTS_LIST()
+		------------------------------------------
+	*/
+	char **ANT_search_engine::generate_results_list(char **document_id_list, char **sorted_id_list, long long top_k)
+	{
+	ANT_search_engine_accumulator **current, **end;
+	char **into = sorted_id_list;
+
+	end = results_list->accumulator_pointers + (results_list->results_list_length < top_k ? results_list->results_list_length : top_k);
+	for (current = results_list->accumulator_pointers; current < end; current++)
+		{
+		#ifdef NEVER
+			/*
+				Is this a hang over from way-back when we used to walk through the entire array?  Leaving it in means we can
+				no longer find relevant documents with a zero rsv (which happens when a query contains one term and that term
+				is in every document).
+			*/
+			if (results_list->is_zero_rsv(*current - results_list->accumulator))
+				break;
+			else
+				*into++ = document_id_list[*current - results_list->accumulator];
+		#else
+			*into++ = document_id_list[*current - results_list->accumulator];
+		#endif
+		}
+
+	return sorted_id_list;
+	}
+#endif
 
 /*
 	ANT_SEARCH_ENGINE::GET_VARIABLE()
@@ -1630,19 +1692,26 @@ return destination;
 /*
 	ANT_SEARCH_ENGINE::GET_DOCUMENTS()
 	----------------------------------
-	semanticly: for (x = from; x < to; x++) read_document(x);
 */
 long long ANT_search_engine::get_documents(char **destination, unsigned long **destination_length, long long from, long long to)
 {
-long long start, end, times, id, get;
-ANT_search_engine_result_iterator current;
+long long start, end, times, get, id;
+#ifdef FILENAME_INDEX
+	ANT_search_engine_result_id_iterator current;
+#else
+	ANT_search_engine_result_iterator current;
+#endif
 
 if (document_offsets == NULL)
 	return 0;
 
 times = 0;
 get = to - from;
+#ifdef FILENAME_INDEX
+for (id = current.first(this->results_list, from); id >= 0 && times < get; id = current.next())
+#else
 for (id = current.first(this, from); id >= 0 && times < get; id = current.next())
+#endif
 	{
 	/*
 		This isn't really the best way to do this but it will suffice in the mean time.  The best way is to
@@ -1673,7 +1742,7 @@ long long start = get_variable("~documentfilenamesstart");
 long long end = get_variable("~documentfilenamesfinish");
 long long current_doc;
 char *upto = buffer;
-char **document_filenames = (char **)malloc(sizeof(char *) * (end - start));
+char **document_filenames = (char **)malloc((size_t)(sizeof(char *) * (end - start)));
 
 *buf_length = (unsigned long)(end - start);
 
@@ -1688,3 +1757,4 @@ for (current_doc = 0; current_doc < documents; current_doc++)
 
 return document_filenames;
 }
+

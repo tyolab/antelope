@@ -14,8 +14,10 @@
 #include "channel_file.h"
 #include "channel_socket.h"
 #include "channel_trec.h"
+#include "channel_inex.h"
 #include "relevance_feedback_factory.h"
 #include "ranking_function_pregen.h"
+#include "ranking_function_factory_object.h"
 #include "snippet.h"
 #include "snippet_factory.h"
 #include "stemmer_factory.h"
@@ -28,15 +30,95 @@
 #include "search_engine.h"
 #include "memory_index_one_node.h"
 
+using namespace std;
+
 const char * const PROMPT = "]";		// tribute to Apple
 const long MAX_TITLE_LENGTH = 1024;
 
 ATIRE_API *atire = NULL;
 
 ATIRE_API *ant_init(ANT_ANT_param_block & params);
-long ant_init_ranking(ATIRE_API * atire, ANT_indexer_param_block_rank & params);
+long ant_init_ranking(ATIRE_API *atire, ANT_ANT_param_block &params);
 int run_atire(int argc, char *argv[]);
 int run_atire(char *files);
+
+ANT_stop_word *stop_word_list = NULL;
+
+static const char *new_stop_words[] =
+	{
+//	"alternative",				 Needed for TREC topic 84
+	"arguments",
+	"can",
+	"current",
+	"dangers",
+	"data",
+	"description",
+	"developments",
+	"document",
+	"documents",
+	"done",
+	"discuss",
+	"discusses",
+	"efforts",
+	"enumerate",
+	"examples",
+	"help",
+	"ideas",
+	"identify",
+	"inform",
+	"information",
+	"instances",
+	"latest",
+	"method",
+	"narrative",
+	"occasions",
+	"problems",
+	"provide",
+	"relevant",
+	"report",
+	"reports",
+	"state",
+	"topic",
+	NULL
+	} ;
+
+/*
+	STOP_QUERY()
+	------------
+*/
+char *stop_query(char *query, long stop_type)
+{
+static const char *SEPERATORS = ",./;'[]!@#$%^&*()_+-=\\|<>?:{}\r\n\t \"`~";
+char *ch, *copy;
+ostringstream stopped_query;
+
+copy = strnew(query);
+strip_space_inplace(query);
+
+for (ch = strtok(query, SEPERATORS); ch != NULL; ch = strtok(NULL, SEPERATORS))
+	{
+	if ((stop_type & ANT_ANT_param_block::STOPWORDS_NCBI | ANT_ANT_param_block::STOPWORDS_PUURULA) && stop_word_list->isstop(ch))
+		continue;
+
+	if ((stop_type & ANT_ANT_param_block::STOPWORDS_NUMBERS) && isdigit(*ch))
+		continue;
+
+	if ((stop_type & ANT_ANT_param_block::STOPWORDS_SHORT) &&strlen(ch) <= 2)
+		continue;
+
+	stopped_query << ' ' << ch;
+	}
+
+if (stopped_query.str().empty())
+	strcpy(query, copy);
+else
+	{
+	stopped_query << ends;
+	strcpy(query, (char *)stopped_query.str().c_str());
+	}
+
+return query;
+}
 
 /*
 	PERFORM_QUERY()
@@ -46,6 +128,11 @@ double *perform_query(long topic_id, ANT_channel *outchannel, ANT_ANT_param_bloc
 {
 ANT_stats_time stats;
 long long now, search_time;
+long valid_to_evaluate;
+double *evaluations;
+
+if (params->query_stopping != ANT_ANT_param_block::NONE)
+	stop_query(query, params->query_stopping);
 
 /*
 	Search
@@ -67,7 +154,14 @@ if (params->stats & ANT_ANT_param_block::QUERY)
 	Return average precision
 */
 if (params->evaluator)
-	return params->evaluator->perform_evaluation(atire->get_search_engine(), topic_id);
+	{
+	evaluations = params->evaluator->perform_evaluation(atire->get_search_engine(), topic_id, &valid_to_evaluate);
+	if (evaluations == NULL || !valid_to_evaluate)
+		return NULL;
+
+	return evaluations;
+	}
+
 return NULL;
 }
 
@@ -109,10 +203,10 @@ double *ant(ANT_ANT_param_block *params)
 char *print_buffer, *pos;
 ANT_stats_time post_processing_stats;
 char *command, *query, *ranker;
-long topic_id = -1, number_of_queries, evaluation;
+long topic_id = -1, number_of_queries, number_of_queries_evaluated, evaluation;
 long long line;
 long long hits, result, last_to_list, first_to_list;
-ANT_indexer_param_block_rank params_rank;
+ANT_ANT_param_block params_rank(params->argc, params->argv);
 int custom_ranking;
 double *average_precision, *sum_of_average_precisions, *mean_average_precision;
 double relevance;
@@ -121,22 +215,77 @@ unsigned long current_document_length;
 long long docid;
 char *document_buffer;
 ANT_channel *inchannel, *outchannel;
-char **answer_list;
 char *snippet = NULL, *title = NULL;
 ANT_snippet *snippet_generator = NULL;
 ANT_snippet *title_generator = NULL;
 ANT_stem *snippet_stemmer = NULL;
+#ifdef FILENAME_INDEX
+	char *document_name;
+	document_name = new char [MAX_TITLE_LENGTH];
+#else
+	char **answer_list;
+#endif
 
-if (params->port == 0)
-	{
-	inchannel = new ANT_channel_file(params->queries_filename);		// stdin
-	outchannel = new ANT_channel_file();							// stdout
-	}
-else
+if (params->port != 0)
 	inchannel = outchannel = new ANT_channel_socket(params->port);	// in/out to given port
+else
+	{
+	inchannel = new ANT_channel_file(params->queries_filename);		// my stdin
+	outchannel = new ANT_channel_file();							// my stdout
 
-if ((params->query_type & ATIRE_API::QUERY_TREC_FILE) != 0)
-	inchannel = new ANT_channel_trec(inchannel, params->query_fields);
+	if (params->queries_filename != NULL)
+		{
+		char first_bytes[0x200];		// enough to hold the INEX DTD and then a bit
+		/*
+			We might be a TREC topic file (usually a .gz) or an INEX topic file (usually a .zip) so we'll file out which.
+			Its unreasonable to make the assumption based on the file type (who knows, INEX might start using .gz or
+			TREC might start using .zip) so we'll open the file, read the first few bytes, and guess.  Guessing also
+			allows us to handle ANT query files (one topic per line, in the form <id> <query>).
+		*/
+		ANT_channel_file test_channel(params->queries_filename);
+		if (test_channel.read(first_bytes, sizeof(first_bytes)) == NULL)
+			{
+			/*
+				Does the file exist?
+			*/
+			ANT_channel_file test_channel(params->queries_filename);
+			if (test_channel.read(first_bytes, 1) == NULL)
+				exit(printf("Query file '%s' not found!", params->queries_filename));
+
+			/*
+				else
+					probably and ANT file as its very small.
+			*/
+			//exit(printf("Cannot determine the format of the queries file... is it valid?"));
+			}
+		else
+			{
+			/*
+				We can use the first few bytes to guess the file type
+			*/
+			if (atoll(first_bytes) != 0)
+				{
+				/*
+					no work required because we're a compressed ANT formatted queries file
+				*/
+				}
+			else if (strstr(first_bytes, "inex-topic-file") != NULL)
+				inchannel = new ANT_channel_inex(inchannel, params->query_fields);
+			else if (strstr(first_bytes, "<top>") != NULL)
+				inchannel = new ANT_channel_trec(inchannel, params->query_fields);
+			else
+				{
+				/*
+					We're going to guess based on file type
+				*/
+				if (strrcmp(params->queries_filename, "gz") == 0)			// probably a TREC file
+					inchannel = new ANT_channel_trec(inchannel, params->query_fields);
+				else if (strrcmp(params->queries_filename, "zip") == 0)		// probably an INEX file
+					inchannel = new ANT_channel_trec(inchannel, params->query_fields);
+				}
+			}
+		}
+	}
 
 print_buffer = new char [MAX_TITLE_LENGTH + 1024];
 
@@ -154,7 +303,7 @@ else
 sum_of_average_precisions = new double[params->evaluator->number_evaluations_used];
 for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
 	sum_of_average_precisions[evaluation] = 0.0;
-number_of_queries = 0;
+number_of_queries = number_of_queries_evaluated = 0;
 line = 0;
 custom_ranking = 0;
 
@@ -229,7 +378,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			}
 		else
 			{
-			ATIRE_API * new_api = ant_init(*params);
+			ATIRE_API *new_api = ant_init(*params);
 
 			if (new_api)
 				{
@@ -504,13 +653,16 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 		*/
 		number_of_queries++;
 		average_precision = perform_query(topic_id, outchannel, params, query, &hits);
-		for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
-			sum_of_average_precisions[evaluation] += average_precision[evaluation];		// zero if we're using a focused metric
-
+		if (average_precision != NULL)
+			{
+			number_of_queries_evaluated++;
+			for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
+				sum_of_average_precisions[evaluation] += average_precision[evaluation];		// zero if we're using a focused metric
+			}
 		/*
 			Report the average precision for the query
 		*/
-		if (params->assessments_filename != NULL && params->stats & ANT_ANT_param_block::SHORT)
+		if ((params->assessments_filename != NULL) && ((params->stats & ANT_ANT_param_block::SHORT) != 0) && (average_precision != NULL))
 			{
 			*outchannel << "<topic>" << topic_id << "</topic>" << ANT_channel::endl;
 			*outchannel << "<evaluations>";
@@ -540,7 +692,9 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			atire->write_to_forum_file(topic_id);
 		else
 			{
-			answer_list = atire->generate_results_list();
+			#ifndef FILENAME_INDEX
+				answer_list = atire->generate_results_list();
+			#endif
 
 			if (first_to_list < last_to_list)
 				outchannel->puts("<hits>");
@@ -576,7 +730,11 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 				*outchannel << "<hit>";
 				*outchannel << "<rank>" << result + 1 << "</rank>";
 				*outchannel << "<id>" << docid << "</id>";
-				*outchannel << "<name>" << answer_list[result] << "</name>";
+				#ifdef FILENAME_INDEX
+					*outchannel << "<name>" << atire->get_document_filename(document_name, docid) << "</name>";
+				#else
+					*outchannel << "<name>" << answer_list[result] << "</name>";
+				#endif
 				sprintf(print_buffer, "%0.2f", relevance);
 				*outchannel << "<rsv>" << print_buffer << "</rsv>";
 				if (title != NULL && *title != '\0')
@@ -595,8 +753,11 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 		}
 	}
 /*
-	delete the document buffer
+	delete the document buffer (and the "filename" buffer).
 */
+#ifdef FILENAME_INDEX
+	delete [] document_name;
+#endif
 delete [] document_buffer;
 
 /*
@@ -604,14 +765,14 @@ delete [] document_buffer;
 */
 mean_average_precision = new double[params->evaluator->number_evaluations_used];
 for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
-	mean_average_precision[evaluation] = sum_of_average_precisions[evaluation] / (double)number_of_queries;
+	mean_average_precision[evaluation] = sum_of_average_precisions[evaluation] / (double)number_of_queries_evaluated;
 
 /*
 	Report MAP
 */
 if (params->assessments_filename != NULL && params->stats & ANT_ANT_param_block::PRECISION)
 	{
-	printf("\nProcessed %ld topics:\n", number_of_queries);
+	printf("\nProcessed %ld topics (%ld evaluated):\n", number_of_queries, number_of_queries_evaluated);
 	for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
 		printf("%s: %f\n", params->evaluator->evaluation_names[evaluation], mean_average_precision[evaluation]);
 	puts("");
@@ -633,6 +794,7 @@ delete inchannel;
 delete [] print_buffer;
 delete [] snippet;
 delete [] title;
+delete [] sum_of_average_precisions;
 delete snippet_generator;
 delete title_generator;
 delete snippet_stemmer;
@@ -649,66 +811,19 @@ return mean_average_precision;
 	Set up the ranking portion of the API parameters from the given ANT_indexer_param_block_rank
 	Return true if successful. On failure, the API is not altered.
 */
-long ant_init_ranking(ATIRE_API *atire, ANT_indexer_param_block_rank &params)
+long ant_init_ranking(ATIRE_API *atire, ANT_ANT_param_block &params)
 {
 long ranker_ok;
+	
+if (params.ranking_function == ANT_ranking_function_factory_object::PREGEN)
+	ranker_ok = atire->set_ranking_function_pregen(params.field_name, params.p1) == 0;
+else
+	ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.p1, params.p2, params.p3) == 0;
 
-switch (params.ranking_function)
-	{
-	case ANT_indexer_param_block_rank::BM25:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.bm25_k1, params.bm25_b) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMD:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmd_u, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMDS:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmds_u, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMJM:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.lmjm_l, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::KBTFIDF:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.kbtfidf_k, params.kbtfidf_b) == 0;
-		break;
-	case ANT_indexer_param_block_rank::DOCID:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, params.ascending, 0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::PREGEN:
-		ranker_ok = atire->set_ranking_function_pregen(params.field_name, params.ascending) == 0;
-		break;
-	default:
-		ranker_ok = atire->set_ranking_function(params.ranking_function, params.quantization, params.quantization_bits, 0.0, 0.0) == 0;
-		break;
-	}
 if (!ranker_ok)
 	return ranker_ok;
 
-switch (params.feedback_ranking_function)
-	{
-	case ANT_indexer_param_block_rank::BM25:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_bm25_k1, params.feedback_bm25_b) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMD:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_lmd_u, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMDS:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_lmds_u, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::LMJM:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_lmjm_l, 0.0) == 0;
-		break;
-	case ANT_indexer_param_block_rank::KBTFIDF:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_kbtfidf_k, params.feedback_kbtfidf_b) == 0;
-		break;
-	case ANT_indexer_param_block_rank::DOCID:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.ascending, 0.0) == 0;
-		break;
-	default:
-		ranker_ok = atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, 0.0, 0.0) == 0;
-		break;
-	}
-
-return ranker_ok;
+return atire->set_feedback_ranking_function(params.feedback_ranking_function, params.quantization, params.quantization_bits, params.feedback_p1, params.feedback_p2, params.feedback_p3) == 0;
 }
 
 /*
@@ -730,10 +845,10 @@ long fail;
 ANT_thesaurus *expander;
 
 if (params.logo)
-	puts(atire->version());				// print the version string is we parsed the parameters OK
+	puts(atire->version());				// print the version string if we parsed the parameters OK
 
-if (params.ranking_function == ANT_ANT_param_block::READABLE)
-	fail = atire->open(ANT_ANT_param_block::READABLE | params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits);
+if (params.ranking_function == ANT_ranking_function_factory_object::READABLE)
+	fail = atire->open(ATIRE_API::READABILITY_SEARCH_ENGINE | params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits);
 else
 	fail = atire->open(params.file_or_memory, params.index_filename, params.doclist_filename, params.quantization, params.quantization_bits);
 
@@ -768,6 +883,9 @@ if (params.output_forum != ANT_ANT_param_block::NONE)
 atire->set_trim_postings_k(params.trim_postings_k);
 atire->set_stemmer(params.stemmer, params.stemmer_similarity, params.stemmer_similarity_threshold);
 atire->set_feedbacker(params.feedbacker, params.feedback_documents, params.feedback_terms);
+if (params.feedbacker == ANT_relevance_feedback_factory::BLIND_RM)
+	atire->set_feedback_interpolation(params.feedback_lambda);
+
 if ((params.query_type & ATIRE_API::QUERY_EXPANSION_INPLACE_WORDNET) != 0)
 	{
 	atire->set_inplace_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
@@ -785,14 +903,14 @@ ant_init_ranking(atire, params); //Error value ignored...
 atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
 
 // set the pregren to use for accumulator initialisation
-if (params.ranking_function != ANT_indexer_param_block_rank::PREGEN)
+if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
 	atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
 return atire;
 }
 
 /*
 	RUN_ATIRE()
-	-------------
+	-----------
 	for the simplicity of JNI calling
 	options are separated with +
 */
@@ -805,15 +923,15 @@ size_t total_length = (options ? strlen(options) : 0) + 7;
 char *copy, *copy_start;
 
 copy = copy_start = new char[total_length];
-
 memset(copy, 0, sizeof(*copy) * total_length);
 
 memcpy(copy, "atire+", 6);
 copy += 6;
-if (options) {
+if (options)
+	{
 	memcpy(copy, options, strlen(options));
 	copy += strlen(options);
-}
+	}
 *copy = '\0';
 
 argv = file_list = new char *[total_length];
@@ -852,10 +970,17 @@ ANT_stats stats;
 ANT_ANT_param_block params(argc, argv);
 
 params.parse();
+if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_NCBI)
+	stop_word_list = new ANT_stop_word(ANT_stop_word::NCBI);
+else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
+	stop_word_list = new ANT_stop_word(ANT_stop_word::PUURULA);
+if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
+	stop_word_list->addstop((const char **)new_stop_words);
+	
 
 atire = ant_init(params);
 
-ant(&params);
+delete [] ant(&params);
 
 delete atire;
 

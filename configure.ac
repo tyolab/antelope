@@ -41,6 +41,15 @@ AC_ARG_WITH(mysql,
 		]
 		)
 		
+AC_ARG_WITH(doclist, AC_HELP_STRING([--with-doclist],
+                       [Create separated doclist]), [], 
+                       [
+                            CFLAGS="$CFLAGS -DFILENAME_INDEX"
+            				CXXFLAGS="$CXXFLAGS -DFILENAME_INDEX"
+                       ]
+                       )
+	
+		
 # Get MySQL library and include locations if set
 AS_IF([test -z "$HAS_MYSQL"], [],
 [

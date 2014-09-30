@@ -15,6 +15,8 @@
 #include "version.h"
 #include "directory_iterator_filter.h"
 #include "directory_iterator_scrub.h"
+#include "ranking_function_puurula.h"
+#include "ranking_function_factory_object.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -41,7 +43,7 @@ readability_measure = ANT_readability_factory::NONE;
 statistics = 0;
 logo = TRUE;
 reporting_frequency = LLONG_MAX;
-ranking_function = IMPACT;
+ranking_function = ANT_ranking_function_factory_object::NONE;
 document_compression_scheme = NONE;
 index_filename = INDEX_FILENAME;
 doclist_filename = DOCLIST_FILENAME;
@@ -56,6 +58,8 @@ scrubbing = ANT_directory_iterator_scrub::NONE;
 filter_filename = NULL;
 quantization = FALSE;
 quantization_bits = -1; // -1 indicates run-time calculation, wil be overwritten if necessary by the user
+puurula_length_g = ANT_RANKING_FUNCTION_PUURULA_G;
+inversion_extras = ANT_memory_index::NONE;
 }
 
 /*
@@ -122,18 +126,24 @@ ANT_indexer_param_block_pregen::help();
 
 puts("COMPRESSION");
 puts("-----------");
-puts("-c[abBceEgnrsv] Compress postings using any of:");
-puts("   a            try all schemes and choose the best  (same as -cceEgnrsv)");
+puts("-c[abBceEgnrstv] Compress postings using any of:");
+puts("   a            try all schemes and choose the best  (same as -cceEfgnrstTpqQv)");
 puts("   b            try all bitwise schemes and choose the best  (same as -ceEg)");
-puts("   B            try all Bytewise schemes and choose the best (same as -ccrsSv)");
+puts("   B            try all Bytewise schemes and choose the best (same as -ccfrsStTpqQv)");
 puts("   c            Carryover-12  (bytewise)");
 puts("   e            Elias Delta   (bitwise)");
 puts("   E            Elias Gamma   (bitwise)");
+puts("   f            Four Integer Variable Byte    (bytewise)");
 puts("   g            Golomb        (bitwise)");
 puts("   n            None          (-)");
 puts("   r            Relative-10   (bytewise)");
 puts("   s            Simple-9      (bytewise)");
 puts("   S            Sigma         (bytewise)");
+puts("   t            Simple-16     (bytewise)");
+puts("   T            Simple-8b     (64-bit bytewise)");
+puts("   p            Simple-9-Packed      (bytewise)");
+puts("   q            Simple-16-Packed      (bytewise)");
+puts("   Q            Simple-8b-Packed     (64-bit bytewise)");
 puts("   v            Variable Byte (bytewise) [default]");
 puts("-vc             Validate posting compression (and report decompression rates)");
 puts("");
@@ -155,17 +165,16 @@ puts("");
 
 puts("READABILITY");
 puts("-----------");
-puts("-R[ndft]         Calculate readability using one of:");
-puts("   n            none [default]");
+puts("-R[-dt]        Calculate readability using one of:");
+puts("   -            none [default]");
 puts("   d            Dale-Chall");
-puts("   f            Flesch-Kincaid");
-puts("   t            Special tags (such as TITLE, CATEGORY) weighting");
+puts("   t            Tag up-weighting for TITLE and CATEGORY elements");
 puts("");
 
-ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', index_functions);
-puts("-q[n]           Really quantize, the Q options will store variables in the index so quantization."); 
-puts("                This option pushes the quantization into n-bits to indexing time.");
-puts("                [default n=5.4 + 5.4e-4 * sqrt(number documents)]");
+ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', ANT_ranking_function_factory_object::INDEXABLE);
+puts("-q[-<n>]        Quantization"); 
+puts("   -            Don't push the quantization to the index, only store max and min for search time quantization.");
+puts("   <n>          Quantize into <n>-bits [default <n>=5.4 + 5.4e-4 * sqrt(number documents)]");
 puts("");
 
 ANT_indexer_param_block_stem::help(FALSE);
@@ -186,13 +195,16 @@ puts("");
 puts("OPTIMISATIONS");
 puts("-------------");
 puts("-K<n>           Static pruning. Write no more than <n> postings per list (0=all) [default=0]");
-puts("-k[-l0t][L<n>][s<n>] Term culling");
+puts("-k[-l0t][npNP][L<n>][s<n>] Term culling");
 puts("   -            All terms remain in the index [default]");
 puts("   0            Do not index numbers");
 puts("   l            Remove (stop) low frequency terms (where collection frequency == 1)");
 puts("   L<n>         Remove (stop) low frequency terms (where document frequency <= <n>)");
 puts("   s<n>         Remove (stop) words that occur in more than <n>% of documents");
-puts("   S            Remove (stop) words that are on the NCBI PubMed MBR 313 word stopword list: wrd_stop");
+puts("   n            Remove (stop) words that are on the NCBI PubMed MBR 313 word stopword list: wrd_stop");
+puts("   N            see -n, but before indexing (i.e. don't add to term counts)");
+puts("   p            Remove (stop) words that are on Puurula's 988 stopword list use at ADCS/ALTA 2013");
+puts("   P            see -p, but before indexing (i.e. don't add to term counts)");
 puts("   t            Do not index XML tag names");
 puts("");
 
@@ -230,17 +242,23 @@ char *scheme;
 for (scheme = scheme_list; *scheme != '\0'; scheme++)
 	switch (*scheme)
 		{
-		case 'a': compression("ceEgnrsv"); break;
+		case 'a': compression("ceEfgnrstTpqQv"); break;
 		case 'b': compression("eEg"); break;
-		case 'B': compression("crsSv"); break;
+		case 'B': compression("cfrsStTpqQv"); break;
 		case 'c': compression_scheme |= ANT_compression_factory::CARRYOVER_12; break;
 		case 'e': compression_scheme |= ANT_compression_factory::ELIAS_DELTA; break;
 		case 'E': compression_scheme |= ANT_compression_factory::ELIAS_GAMMA; break;
+		case 'f': compression_scheme |= ANT_compression_factory::FOUR_INTEGER_VARIABLE_BYTE; break;
 		case 'g': compression_scheme |= ANT_compression_factory::GOLOMB; break;
 		case 'n': compression_scheme |= ANT_compression_factory::NONE; break;
 		case 'r': compression_scheme |= ANT_compression_factory::RELATIVE_10; break;
 		case 's': compression_scheme |= ANT_compression_factory::SIMPLE_9; break;
 		case 'S': compression_scheme |= ANT_compression_factory::SIGMA; break;
+		case 't': compression_scheme |= ANT_compression_factory::SIMPLE_16; break;
+		case 'T': compression_scheme |= ANT_compression_factory::SIMPLE_8B; break;
+		case 'p': compression_scheme |= ANT_compression_factory::SIMPLE_9_PACKED; break;
+		case 'q': compression_scheme |= ANT_compression_factory::SIMPLE_16_PACKED; break;
+		case 'Q': compression_scheme |= ANT_compression_factory::SIMPLE_8B_PACKED; break;
 		case 'v': compression_scheme |= ANT_compression_factory::VARIABLE_BYTE; break;
 		default : exit(printf("Unknown compression scheme: '%c'\n", *scheme)); break;
 		}
@@ -257,9 +275,8 @@ char *measure;
 for (measure = measures; *measure != '\0'; measure++)
 	switch (*measure)
 		{
-		case 'n': readability_measure = ANT_readability_factory::NONE; break;
-		case 'd': readability_measure |= ANT_readability_factory::DALE_CHALL; break;
-		case 'f': readability_measure |= ANT_readability_factory::FLESCH_KINCAID; break;
+		case '-': readability_measure = ANT_readability_factory::NONE; break;
+		case 'd': readability_measure = ANT_readability_factory::DALE_CHALL; break;
 		case 't': readability_measure = ANT_readability_factory::TAG_WEIGHTING; break;
 		default : exit(printf("Unknown readability measure: '%c'\n", *measure)); break;
 		}
@@ -330,12 +347,15 @@ for (which = mode_list; *which != '\0'; which++)
 			break;
 		case 'l': stop_word_removal |= ANT_memory_index::PRUNE_CF_SINGLETONS; break;
 		case 't': stop_word_removal |= ANT_memory_index::PRUNE_TAGS; break;
-		case 'S': stop_word_removal |= ANT_memory_index::PRUNE_NCBI_STOPLIST; break;
+		case 'n': stop_word_removal |= ANT_memory_index::PRUNE_NCBI_STOPLIST; break;
+		case 'N': stop_word_removal |= ANT_memory_index::PRUNE_NCBI_STOPLIST | ANT_memory_index::PRUNE_STOPWORDS_BEFORE_INDEXING; break;
+		case 'p': stop_word_removal |= ANT_memory_index::PRUNE_PUURULA_STOPLIST; break;
+		case 'P': stop_word_removal |= ANT_memory_index::PRUNE_PUURULA_STOPLIST | ANT_memory_index::PRUNE_STOPWORDS_BEFORE_INDEXING; break;
 		case 's':
 			stop_word_removal |= ANT_memory_index::PRUNE_DF_FREQUENTS;
 			stop_word_df_threshold = atof(which + 1);
 			if (stop_word_df_threshold >= 100 || stop_word_df_threshold <= 0)
-				exit(printf("stopiing parameter must be 0 < n%% < 100 (%f was given)", stop_word_df_threshold));
+				exit(printf("stopping parameter must be 0 < n%% < 100 (%f was given)", stop_word_df_threshold));
 			stop_word_df_threshold /= 100.0;
 
 			while (*(which + 1) == '.' || isdigit(*(which + 1)))
@@ -493,6 +513,21 @@ for (param = 1; param < argc; param++)
 			doclist_filename = argv[++param];
 		else if (strcmp(command, "Inverted") == 0)
 			inversion_type = INVERTED_FILE;
+		else if (strncmp(command, "Ilmptfidf", 9) == 0)
+			{
+			inversion_extras |= ANT_memory_index::PUURULA_LENGTH_VECTORS | ANT_memory_index::PUURULA_LENGTH_VECTORS_TFIDF;
+			ANT_indexer_param_block_rank::get_one_parameter(command + 9, &puurula_length_g);
+			}
+		else if (strncmp(command, "Ilmp", 4) == 0)
+			{
+			if (command[4] == '\0' || command[4] == ':')
+				{
+				inversion_extras |= ANT_memory_index::PUURULA_LENGTH_VECTORS;
+				ANT_indexer_param_block_rank::get_one_parameter(command + 4, &puurula_length_g);
+				}
+			else
+				printf("Unknown -Ilmp parameter ('-%s'), ignoring\n", command);
+			}
 		else if (strcmp(command, "pregen") == 0)
 			{
 			char *field_type, *field_name;
@@ -522,16 +557,22 @@ for (param = 1; param < argc; param++)
 			topsig(command + 7);
 		else if (*command == 'Q')
 			{
+			quantization = TRUE;
 			if (!set_ranker(command + 1))
 				exit(printf("Bad ranking function or ranking parameters '%s'\n", command + 1));
 			}
 		else if (*command == 'q')
 			{
 			quantization = TRUE;
-			if (*(command + 1) != '\0')
+
+			if (*(command + 1) == '-')
+				quantization = FALSE;
+			else if (*(command + 1) != '\0')
+				{
 				quantization_bits = atol(command + 1);
-			if (quantization_bits < 2 || quantization_bits > 16)
-				exit(printf("Have to quantize into range 2--16 bits inclusive\n"));
+				if (quantization_bits < 2 || quantization_bits > 16)
+					exit(printf("Have to quantize into range 2--16 bits inclusive\n"));
+				}
 			}
 		else if (*command == 't')
 			term_expansion(command + 1, FALSE);

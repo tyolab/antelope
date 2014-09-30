@@ -265,7 +265,7 @@ return id_list;
 	ATIRE_API::OPEN()
 	-----------------
 */
-long ATIRE_API::open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits, unsigned long header_offset )
+long ATIRE_API::open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits)
 {
 ANT_search_engine_readability *readable_search_engine;
 
@@ -275,12 +275,13 @@ if (document_list != NULL)
 
 long long answer_list_size =  MAX_ANSWER_LIST_SIZE;
 
+#ifndef FILENAME_INDEX
 document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
 if (document_list == NULL)
-	documents_in_id_list = -1;
-	// return 1;		//document list could not be read
-else
-	answer_list_size = documents_in_id_list;
+	return 1;		//document list could not be read
+#endif
+
+answer_list_size = documents_in_id_list;
 
 if (documents_int)
 answer_list = (char **)memory->malloc(sizeof(*answer_list) * answer_list_size);
@@ -293,18 +294,20 @@ if (type & READABILITY_SEARCH_ENGINE)
 	/*
 		Makes no sense to quantize readability based ranking ... at least it doesn't now
 	*/
+	delete ranking_function;
 	ranking_function = new ANT_ranking_function_readability(readable_search_engine, false, 0);
 	}
 else
 	{
 	search_engine = new ANT_search_engine(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
-	if (search_engine->open(index_filename, header_offset ) == 0)
+	if (search_engine->open(index_filename) == 0)
 		return 1; //fail
 
 	/*
 		If it's already quantized, then ignore what the
 		user says about quantization
 	*/
+	delete ranking_function;
 	if (search_engine->quantized())
 		ranking_function = new ANT_ranking_function_impact(search_engine, false, -1);
 	else

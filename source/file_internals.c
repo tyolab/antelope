@@ -1,3 +1,8 @@
+/*
+	FILE_INTERNALS.C
+	----------------
+*/
+#include "critical_section.h"
 #include "file_internals.h"
 
 /*
@@ -13,6 +18,7 @@ ANT_file_internals::ANT_file_internals()
 #endif
 }
 
+ANT_critical_section file_critical_section;
 /*
 	ANT_FILE_INTERNALS::READ_FILE_64()
 	----------------------------------
@@ -27,17 +33,26 @@ ANT_file_internals::ANT_file_internals()
 	from = (unsigned char *)destination;
 	while (bytes_to_read > chunk_size)
 		{
+		#ifdef PURIFY
+			memset(from, 0, chunk_size);
+		#endif
+
 		if (ReadFile(fp, from, chunk_size, &got_in_one_read, NULL) == 0)
 			return 0;
 		bytes_to_read -= chunk_size;
 		from += chunk_size;
 		}
 	if (bytes_to_read > 0)			// catches a call to read 0 bytes 
+		{
+		#ifdef PURIFY
+			memset(from, 0, bytes_to_read);
+		#endif
 		if (ReadFile(fp, from, (DWORD)bytes_to_read, &got_in_one_read, NULL) == 0)
 			{
 //			DWORD error_code = GetLastError();			// put a break point on this in the debugger to work out what went wrong.
 			return 0;
 			}
+		}
 
 	return 1;
 	}
@@ -50,6 +65,7 @@ ANT_file_internals::ANT_file_internals()
 	long long bytes_left_to_read = bytes_to_read;
 	char *dest = (char *)destination;
 
+//file_critical_section.enter();
 	while (bytes_read < bytes_to_read)
 		{
 		if (bytes_left_to_read < in_one_go)
@@ -58,9 +74,10 @@ ANT_file_internals::ANT_file_internals()
 		bytes_read += fread(dest + bytes_read, 1, in_one_go, fp);
 		bytes_left_to_read = bytes_to_read - bytes_read;
 
-		if (ferror(fp))
-			return 0;
+//		if (ferror(fp))
+//			return 0;
 		}
+//file_critical_section.leave();
 	return bytes_read == bytes_to_read; // will return 0 (fail) or 1 (success)
 	}
 

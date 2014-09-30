@@ -13,7 +13,7 @@
 	----------------------------------------------------------------------
 	MAgP computed for whole documents
 */
-double ANT_evaluation_mean_average_generalised_precision_document::evaluate(ANT_search_engine *search_engine, long topic, long subtopic)
+double ANT_evaluation_mean_average_generalised_precision_document::evaluate(ANT_search_engine *search_engine, long topic, long *valid, long subtopic)
 {
 ANT_search_engine_result_iterator iterator;
 ANT_relevant_subtopic *got;
@@ -22,17 +22,25 @@ long long current;
 double precision, doc_precision, doc_recall, doc_f_score, found_and_relevant;
 const double beta = 0.25;
 
+*valid = false;
+
 if ((got = setup(topic, subtopic)) == NULL)
 	return 0;
 if (got->number_of_relevant_documents == 0)
 	return 0;
+
+*valid = true;
 
 key.topic = topic;
 key.subtopic = subtopic;
 
 found_and_relevant = precision = 0;
 current = 0;
+#ifdef FILENAME_INDEX
+for (key.docid = iterator.first(search_engine); key.docid != NULL && current < precision_point; key.docid = iterator.next())
+#else
 for (key.docid = iterator.first(search_engine); key.docid >= 0 && current < precision_point; key.docid = iterator.next())
+#endif
 	{
 	current++;
 	if ((relevance_data = (ANT_relevant_document *)bsearch(&key, got->document_list, (size_t)got->number_of_documents, sizeof(*got->document_list), ANT_relevant_document::compare)) != NULL)

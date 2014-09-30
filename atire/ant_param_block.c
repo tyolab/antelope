@@ -17,6 +17,7 @@
 #include "snippet_factory.h"
 #include "thesaurus.h"
 #include "evaluator.h"
+#include "ranking_function_factory_object.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -40,6 +41,7 @@ focus_top_k = 2000;
 evaluator = new ANT_evaluator;
 assessments_filename = NULL;
 queries_filename = NULL;
+query_fields = "t";
 output_forum = NONE;
 run_name = participant_id = "unknown";
 output_filename = "ant.out";
@@ -51,8 +53,10 @@ file_or_memory = INDEX_IN_FILE;
 focussing_algorithm = NONE;
 feedbacker = NONE;
 query_type = ATIRE_API::QUERY_NEXI;
+query_stopping = NONE;
 feedback_documents = 17;
 feedback_terms = 5;
+feedback_lambda = 0.5;
 index_filename = strnew(INDEX_FILENAME);
 doclist_filename = strnew(DOCLIST_FILENAME);
 pregen_count = 0;
@@ -70,6 +74,7 @@ expander_query_types = ANT_thesaurus_relationship::SYNONYM;
 processing_strategy = TERM_AT_A_TIME;								// term at a time by default
 quantization = false; // by default don't quantize
 quantization_bits = -1; // by default use the maths to calculate the bits we need
+quantum_stopping = QUANTUM_STOP_NONE;
 header_offset = 0;
 }
 
@@ -79,6 +84,7 @@ header_offset = 0;
 */
 ANT_ANT_param_block::~ANT_ANT_param_block()
 {
+delete evaluator;
 delete [] doclist_filename;
 delete [] index_filename;
 
@@ -117,8 +123,8 @@ puts("FILE HANDLING");
 puts("-------------");
 puts("-findex <fn>    Filename of index");
 puts("-fdoclist <fn>  Filename of doclist");
-puts("-a<filenane>    Topic assessments are in <filename> (formats: TREC, ANT, INEX 2008)");
-puts("-q<filename>    Queries are in file <filename> (format: ANT)");
+puts("-a<filenane>    Topic assessments are in <filename> (formats: ANT, TREC, INEX 2008)");
+puts("-q<filename>    Queries are in file <filename> (format: ANT, TREC, INEX 2008)");
 puts("-q:<port>       ANT SERVER:Queries from TCP/IP port <port> [default=8088]");
 puts("");
 
@@ -126,13 +132,16 @@ ANT_indexer_param_block_stem::help(TRUE);		// stemmers
 
 puts("QUERY TYPE");
 puts("----------");
-puts("-Q[nbtN][-rT][wW]Query type");
+puts("-Q[s][nbt][-rmT][NI][wW][R]Query type");
 puts("  n             NEXI [default]");
 puts("  b             Boolean");
 puts("  N:<t><n><d>   NIST (TREC) query file (from trec.nist.gov) <t>itle, <n>arrative, <d>escription [default=t]");
+puts("  I:<t><c><n><d>INEX query file (from inex.otago.ac.nz) <t>itle, <c>astitle, <n>arrative, <d>escription [default=t]");
+puts("  s:<n><p><0><s><a>Stopword the query: <p>uurula's 988 list, <n>cbi 313 list, <0>numbers, or <s>hort (>=2) words, <a>tire extensions [default=false]");
 puts("  t:<w>:<d>:<f> TopSig index of width <w> bits, density <d>%, and globalstats <f>");
-puts("  -             no relevance feedback [default]");
+puts("  -             No relevance feedback [default]");
 puts("  r:<d>:<t>     Rocchio blind relevance feedback by analysing <d> top documents and extracting <t> terms [default d=17 t=5]");
+puts("  m:<d>:<l>     Relevance Model feedback (Puurula ALATA paper) using top <d> documents and lambda=l [default d=17 l=0.5]");
 puts("  R<ranker>     Use <ranker> as the relevance feedback ranking function (<ranker> is a valid RANKING FUNCTION, excludes pregen)");
 puts("  T:<d>         TopSig blind relevance feedback, analysing <d> top documents [default d=10]");
 puts("  w:<t>         WordNet tf-merging (wordnet.aspt) <t>=[<s>ynonym <a>ntonym <h>olonym <m>eronym hyp<o>nym hyp<e>rnym][default=s]");
@@ -169,6 +178,9 @@ puts("-o<filename>    Output filename for the run [default=ant.out]");
 puts("-i<id>          Forum participant id is <id> [default=unknown]");
 puts("-n<name>        Run is named <name> [default=unknown]");
 puts("-l<n>           Length of the results list [default=1500 for batch, default=10 for interactive)]");
+puts("-QN:<t><n><d>   NIST (TREC) query file (from trec.nist.gov) <t>itle, <n>arrative, <d>escription [default=t]");
+puts("-QI:<t><c><n><d>INEX query file (from inex.otago.ac.nz) <t>itle, <c>astitle, <n>arrative, <d>escription [default=t]");
+
 puts("");
 
 puts("SEGMENTATION");
@@ -182,7 +194,7 @@ puts("------------------------");
 puts("-pregen name    Load pregen file with given field name on startup");
 puts("");
 
-ANT_indexer_param_block_rank::help("RANKING FUNCTION", 'R', search_functions);		// ranking functions
+ANT_indexer_param_block_rank::help("RANKING FUNCTION", 'R', ANT_ranking_function_factory_object::INDEXABLE | ANT_ranking_function_factory_object::NONINDEXABLE);		// ranking functions
 puts("-r[n]           Quantize search results in n bits [default n=maths!]");
 puts("");
 
@@ -342,13 +354,48 @@ void ANT_ANT_param_block::set_feedbacker(char *which)
 char *fields, *check;
 double first, second;
 long done;
-const long perform_query_mask = ATIRE_API::QUERY_BOOLEAN | ATIRE_API::QUERY_NEXI | ATIRE_API::QUERY_TOPSIG | ATIRE_API::QUERY_TREC_FILE;
+const long perform_query_mask = ATIRE_API::QUERY_BOOLEAN | ATIRE_API::QUERY_NEXI | ATIRE_API::QUERY_TOPSIG | ATIRE_API::QUERY_TREC_FILE | ATIRE_API::QUERY_INEX_FILE;
 
 do
 	{
 	done = FALSE;
 	switch (*which)
 		{
+		case 's':
+			which++;
+			if (*which != ':')
+				exit(printf("':' expected in stop word selection parameter\n"));
+
+			query_stopping = NONE;
+			for (which++; *which != '\0'; which++)
+				{
+				switch (*which)
+					{
+					case '0':
+						query_stopping |= STOPWORDS_NUMBERS;
+						break;
+					case 's':
+						query_stopping |= STOPWORDS_SHORT;
+						break;
+					case 'n':
+						query_stopping |= STOPWORDS_NCBI;
+						break;
+					case 'p':
+						query_stopping |= STOPWORDS_PUURULA;
+						break;
+					case 'a':
+						query_stopping |= STOPWORDS_ATIRE;
+						break;
+					default:
+						exit(printf("Unknown stopword parameter:'%c'\n", *which));
+					}
+				}
+			if ((query_stopping & STOPWORDS_NCBI) && (query_stopping & STOPWORDS_PUURULA))
+				exit(printf("Can't use both the NCBI and Puurula stop word list, choose one or the other\n"));
+			if ((query_stopping & STOPWORDS_ATIRE) != 0 && (query_stopping & (STOPWORDS_PUURULA | STOPWORDS_NCBI)) == 0)
+				exit(printf("The ATIRE ammendmenst must be used with either the NCBI or Puurula stop word list\n"));
+			done = true;
+			break;
 		case 'n':
 			query_type &= ~perform_query_mask;
 			query_type |= ATIRE_API::QUERY_NEXI;
@@ -358,8 +405,12 @@ do
 			query_type |= ATIRE_API::QUERY_BOOLEAN;
 			break;
 		case 'N':
+		case 'I':
 			query_type &= ~perform_query_mask;
-			query_type |= ATIRE_API::QUERY_TREC_FILE | ATIRE_API::QUERY_NEXI;
+			if (*which == 'N')
+				query_type |= ATIRE_API::QUERY_TREC_FILE | ATIRE_API::QUERY_NEXI;
+			else
+				query_type |= ATIRE_API::QUERY_INEX_FILE | ATIRE_API::QUERY_NEXI;
 
 			fields = strchr(which, ':');
 			if (fields == NULL)
@@ -372,8 +423,8 @@ do
 				else
 					{
 					for (check = fields; *check != '\0'; check++)
-						if (strchr("tdn", *check) == NULL)
-							exit(printf("Unknown field combination to extract from TREC file:%s\n", fields));
+						if (strchr(*which == 'N' ? "tdn" : "tcdn", *check) == NULL)
+							exit(printf("Unknown field combination to extract from query file:%s\n", fields));
 					query_fields = fields;
 					}
 				}
@@ -401,6 +452,20 @@ do
 				feedback_documents = (long)first;
 			if (second != -1)
 				feedback_terms = (long)second;
+			done = TRUE;
+			break;
+		case 'm':
+			if (query_type == ATIRE_API::QUERY_TOPSIG)
+				exit(printf("Cannot do RM with TopSig"));
+
+			query_type |= ATIRE_API::QUERY_FEEDBACK;
+			feedbacker = ANT_relevance_feedback_factory::BLIND_RM;
+			first = second = -1;
+			get_two_parameters(which + 1, &first, &second);
+			if (first != -1)
+				feedback_documents = (long)first;
+			if (second != -1)
+				feedback_lambda = second;
 			done = TRUE;
 			break;
 		case 'R':
@@ -696,17 +761,8 @@ for (param = 1; param < argc; param++)
 			if (quantization_bits > 16)
 				exit(printf("Cannot quantize using more than 16 bits"));
 			}
-		else if (strncmp(command, "findex", 6) == 0)
+		else if (strcmp(command, "findex") == 0)
 			{
-			if (strlen(command) > 7)
-				{
-				command += 7;
-				header_offset = atol(command);
-
-				if (header_offset < 0)
-					header_offset = 0;
-				}
-
 			delete [] index_filename;
 			index_filename = strnew(argv[++param]);
 			}
