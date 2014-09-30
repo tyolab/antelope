@@ -629,7 +629,8 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 						docid += *current++;
 
 #ifdef FILENAME_INDEX
-						*outchannel << atire->get_document_name(docid) << ":";
+						static char filename[1024*1024];
+						*outchannel << atire->get_document_filename(filename, docid) << ":";
 #endif
 						*outchannel << docid << ANT_channel::endl;
 						}

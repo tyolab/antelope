@@ -686,7 +686,7 @@ libatire_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 bin_PROGRAMS = index atire atire_client atire_broker atire_dictionary atire_doclist
 
 atire_SOURCES = \
-	$(ATIRE_DIR)/atire.c 
+	$(ATIRE_DIR)/atire_atire.c 
 #	$(ATIRE_DIR)/indexer_param_block_rank.c \
 #	$(ATIRE_DIR)/ant_param_block.c
 atire_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
