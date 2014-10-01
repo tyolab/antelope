@@ -107,7 +107,7 @@ public:
 	ANT_search_engine(ANT_memory *memory, long memory_model = 0);
 	virtual ~ANT_search_engine();
 
-	virtual int open(const char *filename = "index.aspt");
+	virtual int open(const char *filename = INDEX_FILENAME, unsigned long header_offset = 0);
 	void set_accumulator_width(long long width);
 	void init_accumulators(long long top_k);
 	virtual ANT_search_engine_btree_leaf *get_postings_details(char *term, ANT_search_engine_btree_leaf *term_details);

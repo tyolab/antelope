@@ -61,7 +61,7 @@ this->memory_model = memory_model;
 	ANT_SEARCH_ENGINE::OPEN()
 	-------------------------
 */
-int ANT_search_engine::open(const char *filename)
+int ANT_search_engine::open(const char *filename, unsigned long header_offset)
 {
 int32_t four_byte;
 int64_t eight_byte;
@@ -88,7 +88,7 @@ index_filename = filename;
 	long: the length of the longest compressed postings list
 	long long: the maximum number of postings in a postings list (the highest DF)
 */
-end = index->file_length();
+end = index->file_length() - header_offset;
 #ifdef IMPACT_HEADER
 	index->seek(end - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(four_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(eight_byte) - sizeof(four_byte) - sizeof(four_byte));
 #else
