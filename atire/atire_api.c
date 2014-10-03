@@ -261,18 +261,13 @@ ANT_search_engine_readability *readable_search_engine;
 if (document_list != NULL)
 	return 1;		//we're already open;
 
-
-long long answer_list_size =  MAX_ANSWER_LIST_SIZE;
-
 #ifndef FILENAME_INDEX
 document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
 if (document_list == NULL)
 	return 1;		//document list could not be read
+answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
 #endif
 
-answer_list_size = documents_in_id_list;
-
-answer_list = (char **)memory->malloc(sizeof(*answer_list) * answer_list_size);
 if (type & READABILITY_SEARCH_ENGINE)
 	{
 	search_engine = readable_search_engine = new ANT_search_engine_readability(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);

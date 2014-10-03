@@ -108,7 +108,7 @@ int atire_exit(int errno) {
 int atire_index(char *options)
 {
 static char *seperators = "+";
-char **argv, **file_list;
+char **argv, **arg_list;
 char *token;
 size_t total_length = (options ? strlen(options) : 0) + 7;
 char *copy, *copy_start;
@@ -125,7 +125,7 @@ if (options) {
 }
 *copy = '\0';
 
-argv = file_list = new char *[total_length];
+argv = arg_list = new char *[total_length];
 int argc = 0;
 token = strtok(copy_start, seperators);
 
@@ -144,9 +144,9 @@ for (; token != NULL; token = strtok(NULL, seperators))
 	fprintf(stderr, "\n");
 #endif
 *argv = NULL;
-int result = atire_index(argc, file_list);
-delete [] copy;
-delete [] file_list;
+int result = atire_index(argc, arg_list);
+delete [] copy_start;
+delete [] arg_list;
 
 return result;
 }

@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.63])
-AC_INIT([Atire], [0.3], [BUG-REPORT-ADDRESS])
+AC_INIT([Atire], [0.5-alpha], [BUG-REPORT-ADDRESS])
 
 AC_CONFIG_SRCDIR([atire/atire.c])
 #AC_CONFIG_HEADERS([config.h])
