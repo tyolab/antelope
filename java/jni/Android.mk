@@ -284,3 +284,16 @@ LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER -D_CRT_SE
 LOCAL_C_INCLUDES += $(SRC_DIR)
 
 include $(BUILD_SHARED_LIBRARY)
+
+include $(CLEAR_VARS)
+
+LOCAL_CPP_EXTENSION := .c
+
+LOCAL_MODULE := search4m
+LOCAL_SRC_FILES := main.c
+#LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
+LOCAL_LDLIBS += -llog -lz
+LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
+
+include $(BUILD_EXECUTABLE)  

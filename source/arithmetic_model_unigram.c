@@ -4,9 +4,15 @@
 	Derived from http://www.cipr.rpi.edu/~wheeler/ac/. Modified to encode/decode to a fixed-sized
 	integer instead of a file, and translate to C++
 */
+#ifdef _MSC_VER
 #include <cstdlib>
 #include <cstdio>
 #include <cassert>
+#else
+#include <stdlib.h>
+#include <stdio.h>
+#include <assert.h>
+#endif
 
 #undef max
 #undef min

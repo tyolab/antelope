@@ -5,9 +5,16 @@
 	integer instead of a file, and translate to C++
 */
 
-#include <cstdlib>
-#include <cstdio>
-#include <cassert>
+#ifdef _MSC_VER
+	#include <cstdlib>
+	#include <cstdio>
+	#include <cassert>
+#else
+	#include <stdlib.h>
+	#include <stdio.h>
+	#include <assert.h>
+#endif
+
 #include <string.h>
 
 #undef max
