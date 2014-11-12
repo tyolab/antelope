@@ -137,7 +137,7 @@ if (term_count == 0)
  */
 
 // now we add the full title, full category information in the dictionary
-char buffer[MAX_TERM_LENGTH];
+static char buffer[MAX_TERM_LENGTH];
 char *start, *info_buf_start;
 ANT_parser_token what;
 long long length = 0;
@@ -150,21 +150,49 @@ start = buffer + 1;
 
 /*
 	put each special term into index, but term count has be greater than 1
+
+	this might dramatically increase the size of index, we might just use bigram for it
+
+	furthermore, bigram (phrase search) might be more usefull than one word
+
+	also, we apply it on the title with term count of 3 and over
  */
-if (term_count > 1)
-	for (i = 0; i < term_count; ++i)
+if (term_count > 2) {
+	int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
+
+	for (i = 1; i < term_count - 1; ++i)
 		{
 	//	if (prefix_char == 'T' && i == 0)
 	//		continue;
 
+		/*
+		 * first term
+		 */
 		length = strlen(terms[i]);
 		memcpy(start, terms[i], length);
 		start += length;
+
+		if (!is_first_term_punct && !is_cjk_language(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
+			{
+			*start++ = ' ';
+			what.string_length++;
+			}
+
+		/*
+		 * second term
+		 */
+		length = strlen(terms[i+1]);
+		memcpy(start, terms[i+1], length);
+		start += length;
+
 		*start = '\0';
 		what.string_length = length + 2; // including prefix string "C:" or "T:"
+
 		indexer->add_term(&what, doc, 20);
+
 		start =  buffer + 2;
 		}
+}
 
 /*
    Now the full text enclosed in the node, for example, title "Bill Clinton"
@@ -219,7 +247,7 @@ for (i = 1; i < term_count; ++i)
 	}
 */
 
-indexer->add_term(&what, doc, 20); // avoid being culled of optimization
+indexer->add_term(&what, doc, 99); // avoid being culled of optimization
 
 clean_up();
 }

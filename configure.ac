@@ -27,8 +27,8 @@ AC_CONFIG_MACRO_DIR([m4])
 
 AC_ARG_WITH([pi],
             AC_HELP_STRING([--with-pi],
-                       [Define PARALLEL_INDEXING macro]),
-        [CXXFLAGS="$CXXFLAGS -DPARALLEL_INDEXING"; CFLAGS="$CXXFLAGS"])
+                       [Disable parallel indexing]),
+        [CXXFLAGS="$CXXFLAGS -DPARALLEL_INDEXING -DPARALLEL_INDEXING_DOCUMENTS"; CFLAGS="$CXXFLAGS"])
         
 AC_ARG_WITH(mysql,
             AC_HELP_STRING([--with-mysql]),

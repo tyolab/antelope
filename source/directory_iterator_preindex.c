@@ -11,6 +11,7 @@
 #include "memory.h"
 #include "memory_index_one.h"
 #include "index_document.h"
+#include "readability_factory.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -58,6 +59,7 @@ void ANT_directory_iterator_preindex::work_one(ANT_directory_iterator_object *ob
 long terms;
 
 object->index = new ANT_memory_index_one(new ANT_memory(1024 * 1024), final_index);
+internals->readability->set_current_file(object);
 terms = index_document->index_document(object->index, internals->stemmer, internals->segmentation, internals->readability, 1, object->file);
 object->terms = terms;
 
