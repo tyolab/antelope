@@ -1,1 +1,17 @@
-Sample readme file for atire.github project.
+* AUTOTOOLS configure example
+
+../../configure CC=arm-linux-androideabi-g++ -host=arm-eabi CPPFLAGS="-I$ANDROID_NDK/platforms/android-9/arch-arm/usr/include/ -I$ANDROID_NDK/sources/cxx-stl/gnu-libstdc++/4.8/include/" CFLAGS="-nostdlib" LDFLAGS="-Wl,-rpath-link=$ANDROID_NDK/build/platforms/android-9/arch-arm/usr/lib/ -L$ANDROID_NDK/platforms/android-9/arch-arm/usr/lib/" LIBS="-lc"
+
+../../configure CC="arm-linux-androideabi-gcc" AR="arm-linux-androideabi-ar" CPPFLAGS="-I$ANDROID_NDK/platforms/android-9/arch-arm/usr/include/ -march=arm" CFLAGS=$CPPFLAGS LDFLAGS="-Wl,-rpath-link=$ANDROID_NDK/build/platforms/android-9/arch-arm/usr/lib/ -L$ANDROID_NDK/platforms/android-9/arch-arm/usr/lib/" LIBS="-lc"
+
+
+* BUILDING TOOLCHAINS
+cd /a/path/to/android-ndk-r9/build/tools
+ ./make-standalone-toolchain.sh --arch=arm --ndk-dir=/home/monfee/tools/android/android-ndk-r9 --install-dir=~/tools/android/android-toolchain --platform=android-9 --system=linux-x86_64 --toolchain=arm-linux-androideabi-4.8
+
+
+export SYSROOT=$ANDROID_NDK/platforms/android-9/arch-arm
+export CC="arm-linux-androideabi-gcc --sysroot=$SYSROOT"
+export CXX="arm-linux-androideabi-g++ --sysroot=$SYSROOT"
+export AR="arm-linux-androideabi-ar"
+ 

@@ -39,8 +39,8 @@ ATIRE_API *atire = NULL;
 
 ATIRE_API *ant_init(ANT_ANT_param_block & params);
 long ant_init_ranking(ATIRE_API *atire, ANT_ANT_param_block &params);
-int run_atire(int argc, char *argv[]);
-int run_atire(char *files);
+extern int run(int argc, char *argv[]);
+extern int run_atire(char *files);
 
 ANT_stop_word *stop_word_list = NULL;
 
@@ -953,7 +953,7 @@ for (; token != NULL; token = strtok(NULL, seperators))
 	fprintf(stderr, "\n");
 #endif
 *argv = NULL;
-int result = run_atire(argc, file_list);
+int result = run(argc, file_list);
 delete [] copy;
 delete [] file_list;
 
@@ -964,7 +964,7 @@ return result;
 	RUN_ATIRE()
 	-----------
 */
-int run_atire(int argc, char *argv[])
+int run(int argc, char *argv[])
 {
 ANT_stats stats;
 ANT_ANT_param_block params(argc, argv);
@@ -999,7 +999,7 @@ return 0;
 */
 int main(int argc, char *argv[])
 {
-return run_atire(argc, argv);
+return run(argc, argv);
 }
 
 #endif
