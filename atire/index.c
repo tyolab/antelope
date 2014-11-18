@@ -108,7 +108,7 @@ int atire_exit(int errno) {
 int atire_index(char *options)
 {
 static char *seperators = "+";
-char **argv, **arg_list;
+char **argv, **file_list;
 char *token;
 size_t total_length = (options ? strlen(options) : 0) + 7;
 char *copy, *copy_start;
@@ -125,7 +125,7 @@ if (options) {
 }
 *copy = '\0';
 
-argv = arg_list = new char *[total_length];
+argv = file_list = new char *[total_length];
 int argc = 0;
 token = strtok(copy_start, seperators);
 
@@ -144,9 +144,9 @@ for (; token != NULL; token = strtok(NULL, seperators))
 	fprintf(stderr, "\n");
 #endif
 *argv = NULL;
-int result = atire_index(argc, arg_list);
-delete [] copy_start;
-delete [] arg_list;
+int result = atire_index(argc, file_list);
+delete [] copy;
+delete [] file_list;
 
 return result;
 }
@@ -498,15 +498,16 @@ for (param = first_param; param < argc; param++)
 	while (current_file != NULL)
 		{
 		/*
-		 	 It could be an empty file without any text (content)
+		 	 It could be an empty file without any text (content) and we still need to count it
 		 */
+		doc++;
+
 		if (current_file->file != NULL)
 			{
 			/*
 				How much data do we have?
 			*/
 			files_that_match++;
-			doc++;
 			bytes_indexed += current_file->length;
 
 			readability->set_current_file(current_file);
@@ -532,15 +533,20 @@ for (param = first_param; param < argc; param++)
 #endif
 			stats.add_indexing_time(stats.stop_timer(now));
 
-			if (terms_in_document == 0)
-				{
-	//			puts(current_file->filename);
-				/*
-					pretend we never saw the document
-				*/
-				doc--;
-				}
-			else
+			/*
+			 * actually even terms_in_document is zero, we should still count it because that we cound depend on it for the unique document id
+			 *
+			 */
+
+//			if (terms_in_document == 0)
+//				{
+//	//			puts(current_file->filename);
+//				/*
+//					pretend we never saw the document
+//				*/
+//				doc--;
+//				}
+//			else
 				{
 				if (pregen)
 					pregen->process_document(doc - 1, current_file->filename);
