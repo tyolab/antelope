@@ -4,8 +4,8 @@ include $(CLEAR_VARS)
 
 LOCAL_CPP_EXTENSION := .c
 
-ATIRE_DIR := ../../atire
-SRC_DIR := ../../source
+ATIRE_DIR := $(LOCAL_PATH)/../../atire
+SRC_DIR := $(LOCAL_PATH)/../../source
 INCLUDE := include
 
 CORE_SOURCES =  \

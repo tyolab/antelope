@@ -1,15 +1,7 @@
+
 APP_CPPFLAGS += -frtti -fexceptions
 
-#ifeq ($(NO_NEON),)
-#APP_ABI := armeabi-v7a
-#else ifneq ($(TEGRA2),)
-#APP_ABI := armeabi-v7a
-#else
-#APP_ABI := armeabi
-#endif
-
 APP_STL := stlport_static
-APP_ABI := armeabi armeabi-v7a x86 mips
 
 APP_PLATFORM := android-10
 

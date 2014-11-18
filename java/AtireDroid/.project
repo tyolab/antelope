@@ -31,4 +31,11 @@
 		<nature>com.android.ide.eclipse.adt.AndroidNature</nature>
 		<nature>org.eclipse.jdt.core.javanature</nature>
 	</natures>
+	<linkedResources>
+		<link>
+			<name>jni</name>
+			<type>2</type>
+			<location>/home/monfee/workspace/atire/java/jni</location>
+		</link>
+	</linkedResources>
 </projectDescription>

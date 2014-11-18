@@ -39,7 +39,7 @@ public class MobileSearchActivity extends Activity implements OnClickListener {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.main);
         
-        System.loadLibrary("atire_android_jni");
+        System.loadLibrary("search4m_android_jni");
         
         Button button = (Button)findViewById(R.id.index_button);
         button.setOnClickListener(this);

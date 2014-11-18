@@ -93,6 +93,9 @@ int unicode_xml_class(unsigned long character);
 int ANT_UNICODE_normalize_lowercase_toutf8(unsigned char **buf, size_t *buflen, uint32_t character);
 inline int ANT_UNICODE_normalize_lowercase_toutf8(char **buf, size_t *buflen, uint32_t character) { return ANT_UNICODE_normalize_lowercase_toutf8((unsigned char **)buf, buflen, character); }
 
+int ANT_UNICODE_normalize_string(unsigned char *buf, unsigned char *source);
+inline int ANT_UNICODE_normalize_string(unsigned char *buf, unsigned char *source) { return ANT_UNICODE_normalize_string((unsigned char *)buf, (unsigned char *)source); }
+
 unsigned long utf8_bytes(unsigned long c);
 unsigned long utf8_bytes(const unsigned char *here);
 inline unsigned long utf8_bytes(const char *here) { return utf8_bytes((unsigned char *)here); }

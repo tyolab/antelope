@@ -10,7 +10,7 @@
 
 extern int run_atire(char *options);
 
-extern int run(int argc, char *argv[]);
+extern int run_atire(int argc, char *argv[]);
 
 extern void exit_atire();
 

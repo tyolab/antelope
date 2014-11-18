@@ -595,6 +595,7 @@ main_headers = $(ATIRE_DIR)/atire_api_remote.h \
 			$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h \
 			$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h \
 			$(ATIRE_DIR)/atire_engine_result_set.h \
+			$(ATIRE_DIR)/indexer.h \
 			$(ATIRE_DIR)/indexer_param_block.h \
 			$(ATIRE_DIR)/indexer_param_block_pregen.h \
 			$(ATIRE_DIR)/indexer_param_block_rank.h \
@@ -610,7 +611,8 @@ main_headers = $(ATIRE_DIR)/atire_api_remote.h \
 	
 ATIRE_PARAM_LIST = $(ATIRE_DIR)/ant_param_block.c
 
-INDEX_PARAM_LIST = $(ATIRE_DIR)/indexer_param_block.c \
+INDEX_PARAM_LIST = $(ATIRE_DIR)/indexer.c \
+				 $(ATIRE_DIR)/indexer_param_block.c \
 				 $(ATIRE_DIR)/indexer_param_block_rank.c \
 				 $(ATIRE_DIR)/indexer_param_block_topsig.c \
 				 $(ATIRE_DIR)/indexer_param_block_pregen.c \

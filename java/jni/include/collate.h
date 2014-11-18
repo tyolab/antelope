@@ -39,6 +39,11 @@
 #define COLLATE_VERSION    "1.0\n"
 #define COLLATE_VERSION1_2 "1.2\n"
 
+#ifndef u_char
+	#define u_char unsigned char
+	#define UCHAR_MAX 255
+#endif
+
 struct __collate_st_char_pri {
 	int prim, sec;
 };
