@@ -415,12 +415,6 @@ for (param = first_param; param < argc; param++)
 			*/
 			files_that_match++;
 			bytes_indexed += current_file->length;
-
-			/*
-				Report
-			*/
-			if (doc % param_block.reporting_frequency == 0 && doc != last_report)
-				report(last_report = doc, indexer.get_index(), &stats, bytes_indexed);
 	
 			/*
 				Index, this call returns the number of terms we found in the document
@@ -430,6 +424,12 @@ for (param = first_param; param < argc; param++)
 
 			indexer.index_document(current_file, &doc);
 			stats.add_indexing_time(stats.stop_timer(now));
+
+			/*
+				Report
+			*/
+			if (doc % param_block.reporting_frequency == 0 && doc != last_report)
+				report(last_report = doc, indexer.get_index(), &stats, bytes_indexed);
 
 			delete [] current_file->file;
 			delete [] current_file->filename;
@@ -457,7 +457,7 @@ if (doc == 0)
 else
 	{
 	now = stats.start_timer();
-
+	indexer.finalize();
 	stats.add_disk_output_time(stats.stop_timer(now));
 	indexer.get_index()->text_render(param_block.statistics);
 	}
