@@ -32,6 +32,8 @@ this->argv = argv;
 reporting_frequency = 0;
 index_filename = "merged_index.aspt";
 doclist_filename = "merged_doclist.aspt";
+intersection_filename = "intersection_list";
+skip_intersection = true;
 document_compression_scheme = ANT_compression_text_factory::DEFLATE; // something non-NONE, doesn't matter what
 }
 
@@ -60,7 +62,6 @@ puts("GENERAL");
 puts("-------");
 puts("-? -h -H        Display this help message");
 puts("-nologo         Suppress banner");
-puts("-people         Display credits");
 puts("");
 
 puts("OUPUT FILE HANDLING");
@@ -93,16 +94,18 @@ puts("");
 
 puts("OPTIMISATIONS");
 puts("-------------");
+puts("-I <fn>         Remove terms not in file fn, i.e. return intersection of (indexes) and (terms in fn)");
 puts("-K<n>           Static pruning. Write no more than <n> postings per list (0=all) [default=0]");
 puts("                Static pruning will be performed to the minimum of the parameter given");
 puts("                and the sum of static prune points in the indexes to be merged.");
-puts("-k[-l0t][L<n>][s<n>] Term culling");
+puts("-k[-l0t][n|p][L<n>][s<n>] Term culling");
 puts("   -            All terms remain in the indes [default]");
 puts("   0            Do not index numbers");
 puts("   l            Remove (stop) low frequency terms (where collection frequency == 1)");
 puts("   L<n>         Remove (stop) low frequency terms (where document frequency <= <n>)");
 puts("   s<n>         Remove (stop) words that occur in more than <n>% of documents");
-puts("   S            Remove (stop) words that are on the NCBI PubMed MBR 313 word stopword list: wrd_stop");
+puts("   n            Remove (stop) words that are on the NCBI PubMed MBR 313 word stopword list: wrd_stop");
+puts("   p            Remove (stop) words that are on Puurula's 988 stopword list use at ADCS/ALTA 2013");
 puts("   t            Do not index XML tag names");
 puts("");
 
@@ -157,6 +160,11 @@ for (param = 1; param < argc; param++)
 			index_filename = argv[++param];
 		else if (strcmp(command, "fdoclist") == 0)
 			doclist_filename = argv[++param];
+		else if (strcmp(command, "I") == 0)
+      {
+			intersection_filename = argv[++param];
+      skip_intersection = false;
+      }
 		else if (strcmp(command, "nologo") == 0)
 			logo = FALSE;
 		else

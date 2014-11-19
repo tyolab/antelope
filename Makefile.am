@@ -23,10 +23,21 @@ TESTS_DIR = tests
 AM_LDFLAGS = -Wl,--gc-sections -fPIC -shared -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
-AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR \
-       -Wno-endif-labels -Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings \
-        -Wno-long-long
+MINUS_D = -DHASHER=1 -DHEADER_NUM=1 
+MINUS_D = $(MINUS_D) -DSPECIAL_COMPRESSION=1
+MINUS_D = $(MINUS_D) -DTWO_D_ACCUMULATORS
+MINUS_D = $(MINUS_D) -DTOP_K_READ_AND_DECOMPRESSOR
+MINUS_D = $(MINUS_D) -DPARALLEL_INDEXING
+MINUS_D = $(MINUS_D) -DPARALLEL_INDEXING_DOCUMENTS
+MINUS_D = $(MINUS_D) -DANT_ACCUMULATOR_T="double"
+MINUS_D = $(MINUS_D) -DANT_PREGEN_T="unsigned long long"
+MINUS_D = $(MINUS_D) -DNOMINMAX
+MINUS_D = $(MINUS_D) -DIMPACT_HEADER
+MINUS_D = $(MINUS_D) -DFILENAME_INDEX
+
+AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS \
+       -Wno-endif-labels -Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings -Wno-long-long \
+       $(MINUS_D)
        
 # for parallel indexing, but it will be configured by configure script with --with-pi option
 # -DPARALLEL_INDEXING

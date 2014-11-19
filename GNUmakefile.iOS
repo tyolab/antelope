@@ -1,4 +1,4 @@
-project=atire_api
+projectect=atire_api
 
 ifeq ($(device), armv7)
     ARCH=armv7
