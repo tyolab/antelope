@@ -199,11 +199,11 @@ docno++;
 readability->set_current_file(current_file);
 
 #ifdef PARALLEL_INDEXING_DOCUMENTS
-	index->add_indexed_document(current_file->index, *doc);
+	index->add_indexed_document(current_file->index, docno);
 	delete current_file->index;
 	terms_in_document = current_file->terms;
 #else
-	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, *doc, current_file->file);
+	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, docno, current_file->file);
 #endif
 
 /*
