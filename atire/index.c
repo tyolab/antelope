@@ -49,19 +49,13 @@
 #include "btree_iterator.h"
 #include "unicode.h"
 #include "pregens_writer.h"
+#include "indexer.h"
 
 #ifndef FALSE
 	#define FALSE 0
 #endif
 #ifndef TRUE
 	#define TRUE (!FALSE)
-#endif
-
-#ifdef _MSC_VER
-	#include <windows.h>
-	#define PATH_MAX MAX_PATH
-#else
-	#include <limits.h>
 #endif
 
 int atire_index(int argc, char *argv[]);
@@ -145,7 +139,7 @@ for (; token != NULL; token = strtok(NULL, seperators))
 #endif
 *argv = NULL;
 int result = atire_index(argc, file_list);
-delete [] copy;
+delete [] copy_start;
 delete [] file_list;
 
 return result;
@@ -161,15 +155,11 @@ ANT_indexer_param_block param_block(argc, argv);
 ANT_stats_time stats;
 ANT_directory_iterator *source = NULL;
 ANT_directory_iterator *disk = NULL;
-ANT_parser *parser;
-ANT_readability_factory *readability;
-ANT_memory_index *index;
+
 long long doc, now, last_report;
 long param, first_param;
 ANT_memory file_buffer(1024 * 1024);
-#ifndef FILENAME_INDEX
-	ANT_file id_list;
-#endif
+
 long long files_that_match;
 long long bytes_indexed;
 ANT_instream *file_stream = NULL, *decompressor = NULL, *instream_buffer = NULL, *scrubber = NULL;
@@ -178,14 +168,6 @@ ANT_directory_iterator_object file_object, *current_file;
 #ifdef PARALLEL_INDEXING
 	ANT_directory_iterator_multiple *parallel_disk;
 #endif
-#ifndef PARALLEL_INDEXING_DOCUMENTS
-	ANT_stem *stemmer = NULL;
-#endif
-ANT_pregens_writer *pregen = NULL;
-char pregen_filename[PATH_MAX + 1];
-long terms_in_document;
-ANT_index_document *document_indexer;
-ANT_compression_text_factory *factory_text = NULL;
 
 if (argc < 2)
 	param_block.usage();
@@ -198,78 +180,14 @@ if (param_block.logo)
 if (first_param >= argc)
 	exit(0);				// no files to index so terminate
 
-last_report = 0;
 doc = 0;
-index = new ANT_memory_index(param_block.index_filename);
-#ifndef FILENAME_INDEX
-	id_list.open(param_block.doclist_filename, "wbx");
-#endif
-index->set_compression_scheme(param_block.compression_scheme);
-index->set_compression_validation(param_block.compression_validation);
-index->set_static_pruning(param_block.static_prune_point);
-index->set_term_culling(param_block.stop_word_removal, param_block.stop_word_df_threshold, param_block.stop_word_df_frequencies);
-index->set_quantization(param_block.quantization, param_block.quantization_bits);
-index->set_ranking_function(param_block.ranking_function, param_block.p1, param_block.p2, param_block.p3);
-index->set_inverted_index_mode(param_block.inversion_extras, param_block.puurula_length_g);
+last_report = 0;
 
-if (param_block.readability_measure == ANT_readability_factory::NONE
-		|| param_block.readability_measure == ANT_readability_factory::TAG_WEIGHTING)
-	parser = new ANT_parser(param_block.segmentation);
-else
-	parser = new ANT_parser_readability();
+ANT_indexer indexer;
+indexer.init(param_block);
 
-if (param_block.inversion_type == ANT_indexer_param_block::TOPSIG)
-	document_indexer = new ANT_index_document_topsig(param_block.stop_word_removal, param_block.topsig_width, param_block.topsig_density, param_block.topsig_global_stats);
-else
-	document_indexer = new ANT_index_document(param_block.stop_word_removal);
-
-if (param_block.stemmer != 0)
-	{
-	/*
-		The user has asked for a stemmed index and so we create a stemmer
-		and store the fact in the index (so that the search engine knows)
-	*/
-	ANT_string_pair squiggle_stemmed("~stemmer");
-	index->set_variable(&squiggle_stemmed, param_block.stemmer);
-#ifndef PARALLEL_INDEXING_DOCUMENTS
-	stemmer = ANT_stemmer_factory::get_core_stemmer(param_block.stemmer);
-#endif
-	}
-
-readability = new ANT_readability_factory;
-readability->set_measure(param_block.readability_measure);
-readability->set_parser(parser);
-
-if (param_block.num_pregen_fields)
-	{
-	size_t pregen_prefix_len = strlen(param_block.index_filename) + 1;
-	pregen = new ANT_pregens_writer();
-
-	if (pregen_prefix_len < PATH_MAX)
-		{
-		strcpy(pregen_filename, param_block.index_filename);
-
-		pregen_filename[pregen_prefix_len - 1] = '.';
-
-		for (int i = 0; i < param_block.num_pregen_fields; i++)
-			{
-			ANT_indexer_param_block::pregen_field_spec & spec = param_block.pregens[i];
-
-			if (pregen_prefix_len + strlen(spec.field_name) > PATH_MAX)
-				fprintf(stderr, "Pathname too long to for pregen field '%s'\n", spec.field_name);
-			else
-				{
-				strcpy(pregen_filename + pregen_prefix_len, spec.field_name);
-				pregen->add_field(pregen_filename, spec.field_name, spec.type);
-				}
-			}
-		}
-	else
-		{
-		fprintf(stderr, "Index pathname too long to derive pregen filenames\n");
-		//And we'll just keep going...
-		}
-	}
+ANT_compression_text_factory *factory_text;
+factory_text = indexer.get_compression_text_factory();
 
 #ifdef PARALLEL_INDEXING
 	parallel_disk = new ANT_directory_iterator_multiple;
@@ -461,13 +379,6 @@ for (param = first_param; param < argc; param++)
 
 	stats.add_disk_input_time(stats.stop_timer(now));
 
-	if (param_block.document_compression_scheme != ANT_indexer_param_block::NONE)
-		{
-		factory_text = new ANT_compression_text_factory;
-		factory_text->set_scheme(param_block.document_compression_scheme);
-		}
-	else
-		factory_text = NULL;
 
 #ifdef PARALLEL_INDEXING
 	parallel_disk->add_iterator(source);
@@ -477,7 +388,7 @@ for (param = first_param; param < argc; param++)
 		disk = new ANT_directory_iterator_compressor(disk, 8, factory_text, ANT_directory_iterator::READ_FILE);
 
 	#ifdef PARALLEL_INDEXING_DOCUMENTS
-		disk = new ANT_directory_iterator_preindex(disk, param_block.segmentation, param_block.readability_measure, param_block.stemmer, document_indexer, index, 8, ANT_directory_iterator::READ_FILE);
+		disk = new ANT_directory_iterator_preindex(disk, param_block.segmentation, param_block.readability_measure, param_block.stemmer, indexer.get_document_indexer(), indexer.get_index(), 8, ANT_directory_iterator::READ_FILE);
 	#endif
 
 	files_that_match = 0;
@@ -497,11 +408,6 @@ for (param = first_param; param < argc; param++)
 
 	while (current_file != NULL)
 		{
-		/*
-		 	 It could be an empty file without any text (content) and we still need to count it
-		 */
-		doc++;
-
 		if (current_file->file != NULL)
 			{
 			/*
@@ -510,80 +416,21 @@ for (param = first_param; param < argc; param++)
 			files_that_match++;
 			bytes_indexed += current_file->length;
 
-			readability->set_current_file(current_file);
 			/*
 				Report
 			*/
 			if (doc % param_block.reporting_frequency == 0 && doc != last_report)
-				report(last_report = doc, index, &stats, bytes_indexed);
+				report(last_report = doc, indexer.get_index(), &stats, bytes_indexed);
 	
 			/*
 				Index, this call returns the number of terms we found in the document
 			*/
 			now = stats.start_timer();
-
 			//printf("INDEX:%s\n", current_file->filename);
 
-#ifdef PARALLEL_INDEXING_DOCUMENTS
-			index->add_indexed_document(current_file->index, doc);
-			delete current_file->index;
-			terms_in_document = current_file->terms;
-#else
-			terms_in_document = document_indexer->index_document(index, stemmer, param_block.segmentation, readability, doc, current_file->file);
-#endif
+			indexer.index_document(current_file, &doc);
 			stats.add_indexing_time(stats.stop_timer(now));
 
-			/*
-			 * actually even terms_in_document is zero, we should still count it because that we cound depend on it for the unique document id
-			 *
-			 */
-
-//			if (terms_in_document == 0)
-//				{
-//	//			puts(current_file->filename);
-//				/*
-//					pretend we never saw the document
-//				*/
-//				doc--;
-//				}
-//			else
-				{
-				if (pregen)
-					pregen->process_document(doc - 1, current_file->filename);
-
-				/*
-					Store the document in the repository.
-				*/
-				if (param_block.document_compression_scheme != ANT_indexer_param_block::NONE)
-					{
-					/*
-					   if parallel indexing macro is set and "-C" option is set too, text will be compressed when being retrieved
-					   so we don't need to compress it again, and the following code is for the situation where parallel indexing is not set
-					 */
-#ifndef PARALLEL_INDEXING
-					unsigned long compressed_size;
-
-					/*
-					 * the following code is copied from from the directory_iterator_compressor
-					 * it may be better to have it refactored to include a compressor in the base class (i.e. ANT_directory_iterator)
-					 */
-					current_file->compressed = new (std::nothrow) char [(size_t)(compressed_size = factory_text->space_needed_to_compress((unsigned long)current_file->length + 1))];		// +1 to include the '\0'
-					if (factory_text->compress(current_file->compressed, &compressed_size, current_file->file, (unsigned long)(current_file->length + 1)) == NULL)
-						exit(printf("Cannot compress document (name:%s)\n", current_file->filename));
-					current_file->compressed_length = compressed_size;
-#endif
-					index->add_to_document_repository(strip_space_inplace(current_file->filename), current_file->compressed, (long)current_file->compressed_length, (long)current_file->length);
-					if (current_file->compressed)
-						delete [] current_file->compressed;
-					}
-#ifdef FILENAME_INDEX
-				else
-						index->add_to_document_repository(strip_space_inplace(current_file->filename));
-#else
-	//			puts(current_file->filename);
-				id_list.puts(strip_space_inplace(current_file->filename));
-#endif
-				}
 			delete [] current_file->file;
 			delete [] current_file->filename;
 			}
@@ -603,37 +450,22 @@ for (param = first_param; param < argc; param++)
 	}
 
 if (param_block.reporting_frequency != LLONG_MAX && doc != last_report)
-	report(doc, index, &stats, bytes_indexed);
+	report(doc, indexer.get_index(), &stats, bytes_indexed);
 
 if (doc == 0)
 	puts("No documents indexed (check your file list)");
 else
 	{
-#ifndef FILENAME_INDEX
-	id_list.close();
-#endif
-	if (pregen)
-		{
-		for (int i = 0; i < pregen->field_count; i++)
-			if (pregen->fields[i]->doc_count == 0)
-				fprintf(stderr, "Warning: Pregen field '%s' not found in any documents\n", pregen->fields[i]->field_name);
-		pregen->close();
-		}
-
 	now = stats.start_timer();
-	index->serialise();
+
 	stats.add_disk_output_time(stats.stop_timer(now));
-	index->text_render(param_block.statistics);
+	indexer.get_index()->text_render(param_block.statistics);
 	}
-delete index;
+
 delete disk;
-delete parser;
-delete readability;
 delete file_stream;
 delete decompressor;
 delete instream_buffer;
-delete pregen;
-delete document_indexer;
 
 if (param_block.statistics & ANT_indexer_param_block::STAT_TIME)
 	{
