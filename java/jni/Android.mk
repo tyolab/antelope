@@ -8,6 +8,20 @@ ATIRE_DIR := $(LOCAL_PATH)/../../atire
 SRC_DIR := $(LOCAL_PATH)/../../source
 INCLUDE := include
 
+EXTRA_MINUS_D = -DANT_HAS_ZLIB 
+
+MINUS_D = $(EXTRA_MINUS_D) -DHASHER=1 -DHEADER_NUM=1 
+MINUS_D += -DSPECIAL_COMPRESSION=1
+MINUS_D += -DTWO_D_ACCUMULATORS
+MINUS_D += -DTOP_K_READ_AND_DECOMPRESSOR
+MINUS_D += -DPARALLEL_INDEXING
+MINUS_D += -DPARALLEL_INDEXING_DOCUMENTS
+MINUS_D += -DANT_ACCUMULATOR_T="double"
+MINUS_D += -DANT_PREGEN_T="unsigned long long"
+MINUS_D += -DNOMINMAX
+MINUS_D += -DIMPACT_HEADER
+MINUS_D += -DFILENAME_INDEX
+
 CORE_SOURCES =  \
 	$(SRC_DIR)/arithmetic_model_bigram.c \
 	$(SRC_DIR)/arithmetic_model_tables.c \
@@ -93,7 +107,11 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/focus.c \
 	$(SRC_DIR)/focus_lowest_tag.c \
 	$(SRC_DIR)/focus_results_list.c \
-	$(SRC_DIR)/hash_table.c \
+	$(SRC_DIR)/hash_header.c \
+	$(SRC_DIR)/hash_header_collapse.c \
+	$(SRC_DIR)/hash_header_experimental.c \
+	$(SRC_DIR)/hash_matt.c \
+	$(SRC_DIR)/hash_random.c \
 	$(SRC_DIR)/index_document.c \
 	$(SRC_DIR)/index_document_topsig.c \
 	$(SRC_DIR)/index_document_topsig_signature.c \
@@ -236,9 +254,8 @@ LOCAL_SRC_FILES := $(OTHER_SOURCES) \
 				
 LOCAL_LDLIBS    := -llog -lz
 
-LOCAL_CFLAGS    += -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DANT_WITHOUT_STL \
-		-DATIRE_MOBILE -DATIRE_JNI -DANT_HAS_ZLIB -DFILENAME_INDEX\
+LOCAL_CFLAGS    += -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DANT_WITHOUT_STL \
+		-DATIRE_MOBILE -DATIRE_JNI $(MINUS_D) \
 		-I ./include
 		
 #LOCAL_C_INCLUDES := ./include $(SRC_DIR)
@@ -259,6 +276,7 @@ API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			
 INDEX_SOURCES =	$(ATIRE_DIR)/index.c \
+			 $(ATIRE_DIR)/indexer.c \
 			 $(ATIRE_DIR)/indexer_param_block.c \
 			 $(ATIRE_DIR)/indexer_param_block_rank.c \
 			 $(ATIRE_DIR)/indexer_param_block_topsig.c \
@@ -277,8 +295,9 @@ LOCAL_STATIC_LIBRARIES := search4m_android
 
 LOCAL_LDLIBS += -llog -lz
 
-LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -DATIRE_MOBILE -DATIRE_JNI -DFILENAME_INDEX \
+LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
+		-D_CRT_SECURE_NO_WARNINGS -DATIRE_MOBILE -DATIRE_JNI \
+		$(MINUS_D)  \
 		-I $(SRC_DIR) -I ./include -I $(ATIRE_DIR)
 		
 LOCAL_C_INCLUDES += $(SRC_DIR)

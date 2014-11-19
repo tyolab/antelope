@@ -141,7 +141,11 @@ core_sources =  \
 	$(SRC_DIR)/focus.c \
 	$(SRC_DIR)/focus_lowest_tag.c \
 	$(SRC_DIR)/focus_results_list.c \
-	$(SRC_DIR)/hash_table.c \
+	$(SRC_DIR)/hash_header.c \
+	$(SRC_DIR)/hash_header_collapse.c \
+	$(SRC_DIR)/hash_header_experimental.c \
+	$(SRC_DIR)/hash_matt.c \
+	$(SRC_DIR)/hash_random.c \
 	$(SRC_DIR)/index_document.c \
 	$(SRC_DIR)/index_document_topsig.c \
 	$(SRC_DIR)/index_document_topsig_signature.c \
@@ -393,6 +397,13 @@ core_noinst_headers = \
 	$(SRC_DIR)/focus_result.h \
 	$(SRC_DIR)/focus_results_list.h \
 	$(SRC_DIR)/fundamental_types.h \
+	$(SRC_DIR)/hash_header_collapse.h \
+	$(SRC_DIR)/hash_header_experimental.h \
+	$(SRC_DIR)/hash_header.h \
+	$(SRC_DIR)/hash_lookup3.h \
+	$(SRC_DIR)/hash_matt.h \
+	$(SRC_DIR)/hash_random.h \
+	$(SRC_DIR)/hash_superfast.h \
 	$(SRC_DIR)/hash_table.h \
 	$(SRC_DIR)/heap.h \
 	$(SRC_DIR)/impact_header.h \
