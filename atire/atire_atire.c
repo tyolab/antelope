@@ -644,6 +644,25 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			delete [] command;
 			continue;
 			}
+		else if (strncmp(command, ".normalizequery ", 16) == 0)
+			{
+			topic_id = -1;
+			char *start = command + 16;
+			size_t buffer_length = strlen(start) * 2 + 1;
+			char *buffer = new char[buffer_length];
+			size_t normalized_string_length = 0;
+			int result = ANT_UNICODE_normalize_string_tolowercase(buffer, buffer_length, &normalized_string_length, start);
+			if (result)
+				{
+				delete [] command;
+				query = command = buffer;
+				}
+			else
+				{
+				delete [] buffer;
+				query = start;
+				}
+			}
 		else if (strncmp(command, "<ATIREsearch>", 13) == 0)
 			{
 			topic_id = -1;
