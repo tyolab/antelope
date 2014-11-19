@@ -583,7 +583,6 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,
 			static long long raw_list_size = 5 * 1024 * 1024; // same as above
 			char *term, *first_term;
-			long long max = 0;
 			long long global_trim;
 			unsigned char *postings_list = NULL;
 			ANT_compressable_integer *raw = NULL;

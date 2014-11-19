@@ -45,8 +45,8 @@ logo = TRUE;
 reporting_frequency = LLONG_MAX;
 ranking_function = ANT_ranking_function_factory_object::NONE;
 document_compression_scheme = NONE;
-index_filename = INDEX_FILENAME;
-doclist_filename = DOCLIST_FILENAME;
+index_filename = "index.aspt";
+doclist_filename = "doclist.aspt";
 spam_filename = NULL;
 spam_threshold = 70; // as suggested at http://durum0.uwaterloo.ca/clueweb09spam/
 mime_filter = false;
@@ -58,6 +58,7 @@ scrubbing = ANT_directory_iterator_scrub::NONE;
 filter_filename = NULL;
 quantization = FALSE;
 quantization_bits = -1; // -1 indicates run-time calculation, wil be overwritten if necessary by the user
+quantization_automatic = FALSE;
 puurula_length_g = ANT_RANKING_FUNCTION_PUURULA_G;
 inversion_extras = ANT_memory_index::NONE;
 }
@@ -314,8 +315,8 @@ char *stat;
 for (stat = stat_list; *stat != '\0'; stat++)
 	switch (*stat)
 		{
-		case '-': statistics = 0;
-		case 'a': stats("ccmst");
+		case '-': statistics = 0; break;
+		case 'a': stats("cmst"); break;
 		case 'c': statistics |= STAT_COMPRESSION; break;
 		case 'm': statistics |= STAT_MEMORY; break;
 		case 's': statistics |= STAT_SUMMARY; break;
@@ -355,7 +356,7 @@ for (which = mode_list; *which != '\0'; which++)
 			stop_word_removal |= ANT_memory_index::PRUNE_DF_FREQUENTS;
 			stop_word_df_threshold = atof(which + 1);
 			if (stop_word_df_threshold >= 100 || stop_word_df_threshold <= 0)
-				exit(printf("stopping parameter must be 0 < n%% < 100 (%f was given)", stop_word_df_threshold));
+				exit(printf("stopiing parameter must be 0 < n%% < 100 (%f was given)", stop_word_df_threshold));
 			stop_word_df_threshold /= 100.0;
 
 			while (*(which + 1) == '.' || isdigit(*(which + 1)))
@@ -416,7 +417,7 @@ for (param = 1; param < argc; param++)
 			doc_tag = NULL;
 			docno_tag = NULL;
 			if (strncmp(command + 5, ":clean", 6) == 0)
-				scrub("an");
+				this->scrub("an");
 			else if (strncmp(command + 5, ":tag", 4) == 0)
 				{
 				doc_tag = command + 10;
@@ -431,12 +432,12 @@ for (param = 1; param < argc; param++)
 			{
 			recursive = RECURSIVE_TREC;
 			if (strncmp(command + 6, ":clean", 6) == 0)
-				scrub("an");
+				this->scrub("an");
 			}
 		else if (strcmp(command, "rtrecbig") == 0)
 			{
 			recursive = TREC;
-			scrub("an");
+			this->scrub("an");
 			}
 		else if (strcmp(command, "rcsv") == 0)
 			recursive = CSV;
@@ -475,7 +476,7 @@ for (param = 1; param < argc; param++)
 			filter_filename = argv[++param];
 			}
 		else if (strncmp(command, "iscrub:", 7) == 0)
-			scrub(command + 7);
+			this->scrub(command + 7);
 		else if (*command == 'S')
 			segment(command + 1);
 		else if (strcmp(command, "?") == 0)
@@ -564,6 +565,7 @@ for (param = 1; param < argc; param++)
 		else if (*command == 'q')
 			{
 			quantization = TRUE;
+			quantization_automatic = TRUE;
 
 			if (*(command + 1) == '-')
 				quantization = FALSE;
@@ -572,6 +574,7 @@ for (param = 1; param < argc; param++)
 				quantization_bits = atol(command + 1);
 				if (quantization_bits < 2 || quantization_bits > 16)
 					exit(printf("Have to quantize into range 2--16 bits inclusive\n"));
+				quantization_automatic = FALSE;
 				}
 			}
 		else if (*command == 't')

@@ -40,7 +40,11 @@ friend class ANT_memory_index_one;
 friend class ANT_search_engine_memory_index;
 
 public:
-	static const long HASH_TABLE_SIZE = 0x1000000;
+#ifdef HASH32
+	static const unsigned long long HASH_TABLE_SIZE = 0x100000000;
+#else
+	static const unsigned long long HASH_TABLE_SIZE = 0x1000000;
+#endif
 
 public:
 	enum { STAT_MEMORY = 1, STAT_TIME = 2, STAT_COMPRESSION = 4, STAT_SUMMARY = 8 };
@@ -52,6 +56,12 @@ private:
 
 public:
 	ANT_memory_index_hash_node *hash_table[HASH_TABLE_SIZE];
+
+private:
+#ifdef COUNT_STRCMP_CALLS_HT
+	unsigned long strcmp_calls[HASH_TABLE_SIZE];
+#endif
+	ANT_memory_index_hash_node dummy_root;
 
 private:
 	ANT_memory *dictionary_memory, *postings_memory, *serialisation_memory, *titles_memory;
@@ -87,6 +97,7 @@ private:
 	double ranking_function_p3;
 	long long quantization_bits;
 	long index_quantization;
+	long quantization_automatic;
 	double maximum_collection_rsv, minimum_collection_rsv;
 
 	/*
@@ -138,9 +149,13 @@ private:
 	double inverted_index_parameter;
 
 private:
-	static long hash(ANT_string_pair *string) { return ANT_hash_24(string); }
-	ANT_memory_index_hash_node *find_node(ANT_memory_index_hash_node *root, ANT_string_pair *string);
-	ANT_memory_index_hash_node *find_add_node(ANT_memory_index_hash_node *root, ANT_string_pair *string);
+#ifdef HASH32
+	static unsigned long hash(ANT_string_pair *string) { return ANT_hash_32(string); }
+#else
+	static unsigned long hash(ANT_string_pair *string) { return ANT_hash_24(string); }
+#endif
+	ANT_memory_index_hash_node *find_node(long hash_value, ANT_string_pair *string);
+	ANT_memory_index_hash_node *find_add_node(long hash_value, ANT_string_pair *string, long *depth);
 	void serialise_one_node(ANT_file *file, ANT_memory_index_hash_node *root);
 	long serialise_all_nodes(ANT_file *file, ANT_memory_index_hash_node *root);
 	ANT_memory_index_hash_node *new_memory_index_hash_node(ANT_string_pair *string);
@@ -194,7 +209,12 @@ public:
 
 	void add_indexed_document(ANT_memory_index_one *index, long long docno);
 
+	void rebalance_tree(long hash_value);
+	int tree_to_vine(ANT_memory_index_hash_node *root);
+	void vine_to_tree(ANT_memory_index_hash_node *root, int size);
+
 	virtual ANT_memory_index_hash_node *add_term(ANT_string_pair *string, long long docno, long term_frequency = 1);
+	virtual ANT_memory_index_hash_node *add_term(ANT_string_pair *string);
 	virtual long long get_memory_usage(void) { return dictionary_memory->bytes_used() + postings_memory->bytes_used(); }
 	virtual void set_document_length(long long docno, long long length) { set_document_detail(&squiggle_length, length); largest_docno = docno; }
 	virtual void set_puurula_length(long g, double length) { set_document_detail(squiggle_puurula_length[g], (long long)(length * 1000)); /* accurate to 3 decimal places*/ }
@@ -202,7 +222,7 @@ public:
 	virtual void set_puurula_tfidf_length(double length) { set_document_detail(&squiggle_puurula_tfidf_length, (long long)(length * 1000)); /* accurate to 3 decimal places*/ }
 	virtual void set_unique_term_count(long long length) { set_document_detail(&squiggle_unique_term_count, length); }
 	virtual void set_inverted_index_mode(long mode, double parameter) { inverted_index_mode = mode; inverted_index_parameter = parameter; }
-	virtual void set_quantization(long quantization, long bits) { this->index_quantization = quantization; this->quantization_bits = bits;}
+	virtual void set_quantization(long quantization, long quantization_automatic, long bits) { this->index_quantization = quantization; this->quantization_automatic = quantization_automatic; this->quantization_bits = bits;}
 	virtual void set_document_detail(ANT_string_pair *measure_name, long long length, long mode = MODE_ABSOLUTE);
 	virtual void set_ranking_function(long ranking_function, double p1, double p2, double p3) {ranking_function_id = ranking_function; ranking_function_p1 = p1; ranking_function_p2 = p2; ranking_function_p3 = p3;}
 	virtual void set_static_pruning(long long k) { static_prune_point = k; }

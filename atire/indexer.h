@@ -6,12 +6,13 @@
 #ifndef INDEXER_H_
 #define INDEXER_H_
 
+#include "file.h"
+
 class ANT_memory_index;
 class ANT_directory_iterator_object;
 class ANT_readability_factory;
 class ANT_parser;
 class ANT_index_document;
-class ANT_file;
 class ANT_pregens_writer;
 class ANT_indexer_param_block;
 class ANT_compression_text_factory;
