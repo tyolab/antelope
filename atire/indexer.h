@@ -17,6 +17,10 @@ class ANT_pregens_writer;
 class ANT_indexer_param_block;
 class ANT_compression_text_factory;
 
+#ifndef PARALLEL_INDEXING_DOCUMENTS
+class ANT_stem;
+#endif
+
 /*
 	class ANT_INDEXER
 	-----------------

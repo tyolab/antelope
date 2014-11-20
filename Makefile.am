@@ -24,16 +24,24 @@ AM_LDFLAGS = -Wl,--gc-sections -fPIC -shared -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
 MINUS_D = -DHASHER=1 -DHEADER_NUM=1 
-MINUS_D = $(MINUS_D) -DSPECIAL_COMPRESSION=1
-MINUS_D = $(MINUS_D) -DTWO_D_ACCUMULATORS
-MINUS_D = $(MINUS_D) -DTOP_K_READ_AND_DECOMPRESSOR
-MINUS_D = $(MINUS_D) -DPARALLEL_INDEXING
-MINUS_D = $(MINUS_D) -DPARALLEL_INDEXING_DOCUMENTS
-MINUS_D = $(MINUS_D) -DANT_ACCUMULATOR_T="double"
-MINUS_D = $(MINUS_D) -DANT_PREGEN_T="unsigned long long"
-MINUS_D = $(MINUS_D) -DNOMINMAX
-MINUS_D = $(MINUS_D) -DIMPACT_HEADER
-MINUS_D = $(MINUS_D) -DFILENAME_INDEX
+MINUS_D +=  -DSPECIAL_COMPRESSION=1
+MINUS_D +=  -DTWO_D_ACCUMULATORS
+MINUS_D +=  -DTOP_K_READ_AND_DECOMPRESSOR
+
+MINUS_D +=  -DANT_ACCUMULATOR_T="double"
+MINUS_D +=  -DANT_PREGEN_T="unsigned long long"
+MINUS_D +=  -DNOMINMAX
+MINUS_D +=  -DIMPACT_HEADER
+MINUS_D +=  -DFILENAME_INDEX
+
+################################################################################
+#
+# use configure to turn on the parallel indexing
+#
+# MINUS_D +=  -DPARALLEL_INDEXING
+# MINUS_D +=  -DPARALLEL_INDEXING_DOCUMENTS
+#
+################################################################################
 
 AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS \
        -Wno-endif-labels -Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings -Wno-long-long \
