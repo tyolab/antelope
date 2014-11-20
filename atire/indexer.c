@@ -29,6 +29,10 @@
 ANT_indexer::ANT_indexer()
 {
 pregen = NULL;
+
+#ifndef PARALLEL_INDEXING_DOCUMENTS
+stemmer = NULL;
+#endif
 }
 
 ANT_indexer::~ANT_indexer()
