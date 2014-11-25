@@ -581,14 +581,14 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			{
 			long limits = 10;
 			static ANT_compression_factory factory;
-			static char metaphone_buffer[1024];
+//			static char metaphone_buffer[1024];
 			long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,
 			static long long raw_list_size = 5 * 1024 * 1024; // same as above
 			char *term, *first_term, *last_term = NULL;
 			long long global_trim;
-			unsigned char *postings_list = NULL;
+			unsigned char *postings_list_mem = NULL, *postings_list = NULL;
 			ANT_compressable_integer *raw = NULL;
-			ANT_stem *meta = NULL;
+//			ANT_stem *meta = NULL;
 			long long docid = -1, max;
 			ANT_compressable_integer *current;
 			int count ;
@@ -599,7 +599,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			ANT_btree_iterator iterator(search_engine);
 			ANT_search_engine_btree_leaf leaf;
 
-			long metaphone, print_wide, print_postings, one_postings_per_line;
+//			long metaphone, print_wide, print_postings, one_postings_per_line;
 
 			global_trim = search_engine->get_global_trim_postings_k();
 
@@ -611,19 +611,19 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			ANT_compressable_integer *impact_header_buffer = (ANT_compressable_integer *)malloc(impact_header_size);
 #endif
 
+#ifndef ATIRE_MOBILE
 			postings_list_size = search_engine->get_postings_buffer_length();
-#ifdef IMPACT_HEADER
+	#ifdef IMPACT_HEADER
 			raw_list_size = sizeof(*raw) * (search_engine->document_count() + ANT_COMPRESSION_FACTORY_END_PADDING);
-#else
+	#else
 			raw_list_size = sizeof(*raw) * (512 + search_engine->document_count() + ANT_COMPRESSION_FACTORY_END_PADDING);
+	#endif
 #endif
-
-			postings_list = (unsigned char *)malloc((size_t)postings_list_size);
+			postings_list_mem = postings_list = (unsigned char *)malloc((size_t)postings_list_size);
 			raw = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
 			*outchannel << "<ATIREresult>" << ANT_channel::endl;
 			for (term = iterator.first(first_term); term != NULL && count < limits; term = iterator.next())
 				{
-				++count;
 				docid = -1;
 
 				iterator.get_postings_details(&leaf);
@@ -635,37 +635,9 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 						break;
 					else
 						{
-//						if (metaphone)
-//							{
-//							if (isalpha(*term))
-//								meta->stem(term, metaphone_buffer);
-//							else
-//								strcpy(metaphone_buffer, "-");
-//							printf("%s ", metaphone_buffer);
-//							}
-//				#ifdef _MSC_VER
-//						/*
-//							Convert into a wide string and print that as Windows printf() doesn't do UTF-8
-//						*/
-//						if (print_wide)
-//							if (MultiByteToWideChar(CP_UTF8, 0, term, -1, wide, sizeof(wide)) == 0)
-//								printf("FAIL ");
-//							else
-//								wprintf(L"%s ", wide);
-//						else
-//							printf("%s ", term);
-//				#else
-//						printf("%s ", term);
-//				#endif
-//				#ifdef SPECIAL_COMPRESSION
-//						if (leaf.local_document_frequency < 3)
-//							printf("%lld %lld 0", leaf.local_collection_frequency, leaf.local_document_frequency);
-//						else
-//				#endif
-//						printf("%lld %lld %lld", leaf.local_collection_frequency, leaf.local_document_frequency, leaf.postings_length);
 						if (*term != '~')		// ~length and others aren't encoded in the usual way
 							{
-							postings_list = search_engine->get_postings(&leaf, postings_list);
+							postings_list = search_engine->get_postings(&leaf, postings_list_mem);
 
 							long long document_frequency = ANT_min(leaf.local_document_frequency, global_trim);
 
@@ -675,7 +647,9 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 							beginning_of_the_postings = ANT_impact_header::get_beginning_of_the_postings(postings_list);
 							factory.decompress(impact_header_buffer, postings_list + impact_header_info_size, the_quantum_count * 3);
 
-							// print the postings
+							postings_list = postings_list + beginning_of_the_postings;
+
+							// print thcde postings
 //							max = process(&factory, the_quantum_count, impact_header_buffer, raw, postings_list + beginning_of_the_postings, ANT_min(leaf.local_document_frequency, global_trim), print_postings, one_postings_per_line);
 							long long docid, max_docid, sum;
 							ANT_compressable_integer *current, *end;
@@ -695,12 +669,14 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 								current = raw;
 								end = raw + *doc_count_ptr;
 
-								while (current < end)
+								while (current < end && count < limits)
 									{
 									docid += *current++;
 
 									if (docid < 0)
 										continue;
+
+									++count;
 #ifdef FILENAME_INDEX
 									static char filename[1024*1024];
 									*outchannel << atire->get_document_filename(filename, docid) << ":";
@@ -792,8 +768,11 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 
 			*outchannel << "</ATIREresult>" << ANT_channel::endl;
 //			outchannel->puts("\n");
-			delete postings_list;
-			delete raw;
+			free(postings_list_mem);
+			free(raw);
+#ifdef IMPACT_HEADER
+			free(impact_header_buffer);
+#endif
 			delete [] command;
 			continue;
 			}
