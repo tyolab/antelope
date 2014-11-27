@@ -30,6 +30,7 @@
 #include "focus_results_list.h"
 #include "search_engine.h"
 #include "memory_index_one_node.h"
+#include "unicode.h"
 
 using namespace std;
 
@@ -579,6 +580,22 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			}
 		else if (strncmp(command, ".listterm ", 10) == 0)
 			{
+			char *start = command + 10;
+			size_t buffer_length = strlen(start) * 2 + 1;
+			char *buffer = new char[buffer_length];
+			size_t normalized_string_length = 0;
+			int result = ANT_UNICODE_normalize_string_tolowercase(buffer, buffer_length, &normalized_string_length, start);
+			if (result)
+				{
+				delete [] command;
+				query = command = buffer;
+				}
+			else
+				{
+				delete [] buffer;
+				query = start;
+				}
+
 			long limits = 10;
 			static ANT_compression_factory factory;
 //			static char metaphone_buffer[1024];
@@ -595,7 +612,18 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			long long tf = 0;
 			ANT_search_engine *search_engine = atire->get_search_engine();
 			count = 0;
-			first_term = command + 10;
+//			first_term = command + 10;
+			if (result)
+				{
+				delete [] command;
+				first_term = command = buffer;
+				}
+			else
+				{
+				delete [] buffer;
+				first_term = start;
+				}
+
 			ANT_btree_iterator iterator(search_engine);
 			ANT_search_engine_btree_leaf leaf;
 

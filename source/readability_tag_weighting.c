@@ -175,7 +175,7 @@ if (term_count > 2) {
 		if (!is_first_term_punct && !is_cjk_language(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
 			{
 			*start++ = ' ';
-			what.string_length++;
+//			what.string_length++;
 			}
 
 		/*
@@ -186,7 +186,7 @@ if (term_count > 2) {
 		start += length;
 
 		*start = '\0';
-		what.string_length = length + 2; // including prefix string "C:" or "T:"
+//		what.string_length = length + 2; // including prefix string "C:" or "T:"
 
 		indexer->add_term(&what, doc, 20);
 
@@ -206,7 +206,7 @@ info_buf_start = info_buf + 3;
 *info_buf_start = '\0';
 
 what.start = info_buf;
-what.string_length = length + 3;
+what.string_length = 3;
 
 std::string title(current_file->filename);
 unscape_xml(title);
@@ -214,12 +214,40 @@ unscape_xml(title);
 length = title.length();
 
 memcpy(info_buf_start, title.c_str(), length);
-//info_buf_start += length;
-*(info_buf_start + length) = '\0';
 what.string_length += length;
+*(info_buf_start + length) = '\0';
 
-while (*info_buf_start != '\0')
- info_buf_start = utf8_tolower(info_buf_start);
+//size_t buffer_length = length * 2 + 1;
+//char *buffer_lowcase_str = new char[buffer_length];
+size_t normalized_string_length = 0;
+strcpy(what.normalized_buf, "tf:");
+start = what.normalized_buf + 3;
+
+int result = ANT_UNICODE_normalize_string_tolowercase(start, MAX_TERM_LENGTH, &normalized_string_length, (char *)title.c_str());
+
+if (result)
+	{
+	what.normalized.string_length = normalized_string_length + 3;
+//	memcpy(info_buf_start, buffer_lowcase_str, normalized_string_length);
+//	*(info_buf_start + normalized_string_length) = '\0';
+//	what.string_length += normalized_string_length;
+	}
+else
+	{
+	*what.normalized_buf = '\0';
+	what.normalized.string_length = 0;
+
+	//info_buf_start += length;
+//	start = info_buf_start = info_buf + what.string_length;
+
+	while (*info_buf_start != '\0')
+		info_buf_start = utf8_tolower(info_buf_start);
+
+//	length = strlen(start);
+
+	}
+
+//delete [] buffer_lowcase_str;
 
 /* the following solution doesn't work well. we have to have the exact title as it is */
 /*
