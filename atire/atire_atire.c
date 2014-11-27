@@ -585,16 +585,6 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			char *buffer = new char[buffer_length];
 			size_t normalized_string_length = 0;
 			int result = ANT_UNICODE_normalize_string_tolowercase(buffer, buffer_length, &normalized_string_length, start);
-			if (result)
-				{
-				delete [] command;
-				query = command = buffer;
-				}
-			else
-				{
-				delete [] buffer;
-				query = start;
-				}
 
 			long limits = 10;
 			static ANT_compression_factory factory;
