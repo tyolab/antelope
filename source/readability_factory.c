@@ -152,10 +152,10 @@ if (measure[measure_to_use] != NULL)
 	READABILITY_FACTORY::HANDLE_TAG()
 	----------------------------------
 */
-void ANT_readability_factory::handle_tag(ANT_parser_token *token, long tag_open)
+void ANT_readability_factory::handle_tag(ANT_parser_token *token, long tag_open, ANT_memory_indexer *index, long long doc)
 {
 if (measure[measure_to_use] != NULL)
-	measure[measure_to_use]->handle_tag(token, tag_open, parser);
+	measure[measure_to_use]->handle_tag(token, tag_open, parser, index, doc);
 }
 
 /*

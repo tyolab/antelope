@@ -35,7 +35,7 @@ public:
 	ANT_parser_token *get_next_token(void);
 	virtual void handle_node(ANT_memory_indexer_node *node);
 	using ANT_readability::handle_tag;
-	virtual void handle_tag(ANT_parser_token *token, long tag_open);
+	virtual void handle_tag(ANT_parser_token *token, long tag_open, ANT_memory_indexer *index = NULL, long long doc = -1);
 	void index(ANT_memory_indexer *index, long long doc);
 
 	void set_document(unsigned char *document);

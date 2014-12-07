@@ -34,7 +34,7 @@ protected:
 
 	virtual void handle_token(ANT_parser_token *token) { (void)token; /* prevent compiler warning */ }
 	virtual void handle_node(ANT_memory_indexer_node *node) { (void)node; /* prevent compiler warning */ }
-	virtual void handle_tag(ANT_parser_token *token, long tag_open, ANT_parser *parser) { (void)token; /* prevent compiler warning */ }
+	virtual void handle_tag(ANT_parser_token *token, long tag_open, ANT_parser *parser, ANT_memory_indexer *index = NULL, long long doc = -1) { (void)token; /* prevent compiler warning */ }
 } ;
 
 #endif  /* READABILITY_H_ */

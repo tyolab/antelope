@@ -7,6 +7,8 @@
 #include "unicode.h"
 #include "directory_iterator_object.h"
 
+#include <string.h>
+
 #ifndef FALSE
 	#define FALSE 0
 #endif
@@ -17,7 +19,9 @@
 /*
  * to add special term into vocab, it can't contain upper case letter, because it is for tag
  */
-char *ANT_readability_TAG_WEIGHTING::special_tags[] = {"CATEGORY", "TITLE"};
+char *ANT_readability_TAG_WEIGHTING::special_tags_general[] = {"CATEGORY", "TITLE"};
+
+char *ANT_readability_TAG_WEIGHTING::special_tags_extra = NULL;
 
 /*
 	ANT_READABILITY_TAG_WEIGHTING::~ANT_READABILITY_TAG_WEIGHTING()
@@ -31,6 +35,32 @@ where = -1;
 term_count = 0;
 tag_processing_on = FALSE;
 terms = new char*[MAX_TERM_COUNT + 1];
+has_title_tag = FALSE;
+
+int tag_count = sizeof(special_tags_general)/sizeof(special_tags_general[0]);
+
+if (special_tags_extra)
+	{
+	int special_tag_count = tag_count;
+	special_tag_count += strlen(special_tags_extra);
+	special_tags = new char *[special_tag_count];
+	char **current = special_tags_general;
+	int count = 0;
+	for (; count < tag_count; ++count)
+		special_tags[count] = special_tags_general[count];
+
+	char *p = strtok(str, ":");
+	while (p)
+		{
+		special_tags[count] = p;
+		++count;
+		p = strtok(str, ":");
+		}
+	}
+else
+	{
+	special_tags = special_tags_general;
+	}
 }
 
 /*
@@ -41,6 +71,9 @@ ANT_readability_TAG_WEIGHTING::~ANT_readability_TAG_WEIGHTING()
 {
 clean_up();
 delete [] terms;
+
+if (special_tags != special_tags_general)
+	delete [] special_tags;
 }
 
 /*
@@ -65,7 +98,7 @@ matching_tag = NULL;
 	READABILITY_TAG_WEIGHTING::HANDLE_TAG()
 	---------------------------------------
 */
-void ANT_readability_TAG_WEIGHTING::handle_tag(ANT_parser_token *tag, long tag_open, ANT_parser *parser)
+void ANT_readability_TAG_WEIGHTING::handle_tag(ANT_parser_token *tag, long tag_open, ANT_parser *parser, ANT_memory_indexer *indexer, long long doc)
 {
 if (tag_open)
 	{
@@ -83,9 +116,93 @@ if (tag_open)
 	}
 else
 	{
+	ANT_parser_token what;
+	long long length = 0;
+	int i;
+
+
 	//if (strncmp(tag->start, matching_tag, tag->string_length) == 0) // we are not checking if the closing tag is the one being opened at the moment
 	tag_processing_on = FALSE;
 	parser->set_segment_info(should_segment);
+
+	/*
+		put each special term into index, but term count has be greater than 1
+
+		this might dramatically increase the size of index, we might just use bigram for it
+
+		furthermore, bigram (phrase search) might be more usefull than one word
+
+		also, we apply it on the title with term count of 3 and over
+	 */
+	if (strcmp(matching_tag, "TITLE") == 0)
+		{
+		has_title_tag = TRUE;
+		what.start = buffer;
+		buffer[0] = info_buf[0] = prefix_char;
+		start = buffer + 1;
+		*start++ = ':';
+
+		if (term_count > 2)
+			{
+			int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
+
+			for (i = 1; i < term_count; ++i)
+				{
+			//	if (prefix_char == 'T' && i == 0)
+			//		continue;
+				start = buffer + 2;
+				what.string_length = 2; // including prefix string "C:" or "T:"
+
+				/*
+				 * first term
+				 */
+				length = strlen(terms[i-1]);
+				memcpy(start, terms[i-1], length);
+				start += length;
+				what.string_length += length;
+
+				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
+					{
+					*start++ = ' ';
+					what.string_length++;
+					}
+
+				/*
+				 * second term
+				 */
+				length = strlen(terms[i]);
+				memcpy(start, terms[i], length);
+				start += length;
+
+				*start = '\0';
+				what.string_length += length;
+
+				indexer->add_term(&what, doc, 20);
+
+				start = buffer + 2;
+				}
+			}
+		}
+	else
+		{
+		for (i = 0; i < term_count; ++i)
+			{
+			what.start = buffer;
+			buffer[0] = info_buf[0] = prefix_char;
+			start = buffer + 1;
+			*start++ = ':';
+			what.string_length = 2;
+
+			length = strlen(terms[i]);
+			memcpy(start, terms[i], length);
+			start += length;
+
+			*start = '\0';
+			what.string_length += length;
+
+			indexer->add_term(&what, doc, 20);
+			}
+		}
 	}
 }
 
@@ -145,143 +262,62 @@ static char buffer[MAX_TERM_LENGTH];
 char *start, *info_buf_start;
 ANT_parser_token what;
 long long length = 0;
-int i;
 
-what.start = buffer;
-buffer[0] = info_buf[0] = prefix_char;
-start = buffer + 1;
-*start++ = ':';
-
-/*
-	put each special term into index, but term count has be greater than 1
-
-	this might dramatically increase the size of index, we might just use bigram for it
-
-	furthermore, bigram (phrase search) might be more usefull than one word
-
-	also, we apply it on the title with term count of 3 and over
- */
-if (term_count > 2) {
-	int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
-
-	for (i = 1; i < term_count; ++i)
-		{
-	//	if (prefix_char == 'T' && i == 0)
-	//		continue;
-		start = buffer + 2;
-		what.string_length = 2; // including prefix string "C:" or "T:"
-
-		/*
-		 * first term
-		 */
-		length = strlen(terms[i-1]);
-		memcpy(start, terms[i-1], length);
-		start += length;
-		what.string_length += length;
-
-		if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
-			{
-			*start++ = ' ';
-			what.string_length++;
-			}
-
-		/*
-		 * second term
-		 */
-		length = strlen(terms[i]);
-		memcpy(start, terms[i], length);
-		start += length;
-
-		*start = '\0';
-		what.string_length += length;
-
-		indexer->add_term(&what, doc, 20);
-
-		start = buffer + 2;
-		}
-}
-
-/*
-   Now the full text enclosed in the node, for example, title "Bill Clinton"
-   we will put "TF:bill clinton" into dictionary
- */
-
-info_buf[1] = 'f';
-info_buf[2] = ':';
-
-info_buf_start = info_buf + 3;
-*info_buf_start = '\0';
-
-what.start = info_buf;
-what.string_length = 3;
-
-std::string title(current_file->filename);
-unscape_xml(title);
-
-length = title.length();
-
-memcpy(info_buf_start, title.c_str(), length);
-what.string_length += length;
-*(info_buf_start + length) = '\0';
-
-//size_t buffer_length = length * 2 + 1;
-//char *buffer_lowcase_str = new char[buffer_length];
-size_t normalized_string_length = 0;
-strcpy(what.normalized_buf, "tf:");
-start = what.normalized_buf + 3;
-
-int result = ANT_UNICODE_normalize_string_tolowercase(start, MAX_TERM_LENGTH, &normalized_string_length, (char *)title.c_str());
-
-if (result)
+if (has_title_tag)
 	{
-	what.normalized.string_length = normalized_string_length + 3;
 
-	indexer->add_term(&what.normalized, doc, 99); // avoid being culled of optimization
-//	memcpy(info_buf_start, buffer_lowcase_str, normalized_string_length);
-//	*(info_buf_start + normalized_string_length) = '\0';
-//	what.string_length += normalized_string_length;
-	}
-else
-	{
-	*what.normalized_buf = '\0';
-	what.normalized.string_length = 0;
+	what.start = buffer;
+	buffer[0] = info_buf[0] = 't'; // this is for the title
+	start = buffer + 1;
 
-	//info_buf_start += length;
-//	start = info_buf_start = info_buf + what.string_length;
+	/*
+	   Now the full text enclosed in the node, for example, title "Bill Clinton"
+	   we will put "TF:bill clinton" into dictionary
+	 */
 
-	while (*info_buf_start != '\0')
-		info_buf_start = utf8_tolower(info_buf_start);
+	info_buf[1] = 'f';
+	info_buf[2] = ':';
 
-	indexer->add_term(&what, doc, 99); // avoid being culled of optimization
-	}
-
-//delete [] buffer_lowcase_str;
-
-/* the following solution doesn't work well. we have to have the exact title as it is */
-/*
-
-length = strlen(terms[0]);
-memcpy(info_buf_start, terms[0], length);
-info_buf_start += length;
-*info_buf_start = '\0';
-
-int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
-
-for (i = 1; i < term_count; ++i)
-	{
-	if (!is_first_term_punct && !is_cjk_language(terms[i]) && !ANT_ispunct(terms[i][0]) && !utf8_ispuntuation(terms[i])) // we need to restore the title, so only put spaces between characters that are not puntuations
-		{
-		*info_buf_start++ = ' ';
-		what.string_length++;
-		}
-    is_first_term_punct = ANT_ispunct(terms[i][0]) || utf8_ispuntuation(terms[i]);
-	length = strlen(terms[i]);
-	memcpy(info_buf_start, terms[i], length);
-	info_buf_start += length;
+	info_buf_start = info_buf + 3;
 	*info_buf_start = '\0';
+
+	what.start = info_buf;
+	what.string_length = 3;
+
+	std::string title(current_file->filename);
+	unscape_xml(title);
+
+	length = title.length();
+
+	memcpy(info_buf_start, title.c_str(), length);
 	what.string_length += length;
+	*(info_buf_start + length) = '\0';
+
+	size_t normalized_string_length = 0;
+	strcpy(what.normalized_buf, "tf:");
+	start = what.normalized_buf + 3;
+
+	int result = ANT_UNICODE_normalize_string_tolowercase(start, MAX_TERM_LENGTH, &normalized_string_length, (char *)title.c_str());
+
+	if (result)
+		{
+		what.normalized.string_length = normalized_string_length + 3;
+
+		indexer->add_term(&what.normalized, doc, 99); // avoid being culled of optimization
+
+		}
+	else
+		{
+		*what.normalized_buf = '\0';
+		what.normalized.string_length = 0;
+
+
+		while (*info_buf_start != '\0')
+			info_buf_start = utf8_tolower(info_buf_start);
+
+		indexer->add_term(&what, doc, 99); // avoid being culled of optimization
+		}
 	}
-*/
 
 clean_up();
 }

@@ -21,8 +21,11 @@ class ANT_directory_iterator_object;
 
 class ANT_readability_TAG_WEIGHTING : public ANT_readability
 {
+public:
+	static char *special_tags_extra;
+
 private:
-	static char *special_tags[];
+	static char *special_tags_general[];
 
 private:
 	const char *matching_tag;
@@ -34,6 +37,8 @@ private:
 	int term_count;
 	char prefix_char;
 	long should_segment;  // for keeping the old segment information
+	char *special_tags[];
+	long has_title_tag;
 
 private:
 	void clean_up();
@@ -42,7 +47,7 @@ public:
 	ANT_readability_TAG_WEIGHTING();
 	virtual ~ANT_readability_TAG_WEIGHTING();
 
-	void handle_tag(ANT_parser_token *token, long tag_open, ANT_parser *parser);
+	void handle_tag(ANT_parser_token *token, long tag_open, ANT_parser *parser, ANT_memory_indexer *index = NULL, long long doc = -1);
 	void handle_token(ANT_parser_token *token);
 
 	void index(ANT_memory_indexer *index, long long doc, ANT_directory_iterator_object *current_file);

@@ -586,7 +586,7 @@ for (command = inchannel->gets(); command != NULL; prompt(params), command = inc
 			size_t normalized_string_length = 0;
 			int result = ANT_UNICODE_normalize_string_tolowercase(buffer, buffer_length, &normalized_string_length, start);
 
-			long limits = 10;
+			long limits = 100;
 			static ANT_compression_factory factory;
 //			static char metaphone_buffer[1024];
 			long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,

@@ -122,7 +122,7 @@ while ((token = readability->get_next_token()) != NULL)
 			readability->handle_tag(token, TRUE);
 			break;
 		case TT_TAG_CLOSE:
-			readability->handle_tag(token, FALSE);
+			readability->handle_tag(token, FALSE, indexer, doc);
 			break;
 		case TT_PUNCTUATION:
 			//no-op
