@@ -23,6 +23,8 @@ char *ANT_readability_TAG_WEIGHTING::special_tags_general[] = {"CATEGORY", "TITL
 
 char *ANT_readability_TAG_WEIGHTING::special_tags_extra = NULL;
 
+char ANT_readability_TAG_WEIGHTING::buffer[MAX_TERM_LENGTH];
+
 /*
 	ANT_READABILITY_TAG_WEIGHTING::~ANT_READABILITY_TAG_WEIGHTING()
 	---------------------------------------------------------------
@@ -44,18 +46,19 @@ if (special_tags_extra)
 	int special_tag_count = tag_count;
 	special_tag_count += strlen(special_tags_extra);
 	special_tags = new char *[special_tag_count];
-	char **current = special_tags_general;
+//	char **current = special_tags_general;
 	int count = 0;
 	for (; count < tag_count; ++count)
 		special_tags[count] = special_tags_general[count];
 
-	char *p = strtok(str, ":");
+	char *p = strtok(special_tags_extra, "+:-");
 	while (p)
 		{
 		special_tags[count] = p;
 		++count;
-		p = strtok(str, ":");
+		p = strtok(NULL, "+:-");
 		}
+	number_of_tags = count;
 	}
 else
 	{
@@ -82,6 +85,7 @@ if (special_tags != special_tags_general)
 */
 void ANT_readability_TAG_WEIGHTING::clean_up()
 {
+buffer[0] = '\0';
 if (term_count > 0)
 	{
 	for (int i = 0; i < term_count; ++i)
@@ -114,17 +118,20 @@ if (tag_open)
 			break;
 			}
 	}
-else
+
+if (!tag_open && tag_processing_on)
 	{
 	ANT_parser_token what;
 	long long length = 0;
 	int i;
-
+	char *start;
 
 	//if (strncmp(tag->start, matching_tag, tag->string_length) == 0) // we are not checking if the closing tag is the one being opened at the moment
 	tag_processing_on = FALSE;
 	parser->set_segment_info(should_segment);
 
+	buffer[0] = info_buf[0] = prefix_char;
+	buffer[1] = ':';
 	/*
 		put each special term into index, but term count has be greater than 1
 
@@ -134,13 +141,10 @@ else
 
 		also, we apply it on the title with term count of 3 and over
 	 */
-	if (strcmp(matching_tag, "TITLE") == 0)
+	if (NULL != matching_tag && strcmp(matching_tag, "TITLE") == 0)
 		{
 		has_title_tag = TRUE;
 		what.start = buffer;
-		buffer[0] = info_buf[0] = prefix_char;
-		start = buffer + 1;
-		*start++ = ':';
 
 		if (term_count > 2)
 			{
@@ -150,6 +154,7 @@ else
 				{
 			//	if (prefix_char == 'T' && i == 0)
 			//		continue;
+
 				start = buffer + 2;
 				what.string_length = 2; // including prefix string "C:" or "T:"
 
@@ -161,11 +166,14 @@ else
 				start += length;
 				what.string_length += length;
 
-				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
-					{
-					*start++ = ' ';
-					what.string_length++;
-					}
+				/*
+				 * just simply ignore all the spaces
+				 */
+//				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
+//					{
+//					*start++ = ' ';
+//					what.string_length++;
+//					}
 
 				/*
 				 * second term
@@ -185,13 +193,13 @@ else
 		}
 	else
 		{
+
 		for (i = 0; i < term_count; ++i)
 			{
 			what.start = buffer;
-			buffer[0] = info_buf[0] = prefix_char;
-			start = buffer + 1;
-			*start++ = ':';
 			what.string_length = 2;
+
+			start = buffer + 2;
 
 			length = strlen(terms[i]);
 			memcpy(start, terms[i], length);
@@ -203,6 +211,8 @@ else
 			indexer->add_term(&what, doc, 20);
 			}
 		}
+
+	clean_up();
 	}
 }
 
@@ -212,7 +222,7 @@ void ANT_readability_TAG_WEIGHTING::handle_token(ANT_parser_token *token)
   the title may begin with "Wikipedia:", if term_count is greater than 1, then we ignoring it
   it is not best solution, but we can live with it.
  */
-static const char *wiki_prefix = "wikipedia";
+//static const char *wiki_prefix = "wikipedia";
 char *term, *start;
 
 if (tag_processing_on && term_count <= MAX_TERM_COUNT)
@@ -224,8 +234,9 @@ if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 			Wikipedia abstract file dump give title in such a way "wikipedia : XXXXX", term count is 1 when encounter the colon;
 			for for Chinese, the unicode colon ':' = "\357\274\232" in OCT, and the term count for word Wikipedia is 4.
 		 */
-		if ((term_count == 1 && strncmp(token->start, ":", token->string_length) == 0)
-				|| (term_count == 4 && strncmp(token->start, "\357\274\232", token->string_length) == 0)
+		if ((strcmp(matching_tag, "TITLE") == 0)
+				&& (term_count == 1 && (strncmp(token->start, ":", token->string_length) == 0))
+				|| (term_count == 4 && (strncmp(token->start, "\357\274\232", token->string_length) == 0))
 				/*&& strcmp(wiki_prefix, terms[0]) == 0*/)
 			{
 				while (term_count > 0)
@@ -258,7 +269,6 @@ if (term_count == 0)
  */
 
 // now we add the full title, full category information in the dictionary
-static char buffer[MAX_TERM_LENGTH];
 char *start, *info_buf_start;
 ANT_parser_token what;
 long long length = 0;
@@ -268,7 +278,6 @@ if (has_title_tag)
 
 	what.start = buffer;
 	buffer[0] = info_buf[0] = 't'; // this is for the title
-	start = buffer + 1;
 
 	/*
 	   Now the full text enclosed in the node, for example, title "Bill Clinton"
@@ -284,6 +293,12 @@ if (has_title_tag)
 	what.start = info_buf;
 	what.string_length = 3;
 
+	/*
+	 * TODO
+	 *
+	 * this is assuming the filename feeded in the title string
+	 * we might need a better a way to get the title
+	 */
 	std::string title(current_file->filename);
 	unscape_xml(title);
 

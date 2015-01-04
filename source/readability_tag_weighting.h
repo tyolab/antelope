@@ -23,6 +23,7 @@ class ANT_readability_TAG_WEIGHTING : public ANT_readability
 {
 public:
 	static char *special_tags_extra;
+	static char buffer[MAX_TERM_LENGTH];
 
 private:
 	static char *special_tags_general[];
@@ -37,7 +38,7 @@ private:
 	int term_count;
 	char prefix_char;
 	long should_segment;  // for keeping the old segment information
-	char *special_tags[];
+	char **special_tags;
 	long has_title_tag;
 
 private:

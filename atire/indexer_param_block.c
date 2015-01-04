@@ -17,6 +17,7 @@
 #include "directory_iterator_scrub.h"
 #include "ranking_function_puurula.h"
 #include "ranking_function_factory_object.h"
+#include "readability_tag_weighting.h"
 
 #ifndef FALSE
 	#define FALSE 0
@@ -169,7 +170,7 @@ puts("-----------");
 puts("-R[-dt]        Calculate readability using one of:");
 puts("   -            none [default]");
 puts("   d            Dale-Chall");
-puts("   t            Tag up-weighting for TITLE and CATEGORY elements");
+puts("   t[:CUSTOM_TAG1+CUSTOM_TAG2+...:] Tag up-weighting for TITLE and CATEGORY elements, custom tag must be a CAPITAL TAG");
 puts("");
 
 ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', ANT_ranking_function_factory_object::INDEXABLE);
@@ -278,7 +279,20 @@ for (measure = measures; *measure != '\0'; measure++)
 		{
 		case '-': readability_measure = ANT_readability_factory::NONE; break;
 		case 'd': readability_measure = ANT_readability_factory::DALE_CHALL; break;
-		case 't': readability_measure = ANT_readability_factory::TAG_WEIGHTING; break;
+		case 't':
+			readability_measure = ANT_readability_factory::TAG_WEIGHTING;
+			if (*(measure + 1) == ':')
+				{
+				measure += 2;
+				ANT_readability_TAG_WEIGHTING::special_tags_extra = measure;
+				while (*measure != ':' && *measure != '\0')
+					++measure;
+				if (*measure == ':')
+					*measure = '\0';
+				else
+					exit(printf("custom tags for tag weighting measure need to be started and ended with ':'"));
+				}
+			break;
 		default : exit(printf("Unknown readability measure: '%c'\n", *measure)); break;
 		}
 }
