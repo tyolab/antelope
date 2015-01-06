@@ -8,11 +8,13 @@
 %module atire_apis
 %{
 #include "../../atire/atire_api_remote.h"
+#include "../../atire/indexer.h"
 #include "include/index.h"
 #include "include/atire.h"
 %}
 
 %include "../../atire/atire_api_remote.h"
+%include "../../atire/indexer.h"
 %include "include/index.h"
 %include "include/atire.h"
 

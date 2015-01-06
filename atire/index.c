@@ -457,7 +457,7 @@ if (doc == 0)
 else
 	{
 	now = stats.start_timer();
-	indexer.finalize();
+	indexer.finish();
 	stats.add_disk_output_time(stats.stop_timer(now));
 	indexer.get_index()->text_render(param_block.statistics);
 	}

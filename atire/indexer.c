@@ -275,7 +275,7 @@ current_file.length = strlen(file);
 index_document(&current_file, NULL);
 }
 
-void ANT_indexer::finalize()
+void ANT_indexer::finish()
 {
 #ifndef FILENAME_INDEX
 	id_list.close();
