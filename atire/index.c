@@ -183,7 +183,7 @@ if (first_param >= argc)
 doc = 0;
 last_report = 0;
 
-ANT_indexer indexer;
+ATIRE_indexer indexer;
 indexer.init(param_block);
 
 ANT_compression_text_factory *factory_text;

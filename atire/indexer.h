@@ -25,7 +25,7 @@ class ANT_stem;
 	class ANT_INDEXER
 	-----------------
 */
-class ANT_indexer {
+class ATIRE_indexer {
 private:
 	long long docno;
 
@@ -47,8 +47,8 @@ private:
 	long document_compression_scheme;
 
 public:
-	ANT_indexer();
-	virtual ~ANT_indexer();
+	ATIRE_indexer();
+	virtual ~ATIRE_indexer();
 
 	void init(char *options);
 	void init(int argc, char *argv[]);

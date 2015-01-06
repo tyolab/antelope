@@ -26,7 +26,7 @@
 	#include <limits.h>
 #endif
 
-ANT_indexer::ANT_indexer()
+ATIRE_indexer::ATIRE_indexer()
 {
 pregen = NULL;
 
@@ -35,7 +35,7 @@ stemmer = NULL;
 #endif
 }
 
-ANT_indexer::~ANT_indexer()
+ATIRE_indexer::~ATIRE_indexer()
 {
 delete index;
 delete parser;
@@ -51,7 +51,7 @@ if (factory_text)
 	delete factory_text;
 }
 
-void ANT_indexer::init(char *options)
+void ATIRE_indexer::init(char *options)
 {
 static char *seperators = "+";
 char **argv, **file_list;
@@ -97,7 +97,7 @@ delete [] copy_start;
 delete [] file_list;
 }
 
-void ANT_indexer::init(int argc, char *argv[])
+void ATIRE_indexer::init(int argc, char *argv[])
 {
 ANT_indexer_param_block param_block(argc, argv);
 param_block.parse();
@@ -105,7 +105,7 @@ param_block.parse();
 init(param_block);
 }
 
-void ANT_indexer::init(ANT_indexer_param_block& param_block)
+void ATIRE_indexer::init(ANT_indexer_param_block& param_block)
 {
 docno = 0;
 segmentation = param_block.segmentation;
@@ -193,7 +193,7 @@ if (param_block.num_pregen_fields)
 	}
 }
 
-void ANT_indexer::index_document(ANT_directory_iterator_object *current_file, long long *doc)
+void ATIRE_indexer::index_document(ANT_directory_iterator_object *current_file, long long *doc)
 {
 long terms_in_document;
 
@@ -265,7 +265,7 @@ else
 		(*doc) = docno;
 }
 
-void ANT_indexer::index_document(char *file_name, char *file)
+void ATIRE_indexer::index_document(char *file_name, char *file)
 {
 ANT_directory_iterator_object current_file;
 current_file.file = file;
@@ -275,7 +275,7 @@ current_file.length = strlen(file);
 index_document(&current_file, NULL);
 }
 
-void ANT_indexer::finish()
+void ATIRE_indexer::finish()
 {
 #ifndef FILENAME_INDEX
 	id_list.close();
