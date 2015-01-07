@@ -14,7 +14,7 @@ public class Indexer {
     public void index(String what) {
 //    	atire_apis.atire_index(what);
     	ATIRE_indexer indexer = new ATIRE_indexer();
-    	indexer.init("-Rt[FOLDER:YMD]");
+    	indexer.init("-Rt[FOLDER:YMD]+-kt");
     	
     	byte[] bytes = IO.readFileIntoBytes(what);
     	int i = 0;
@@ -45,7 +45,14 @@ public class Indexer {
     		++i;
     	}
     	
-    	indexer.finish();
+    	int ret = indexer.finish();
+    	
+    	if (ret == 1)
+    		System.err.println("successfully indexed");
+    	else
+    		System.err.println("indexing failed");
+    	
+    	indexer.delete();
     }
     
     public static void usage() {

@@ -21,7 +21,7 @@
  */
 char *ANT_readability_TAG_WEIGHTING::special_tags_general[] = {"CATEGORY", "TITLE"};
 
-char *ANT_readability_TAG_WEIGHTING::special_tags_extra = NULL;
+char *ANT_readability_TAG_WEIGHTING::special_tags_extra = "";
 
 char ANT_readability_TAG_WEIGHTING::buffer[MAX_TERM_LENGTH];
 
@@ -41,29 +41,22 @@ has_title_tag = FALSE;
 
 int tag_count = sizeof(special_tags_general)/sizeof(special_tags_general[0]);
 
-if (special_tags_extra)
-	{
-	int special_tag_count = tag_count;
-	special_tag_count += strlen(special_tags_extra);
-	special_tags = new char *[special_tag_count];
+int special_tag_count = tag_count;
+special_tag_count += strlen(special_tags_extra);
+special_tags = new char *[special_tag_count];
 //	char **current = special_tags_general;
-	int count = 0;
-	for (; count < tag_count; ++count)
-		special_tags[count] = special_tags_general[count];
+int count = 0;
+for (; count < tag_count; ++count)
+	special_tags[count] = strnew(special_tags_general[count]);
 
-	char *p = strtok(special_tags_extra, "+:-");
-	while (p)
-		{
-		special_tags[count] = p;
-		++count;
-		p = strtok(NULL, "+:-");
-		}
-	number_of_tags = count;
-	}
-else
+char *p = strtok(special_tags_extra, "+:-");
+while (p)
 	{
-	special_tags = special_tags_general;
+	special_tags[count] = strnew(p);
+	++count;
+	p = strtok(NULL, "+:-");
 	}
+number_of_tags = count;
 }
 
 /*
@@ -75,8 +68,9 @@ ANT_readability_TAG_WEIGHTING::~ANT_readability_TAG_WEIGHTING()
 clean_up();
 delete [] terms;
 
-if (special_tags != special_tags_general)
-	delete [] special_tags;
+for (int i = 0; i < number_of_tags; ++i)
+	delete [] special_tags[i];
+delete [] special_tags;
 }
 
 /*

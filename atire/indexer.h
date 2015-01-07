@@ -53,7 +53,7 @@ public:
 	void init(char *options);
 	void init(int argc, char *argv[]);
 	void init(ANT_indexer_param_block& param_block);
-	void finish();
+	long finish();
 
 	void index_document(ANT_directory_iterator_object *current_file, long long *doc);
 	void index_document(char *file_name, char *file);

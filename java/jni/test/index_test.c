@@ -16,7 +16,7 @@ int main(int argc, char **argv) {
 
 	ATIRE_indexer indexer;
 
-	indexer.init("-Rt[FOLDER:YMD]+kt");
+	indexer.init("-Rt[FOLDER:YMD]+-kt");
 	int i = 0;
 	char id[1024];
 

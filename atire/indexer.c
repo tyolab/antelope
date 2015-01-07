@@ -275,7 +275,7 @@ current_file.length = strlen(file);
 index_document(&current_file, NULL);
 }
 
-void ATIRE_indexer::finish()
+long ATIRE_indexer::finish()
 {
 #ifndef FILENAME_INDEX
 	id_list.close();
@@ -288,5 +288,5 @@ void ATIRE_indexer::finish()
 		pregen->close();
 		}
 
-	index->serialise();
+	return index->serialise();
 }
