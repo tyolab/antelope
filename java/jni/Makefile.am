@@ -3,21 +3,35 @@ AM_LDFLAGS = @LIBS@
 
 CC = g++
 
-AM_CPPFLAGS += -std=c++0x -pedantic -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux
+ATIRE_DIR = $(srcdir)/../../atire
+SOURCE_DIR = $(srcdir)/../../source
 
+AM_CPPFLAGS += -fPIC -std=c++0x -pedantic -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux -I$(ATIRE_DIR) -I$(SOURCE_DIR)
+
+MINUS_D = $(EXTRA_MINUS_D) -DHASHER=1 -DHEADER_NUM=1 
+MINUS_D += -DSPECIAL_COMPRESSION=1
+MINUS_D += -DTWO_D_ACCUMULATORS
+MINUS_D += -DTOP_K_READ_AND_DECOMPRESSOR
+MINUS_D += -DPARALLEL_INDEXING
+MINUS_D += -DPARALLEL_INDEXING_DOCUMENTS
+MINUS_D += -DANT_ACCUMULATOR_T="double"
+MINUS_D += -DANT_PREGEN_T="unsigned long long"
+MINUS_D += -DNOMINMAX
+MINUS_D += -DIMPACT_HEADER
+MINUS_D += -DFILENAME_INDEX
 
 lib_LTLIBRARIES = libatire_jni.la
 
-
-libatire_jni_la_SOURCES = atire_wrap.c  $(top_srcdir)/atire/atire.c $(top_srcdir)/atire/index.c
+libatire_jni_la_SOURCES = atire_wrap.c atire_helper.c $(top_srcdir)/atire/atire_atire.c $(top_srcdir)/atire/index.c
 libatire_jni_la_CFLAGS = -DATIRE_LIBRARY  -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
-		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR -I$(top_srcdir)/source
-libatire_jni_la_LDFLAGS =  -Bsymbolic -export-dynamic
-libatire_jni_la_DEPENDENCIES = ../../libatire_api.la  ../../libatire_ant_param.la
+		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR $(MINUS_D) -I$(top_srcdir)/source
+libatire_jni_la_LDFLAGS = -fPIC -export-dynamic -shared  
+# -Bsymbolic -export-dynamic
+libatire_jni_la_DEPENDENCIES = ../../libatire_api.la  ../../libatire_ant_param.la ../../libatire_index_param.la
 
 # other possible libraries
 #  -L../../ -latire_index_param -L../../ -latire_index 
-libatire_jni_la_LIBADD =   ../../libatire_api.la ../../libatire_ant_param.la
+libatire_jni_la_LIBADD =   ../../libatire_api.la ../../libatire_ant_param.la ../../libatire_index_param.la 
 
 noinst_PROGRAMS = index_test atire_test atire_command
 

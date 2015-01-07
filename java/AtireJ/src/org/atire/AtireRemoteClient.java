@@ -15,8 +15,6 @@ import java.util.HashMap;
 import org.atire.swig.ATIRE_API_remote;
 import org.atire.swig.SWIGTYPE_p_long_long;
 
-import au.com.tyo.lang.chinese.ChineseUtils;
-import au.com.tyo.lang.chinese.ZHConverter;
 import au.com.tyo.utils.ByteArrayKMP;
 
 public class AtireRemoteClient {
@@ -160,8 +158,8 @@ public class AtireRemoteClient {
 		ArrayList<String> list = new ArrayList<String>();
 		
 		String newQuery = query;
-		if (this.needsConvertChinese)
-			newQuery = ZHConverter.getInstance(ZHConverter.TRADITIONAL).convert(query);
+//		if (this.needsConvertChinese)
+//			newQuery = ZHConverter.getInstance(ZHConverter.TRADITIONAL).convert(query);
 		
 		if (!connected) {
 			this.initializeSocket();
@@ -267,7 +265,7 @@ public class AtireRemoteClient {
 			for (int i = 0; i < tokens.length; ++i) {
 				String term = tokens[i];
 
-				ArrayList<String> list = ChineseUtils.charToList(term);
+				ArrayList<String> list = new ArrayList<String>(); //ChineseUtils.charToList(term);
 				if (list.size() > 0) {
 					for (int j = 0; j < list.size(); ++j) {
 						buffer.append("t:" + list.get(j) + " ");

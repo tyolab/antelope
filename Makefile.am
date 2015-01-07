@@ -43,7 +43,7 @@ MINUS_D +=  -DFILENAME_INDEX
 #
 ################################################################################
 
-AM_CFLAGS = -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS \
+AM_CFLAGS = -fPIC -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS \
        -Wno-endif-labels -Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings -Wno-long-long \
        $(MINUS_D)
        

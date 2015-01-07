@@ -281,16 +281,16 @@ for (measure = measures; *measure != '\0'; measure++)
 		case 'd': readability_measure = ANT_readability_factory::DALE_CHALL; break;
 		case 't':
 			readability_measure = ANT_readability_factory::TAG_WEIGHTING;
-			if (*(measure + 1) == ':')
+			if (*(measure + 1) == '[')
 				{
 				measure += 2;
 				ANT_readability_TAG_WEIGHTING::special_tags_extra = measure;
-				while (*measure != ':' && *measure != '\0')
+				while (*measure != ']' && *measure != '\0')
 					++measure;
-				if (*measure == ':')
+				if (*measure == ']')
 					*measure = '\0';
 				else
-					exit(printf("custom tags for tag weighting measure need to be started and ended with ':'"));
+					exit(printf("custom tags for tag weighting measure need to be started with '[' and ended with ']'"));
 				}
 			break;
 		default : exit(printf("Unknown readability measure: '%c'\n", *measure)); break;
