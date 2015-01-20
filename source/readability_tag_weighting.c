@@ -113,7 +113,7 @@ if (tag_open)
 			}
 	}
 
-if (!tag_open && tag_processing_on)
+if (!tag_open && tag_processing_on && term_count > 0)
 	{
 	ANT_parser_token what;
 	long long length = 0;
@@ -255,9 +255,6 @@ if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 */
 void ANT_readability_TAG_WEIGHTING::index(ANT_memory_indexer *indexer, long long doc, ANT_directory_iterator_object *current_file)
 {
-if (term_count == 0)
-	return;
-
 /*
   the boundary of the buffer wasn't checked assuming the text in the tile or category node won't be longer than that
  */
