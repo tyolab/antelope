@@ -37,7 +37,7 @@
 #define	_GLOB_H_
 
 #include <sys/cdefs.h>
-#include <sys/_types.h>
+#include <sys/types.h>
 #include <unistd.h>
 
 /* We need `size_t' for the following definitions.  */
@@ -63,6 +63,15 @@ typedef __SIZE_TYPE__ size_t;
 #ifndef	_SIZE_T_DECLARED
 typedef	__size_t	size_t;
 #define	_SIZE_T_DECLARED
+#endif
+
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
+#include <sys/param.h>
+#if defined(BSD)
+	/* BSD (DragonFly BSD, FreeBSD, OpenBSD, NetBSD). ----------- */
+#else
+#define issetugid() 0
+#endif
 #endif
 
 struct stat;

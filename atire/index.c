@@ -89,7 +89,7 @@ int atire_exit(int errno) {
 	return errno;
 }
 
-#define exit atire_exit
+#define exit(x) (x)
 
 #endif
 
