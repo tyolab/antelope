@@ -31,10 +31,11 @@ class ANT_parser
 {
 public:
 	/*
-		This might be confusing. For Chinese, no segmentation means documents are indexed by characters only;
+		This might be confusing as previous definition.
+		To index documents containing Chinese, by default Chinese is indexed by characters only; that we should segment it.
 		DOUBLE_SEGMENTATION means string is segmented into words and also single characters for indexing
 		ONFLY_SEGMENTATION means segment the sentence using the Chinese segmentation module when parsing the document
-		If ONFLY_SEGMENTATION is not set, but SHOULD_SEGMENT is still set that means the text is segmented.
+		NOSEGMENTATION is set that means the text is segmented / or just leave as it is.
 	 */
 	enum { NOSEGMENTATION = 0, SHOULD_SEGMENT = 1, ONFLY_SEGMENTATION = 2, DOUBLE_SEGMENTATION = 4, BIGRAM_SEGMENTATION = 8 };
 
@@ -46,7 +47,7 @@ protected:
 	long should_segment;
 
 public:
-	ANT_parser(long should_segment = NOSEGMENTATION);
+	ANT_parser(long should_segment = SHOULD_SEGMENT);
 	virtual ~ANT_parser();
 
 	virtual void segment(unsigned char *start, long length);

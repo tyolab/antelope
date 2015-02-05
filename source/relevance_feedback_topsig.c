@@ -68,7 +68,7 @@ ANT_index_document worker;
 /*
 	Set up a parser
 */
-parser = new ANT_parser(ANT_parser::NOSEGMENTATION);
+parser = new ANT_parser();
 readability = new ANT_readability_factory;
 readability->set_measure(ANT_readability_factory::NONE);
 readability->set_parser(parser);

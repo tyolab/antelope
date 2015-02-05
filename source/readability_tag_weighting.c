@@ -108,7 +108,7 @@ if (tag_open)
 			prefix_char = ANT_tolower(matching_tag[0]);
 			tag_processing_on = TRUE;
 			should_segment = parser->get_segment_info();
-			parser->set_segment_info(0);
+			parser->set_segment_info(ANT_parser::NOSEGMENTATION);
 			break;
 			}
 	}
@@ -245,6 +245,9 @@ if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 		while (start != NULL && (start - term) < strlen(term))
 			start = utf8_tolower(start);
 		++term_count;
+
+		// finish dealing with the token, which should not be indexed again
+		token->type = TT_INVALID;
 		}
 	}
 }

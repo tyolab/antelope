@@ -316,15 +316,24 @@ else if (character_type == CT_OTHER && is_cjk_language(character))
 	current += utf8_bytes(current);
 #endif
 
-	if (should_segment)
-		{
+//	if (should_segment)
+//		{
 		while (is_cjk_language(current))		// don't need to check for '\0' because that isn't a Chinese character
 			{
-			pre_length_of_token = utf8_bytes(current);
-			current += pre_length_of_token;
-			++word_count;
-			if ((should_segment & BIGRAM_SEGMENTATION) == BIGRAM_SEGMENTATION && word_count >= 2)
-				break;
+			if (should_segment)
+				{
+				if ((should_segment & BIGRAM_SEGMENTATION) == BIGRAM_SEGMENTATION)
+					{
+					 if (word_count >= 2)
+						 break;
+					}
+				else if ((should_segment & ONFLY_SEGMENTATION) != ONFLY_SEGMENTATION)
+					break;
+				}
+
+				pre_length_of_token = utf8_bytes(current);
+				current += pre_length_of_token;
+				++word_count;
 			}
 
 		if ((should_segment & ONFLY_SEGMENTATION) == ONFLY_SEGMENTATION)
@@ -332,7 +341,7 @@ else if (character_type == CT_OTHER && is_cjk_language(character))
 			segment(start, (long)(current - start));
 			return get_next_token();
 			}
-		}
+//		}
 
 	current_token.type = TT_WORD;
 	current_token.start = (char *)start;

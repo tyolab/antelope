@@ -35,7 +35,7 @@ ANT_indexer_param_block::ANT_indexer_param_block(int argc, char *argv[])
 this->argc = argc;
 this->argv = argv;
 
-segmentation = ANT_parser::NOSEGMENTATION;
+segmentation = ANT_parser::SHOULD_SEGMENT;
 recursive = NONE;
 compression_validation = FALSE;
 compression_scheme = ANT_compression_factory::VARIABLE_BYTE;
