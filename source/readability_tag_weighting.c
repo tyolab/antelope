@@ -112,101 +112,106 @@ if (tag_open)
 			break;
 			}
 	}
-
-if (!tag_open && tag_processing_on && term_count > 0)
+else
 	{
-	ANT_parser_token what;
-	long long length = 0;
-	int i;
-	char *start;
-
-	//if (strncmp(tag->start, matching_tag, tag->string_length) == 0) // we are not checking if the closing tag is the one being opened at the moment
-	tag_processing_on = FALSE;
-	parser->set_segment_info(should_segment);
-
-	buffer[0] = info_buf[0] = prefix_char;
-	buffer[1] = ':';
-	/*
-		put each special term into index, but term count has be greater than 1
-
-		this might dramatically increase the size of index, we might just use bigram for it
-
-		furthermore, bigram (phrase search) might be more usefull than one word
-
-		also, we apply it on the title with term count of 3 and over
-	 */
-	if (NULL != matching_tag && strcmp(matching_tag, "TITLE") == 0)
+	if (tag_processing_on)
 		{
-		has_title_tag = TRUE;
-		what.start = buffer;
+		tag_processing_on = FALSE;
+		parser->set_segment_info(should_segment);
 
-		if (term_count > 2)
+		if (term_count > 0)
 			{
-			int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
+			ANT_parser_token what;
+			long long length = 0;
+			int i;
+			char *start;
 
-			for (i = 1; i < term_count; ++i)
+			//if (strncmp(tag->start, matching_tag, tag->string_length) == 0) // we are not checking if the closing tag is the one being opened at the moment
+			buffer[0] = info_buf[0] = prefix_char;
+			buffer[1] = ':';
+			/*
+				put each special term into index, but term count has be greater than 1
+
+				this might dramatically increase the size of index, we might just use bigram for it
+
+				furthermore, bigram (phrase search) might be more usefull than one word
+
+				also, we apply it on the title with term count of 3 and over
+			 */
+			if (NULL != matching_tag && strcmp(matching_tag, "TITLE") == 0)
 				{
-			//	if (prefix_char == 'T' && i == 0)
-			//		continue;
+				has_title_tag = TRUE;
+				what.start = buffer;
 
-				start = buffer + 2;
-				what.string_length = 2; // including prefix string "C:" or "T:"
+				if (term_count > 2)
+					{
+					int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
 
-				/*
-				 * first term
-				 */
-				length = strlen(terms[i-1]);
-				memcpy(start, terms[i-1], length);
-				start += length;
-				what.string_length += length;
+					for (i = 1; i < term_count; ++i)
+						{
+					//	if (prefix_char == 'T' && i == 0)
+					//		continue;
 
-				/*
-				 * just simply ignore all the spaces
-				 */
-//				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
-//					{
-//					*start++ = ' ';
-//					what.string_length++;
-//					}
+						start = buffer + 2;
+						what.string_length = 2; // including prefix string "C:" or "T:"
 
-				/*
-				 * second term
-				 */
-				length = strlen(terms[i]);
-				memcpy(start, terms[i], length);
-				start += length;
+						/*
+						 * first term
+						 */
+						length = strlen(terms[i-1]);
+						memcpy(start, terms[i-1], length);
+						start += length;
+						what.string_length += length;
 
-				*start = '\0';
-				what.string_length += length;
+						/*
+						 * just simply ignore all the spaces
+						 */
+		//				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
+		//					{
+		//					*start++ = ' ';
+		//					what.string_length++;
+		//					}
 
-				indexer->add_term(&what, doc, 20);
+						/*
+						 * second term
+						 */
+						length = strlen(terms[i]);
+						memcpy(start, terms[i], length);
+						start += length;
 
-				start = buffer + 2;
+						*start = '\0';
+						what.string_length += length;
+
+						indexer->add_term(&what, doc, 20);
+
+						start = buffer + 2;
+						}
+					}
+				}
+			else
+				{
+
+				for (i = 0; i < term_count; ++i)
+					{
+					what.start = buffer;
+					what.string_length = 2;
+
+					start = buffer + 2;
+
+					length = strlen(terms[i]);
+					memcpy(start, terms[i], length);
+					start += length;
+
+					*start = '\0';
+					what.string_length += length;
+
+					indexer->add_term(&what, doc, 20);
+					}
 				}
 			}
+
+		clean_up();
 		}
-	else
-		{
-
-		for (i = 0; i < term_count; ++i)
-			{
-			what.start = buffer;
-			what.string_length = 2;
-
-			start = buffer + 2;
-
-			length = strlen(terms[i]);
-			memcpy(start, terms[i], length);
-			start += length;
-
-			*start = '\0';
-			what.string_length += length;
-
-			indexer->add_term(&what, doc, 20);
-			}
-		}
-
-	clean_up();
 	}
 }
 

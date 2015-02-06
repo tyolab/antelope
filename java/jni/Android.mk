@@ -313,8 +313,34 @@ include $(CLEAR_VARS)
 
 LOCAL_CPP_EXTENSION := .c
 
-LOCAL_MODULE := search4m
+LOCAL_MODULE := s4m
 LOCAL_SRC_FILES := main.c
+#LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
+LOCAL_LDLIBS += -llog -lz
+LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
+
+include $(BUILD_EXECUTABLE) 
+
+include $(CLEAR_VARS)
+
+LOCAL_CPP_EXTENSION := .c
+
+LOCAL_MODULE := s4m-dict
+LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
+#LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
+LOCAL_LDLIBS += -llog -lz
+LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
+
+include $(BUILD_EXECUTABLE)  
+
+include $(CLEAR_VARS)
+
+LOCAL_CPP_EXTENSION := .c
+
+LOCAL_MODULE := index
+LOCAL_SRC_FILES := index.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz
 LOCAL_SHARED_LIBRARIES += search4m_android_jni

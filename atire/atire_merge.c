@@ -427,10 +427,10 @@ return write_postings(term, raw, index, memory_stats, leaf, param, largest_docno
 }
 
 /*
-	MAIN()
-	------
+	MERGE_INDEX()
+	-------------
 */
-int main(int argc, char *argv[])
+int merge_index(int argc, char *argv[])
 {
 long long offset, engine, upto = 0;
 long long global_trimpoint = 0;
@@ -1200,3 +1200,14 @@ delete memory_stats;
 
 return 0;
 }
+
+#ifndef ATIRE_LIBRARY
+/*
+	MAIN()
+	------
+*/
+int main(int argc, char *argv[])
+{
+	merge_index(argc, argv);
+}
+#endif

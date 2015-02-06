@@ -163,7 +163,7 @@ for (param = 1; param < argc; param++)
 		else if (strcmp(command, "I") == 0)
       {
 			intersection_filename = argv[++param];
-      skip_intersection = false;
+			skip_intersection = false;
       }
 		else if (strcmp(command, "nologo") == 0)
 			logo = FALSE;

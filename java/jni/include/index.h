@@ -11,6 +11,8 @@
 //#endif
 
 extern int atire_index(char *options);
+
+extern int atire_index(int argc, char *argv[]);
 //extern FILE *atire_output;
 
 //#ifdef __cplusplus

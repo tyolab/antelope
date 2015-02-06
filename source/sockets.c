@@ -214,8 +214,18 @@ if (internals->incoming_connection == INVALID_SOCKET)
 	::listen(internals->incoming_connection, SOMAXCONN);
 	}
 
+#ifndef ATIRE_SOCKET_NONBLOCK
 if ((internals->sock = ::accept(internals->incoming_connection, NULL, NULL)) != INVALID_SOCKET)
 	connected = TRUE;
+#else
+/*
+ * TODO
+ * use select for accepting multiple connections
+ *
+ */
+if ((internals->sock = ::accept(internals->incoming_connection, NULL, NULL)) != INVALID_SOCKET)
+	connected = TRUE;
+#endif
 
 return connected;
 }
