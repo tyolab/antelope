@@ -811,7 +811,7 @@ for (param = 1; param < argc; param++)
 */
 if (results_list_length == -1)
 	if (queries_filename == NULL)
-		results_list_length = 10;
+		results_list_length = 100;
 	else
 		results_list_length = 1500;
 
