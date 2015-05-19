@@ -434,6 +434,24 @@ for (param = first_param; param < argc; param++)
 			delete [] current_file->file;
 			delete [] current_file->filename;
 			}
+#ifdef WITH_EMPTY_DOCUMENT
+		else
+			{
+				if (current_file->filename)
+					delete [] current_file->filename;
+				/*
+				static const char *EMPTY_DOCUMENT_CONTENT = "<error>EMPTYDOCUMENT</error>";
+				static const int  EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT);
+				static const char *EMPTY_DOCUMENT_FILENAME = "EMPTY DOCUMEN TTITLE";
+				*/
+				files_that_match++;
+				bytes_indexed += ATIRE_indexer::EMPTY_DOUCMENT_LENGTH;
+
+				current_file->file = (char *)ATIRE_indexer::EMPTY_DOCUMENT_CONTENT;
+				current_file->filename = (char *)ATIRE_indexer::EMPTY_DOCUMENT_FILENAME;
+				indexer.index_document(current_file, &doc);
+			}
+#endif
 
 		/*
 			Get the next file

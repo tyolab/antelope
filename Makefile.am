@@ -34,6 +34,7 @@ MINUS_D +=  -DNOMINMAX
 MINUS_D +=  -DIMPACT_HEADER
 MINUS_D +=  -DFILENAME_INDEX
 MINUS_D +=  -DATIRE_SOCKET_NONBLOCK
+MINUS_D +=  -DWITH_EMPTY_DOCUMENT
 
 ################################################################################
 #

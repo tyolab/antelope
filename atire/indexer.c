@@ -26,6 +26,12 @@
 	#include <limits.h>
 #endif
 
+char ATIRE_indexer::EMPTY_DOCUMENT_CONTENT[30]; //= "<ERROR>EMPTYDOCUMENT</ERROR>";
+const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = 28; //strlen(EMPTY_DOCUMENT_CONTENT);
+char ATIRE_indexer::EMPTY_DOCUMENT_FILENAME[30]; // = "EMPTY DOCUMEN TTITLE";
+
+static bool indexer_static_initialzed = ATIRE_indexer::initialize();
+
 ATIRE_indexer::ATIRE_indexer()
 {
 pregen = NULL;
@@ -49,6 +55,12 @@ delete pregen;
 
 if (factory_text)
 	delete factory_text;
+}
+
+bool ATIRE_indexer::initialize()
+{
+	strcpy(EMPTY_DOCUMENT_CONTENT, "<ERROR>EMPTYDOCUMENT</ERROR>");
+	strcpy(EMPTY_DOCUMENT_FILENAME, "EMPTY DOCUMEN TTITLE");
 }
 
 void ATIRE_indexer::init(char *options)
@@ -196,6 +208,10 @@ if (param_block.num_pregen_fields)
 void ATIRE_indexer::index_document(ANT_directory_iterator_object *current_file, long long *doc)
 {
 long terms_in_document;
+long skip_document = 0;
+char *filename = current_file->filename;
+char *file = current_file->file;
+long long length = current_file->length;
 
 docno++;
 
@@ -206,13 +222,8 @@ readability->set_current_file(current_file);
 	delete current_file->index;
 	terms_in_document = current_file->terms;
 #else
-	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, docno, current_file->file);
+	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, docno, file);
 #endif
-
-/*
- * actually even terms_in_document is zero, we should still count it because that we cound depend on it for the unique document id
- *
- */
 
 if (terms_in_document == 0)
 	{
@@ -220,12 +231,27 @@ if (terms_in_document == 0)
 	/*
 		pretend we never saw the document
 	*/
+#ifndef WITH_EMPTY_DOCUMENT
+	skip_document = 1;
 	docno--;
+#else
+
+	/*
+	 * actually even terms_in_document is zero, we should still count it because that we could depend on it for the unique document id
+	 *
+	 */
+	length = EMPTY_DOUCMENT_LENGTH;
+	filename = (char *)EMPTY_DOCUMENT_FILENAME;
+	file = (char *)EMPTY_DOCUMENT_CONTENT;
+	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, docno, file);
+#endif
 	}
-else
+
+
+if (!skip_document)
 	{
 	if (pregen)
-		pregen->process_document(docno - 1, current_file->filename);
+		pregen->process_document(docno - 1, filename);
 
 	/*
 		Store the document in the repository.
@@ -243,26 +269,26 @@ else
 	 * the following code is copied from from the directory_iterator_compressor
 	 * it may be better to have it refactored to include a compressor in the base class (i.e. ANT_directory_iterator)
 	 */
-	current_file->compressed = new (std::nothrow) char [(size_t)(compressed_size = factory_text->space_needed_to_compress((unsigned long)current_file->length + 1))];		// +1 to include the '\0'
-	if (factory_text->compress(current_file->compressed, &compressed_size, current_file->file, (unsigned long)(current_file->length + 1)) == NULL)
-		exit(printf("Cannot compress document (name:%s)\n", current_file->filename));
+	current_file->compressed = new (std::nothrow) char [(size_t)(compressed_size = factory_text->space_needed_to_compress((unsigned long)length + 1))];		// +1 to include the '\0'
+	if (factory_text->compress(current_file->compressed, &compressed_size, file, (unsigned long)(length + 1)) == NULL)
+		exit(printf("Cannot compress document (name:%s)\n", filename));
 	current_file->compressed_length = compressed_size;
 #endif
-	index->add_to_document_repository(strip_space_inplace(current_file->filename), current_file->compressed, (long)current_file->compressed_length, (long)current_file->length);
+	index->add_to_document_repository(strip_space_inplace(filename), current_file->compressed, (long)current_file->compressed_length, (long)length);
 	if (current_file->compressed)
 		delete [] current_file->compressed;
 	}
 #ifdef FILENAME_INDEX
 	else
-			index->add_to_document_repository(strip_space_inplace(current_file->filename));
+			index->add_to_document_repository(strip_space_inplace(filename));
 #else
-	//			puts(current_file->filename);
-	id_list.puts(strip_space_inplace(current_file->filename));
+	//			puts(filename);
+	id_list.puts(strip_space_inplace(filename));
 #endif
 	}
 
-	if (doc)
-		(*doc) = docno;
+if (doc)
+	(*doc) = docno;
 }
 
 void ATIRE_indexer::index_document(char *file_name, char *file)

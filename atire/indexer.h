@@ -26,6 +26,11 @@ class ANT_stem;
 	-----------------
 */
 class ATIRE_indexer {
+public:
+	static char EMPTY_DOCUMENT_CONTENT[];
+	static char EMPTY_DOCUMENT_FILENAME[];
+	static const int  EMPTY_DOUCMENT_LENGTH;
+
 private:
 	long long docno;
 
@@ -61,6 +66,8 @@ public:
 	ANT_memory_index *get_index() { return index; }
 	ANT_compression_text_factory *get_compression_text_factory() { return factory_text; }
 	ANT_index_document *get_document_indexer() { return document_indexer; }
+
+	static bool initialize();
 };
 
 #endif /* INDEXER_H_ */
