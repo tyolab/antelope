@@ -43,6 +43,7 @@ private:
 
 private:
 	void clean_up();
+	void add_term(ANT_memory_indexer *index, int term_index, ANT_parser_token& what, char **start, long long doc);
 
 public:
 	ANT_readability_TAG_WEIGHTING();

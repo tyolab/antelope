@@ -91,6 +91,21 @@ where = -1;
 matching_tag = NULL;
 }
 
+/*
+	READABILITY_TAG_WEIGHTING::ADD_TERM()
+	-------------------------------------
+*/
+void ANT_readability_TAG_WEIGHTING::add_term(ANT_memory_indexer *indexer, int i, ANT_parser_token& what, char **start, long long doc)
+{
+long long length = strlen(terms[i]);
+memcpy(*start, terms[i], length);
+*start += length;
+
+**start = '\0';
+what.string_length += length;
+
+indexer->add_term(&what, doc, 20);
+}
 
 /*
 	READABILITY_TAG_WEIGHTING::HANDLE_TAG()
@@ -137,32 +152,29 @@ else
 				furthermore, bigram (phrase search) might be more usefull than one word
 
 				also, we apply it on the title with term count of 3 and over
+
+				and two terms have no spaces in between
 			 */
-			if (NULL != matching_tag && strcmp(matching_tag, "TITLE") == 0)
+			if (/*NULL != matching_tag && */strcmp(matching_tag, "TITLE") == 0)
 				{
 				has_title_tag = TRUE;
 				what.start = buffer;
 
-				if (term_count > 2)
-					{
+				start = buffer + 2;
+				what.string_length = 2; // including prefix string "C:" or "T:"
+
+//				if (term_count > 2)
+//					{
 					int is_first_term_punct = ANT_ispunct(terms[0][0]) || utf8_ispuntuation(terms[0]);
 
-					for (i = 1; i < term_count; ++i)
+					for (i = 0;;)
 						{
 					//	if (prefix_char == 'T' && i == 0)
 					//		continue;
-
-						start = buffer + 2;
-						what.string_length = 2; // including prefix string "C:" or "T:"
-
 						/*
 						 * first term
 						 */
-						length = strlen(terms[i-1]);
-						memcpy(start, terms[i-1], length);
-						start += length;
-						what.string_length += length;
-
+						add_term(indexer, i, what, &start, doc);
 						/*
 						 * just simply ignore all the spaces
 						 */
@@ -171,26 +183,26 @@ else
 		//					*start++ = ' ';
 		//					what.string_length++;
 		//					}
-
 						/*
 						 * second term
 						 */
-						length = strlen(terms[i]);
-						memcpy(start, terms[i], length);
-						start += length;
-
-						*start = '\0';
-						what.string_length += length;
-
-						indexer->add_term(&what, doc, 20);
+						if (++i < term_count)
+							add_term(indexer, i, what, &start, doc);
+						else
+							break;
 
 						start = buffer + 2;
+						what.string_length = 2; // including prefix string "C:" or "T:"
 						}
-					}
+//					}
+//				else
+//					{
+//					length = strlen(terms[0]);
+//					memcpy(start, terms[0], length);
+//					indexer->add_term(&what, doc, 20);
+//					}
 				}
 			else
-				{
-
 				for (i = 0; i < term_count; ++i)
 					{
 					what.start = buffer;
@@ -207,7 +219,6 @@ else
 
 					indexer->add_term(&what, doc, 20);
 					}
-				}
 			}
 
 		clean_up();
@@ -215,11 +226,19 @@ else
 	}
 }
 
+/*
+	READABILITY_TAG_WEIGHTING::HANDLE_TOKEN()
+	-----------------------------------------
+	when handling the tokens in the special tags, we don't want to break words from . - _, only space
+	for example, <site>com.google.www</site>, we want it s:com.google.www not s:com s:google s:www
+*/
 void ANT_readability_TAG_WEIGHTING::handle_token(ANT_parser_token *token)
 {
 /*
   the title may begin with "Wikipedia:", if term_count is greater than 1, then we ignoring it
   it is not best solution, but we can live with it.
+
+
  */
 //static const char *wiki_prefix = "wikipedia";
 char *term, *start;
@@ -295,7 +314,7 @@ if (has_title_tag)
 	/*
 	 * TODO
 	 *
-	 * this is assuming the filename feeded in the title string
+	 * this is assuming the filename fed in the title string
 	 * we might need a better a way to get the title
 	 */
 	std::string title(current_file->filename);
