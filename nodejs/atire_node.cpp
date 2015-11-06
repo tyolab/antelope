@@ -19,6 +19,7 @@ void init(Handle<Object> target) {
   target->Set(String::NewSymbol("hello"),
       FunctionTemplate::New(Method)->GetFunction());
 }
+
 NODE_MODULE(hello, init)
 
 
