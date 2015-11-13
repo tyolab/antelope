@@ -26,9 +26,10 @@
 	#include <limits.h>
 #endif
 
-char ATIRE_indexer::EMPTY_DOCUMENT_CONTENT[30]; //= "<ERROR>EMPTYDOCUMENT</ERROR>";
-const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = 28; //strlen(EMPTY_DOCUMENT_CONTENT);
-char ATIRE_indexer::EMPTY_DOCUMENT_FILENAME[30]; // = "EMPTY DOCUMEN TTITLE";
+const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = "<ERROR>EMPTYDOCUMENT</ERROR>"; // [30]; //
+const char *ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = "EMPTY DOCUMEN TTITLE"; // [30]; //
+
+const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT); // 28; //
 
 static bool indexer_static_initialzed = ATIRE_indexer::initialize();
 
@@ -59,8 +60,8 @@ if (factory_text)
 
 bool ATIRE_indexer::initialize()
 {
-	strcpy(EMPTY_DOCUMENT_CONTENT, "<ERROR>EMPTYDOCUMENT</ERROR>");
-	strcpy(EMPTY_DOCUMENT_FILENAME, "EMPTY DOCUMEN TTITLE");
+//	strcpy(EMPTY_DOCUMENT_CONTENT, "<ERROR>EMPTYDOCUMENT</ERROR>");
+//	strcpy(EMPTY_DOCUMENT_FILENAME, "EMPTY DOCUMEN TTITLE");
 }
 
 void ATIRE_indexer::init(char *options)

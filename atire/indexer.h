@@ -27,8 +27,8 @@ class ANT_stem;
 */
 class ATIRE_indexer {
 public:
-	static char EMPTY_DOCUMENT_CONTENT[];
-	static char EMPTY_DOCUMENT_FILENAME[];
+	static const char *EMPTY_DOCUMENT_CONTENT;
+	static const char *EMPTY_DOCUMENT_FILENAME;
 	static const int  EMPTY_DOUCMENT_LENGTH;
 
 private:

@@ -2042,12 +2042,39 @@ fail:
 }
 
 
+void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(v8::Local<v8::String> property, v8::Local<v8::Value> value,
+  const SwigV8PropertyCallbackInfoVoid& info) {
+  v8::HandleScope scope;
+  char *arg1 = (char *) 0 ;
+  int res1 ;
+  char *buf1 = 0 ;
+  int alloc1 = 0 ;
+  
+  res1 = SWIG_AsCharPtrAndSize(value, &buf1, NULL, &alloc1);
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set" "', argument " "1"" of type '" "char const *""'");
+  }
+  arg1 = (char *)(buf1);
+  if (arg1) {
+    size_t size = strlen(arg1) + 1;
+    ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = (char const *)(char*)(memcpy((new char[size]), arg1, sizeof(char)*(size)));
+  } else {
+    ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = 0;
+  }
+  if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
+  
+  goto fail;
+fail:
+  return;
+}
+
+
 SwigV8ReturnValue _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get(v8::Local<v8::String> property, const SwigV8PropertyCallbackInfo& info) {
   v8::HandleScope scope;
   v8::Handle<v8::Value> jsresult;
   char *result = 0 ;
   
-  result = (char *)(char *)ATIRE_indexer::EMPTY_DOCUMENT_CONTENT;
+  result = (char *)ATIRE_indexer::EMPTY_DOCUMENT_CONTENT;
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   SWIGV8_RETURN_INFO(jsresult, info);
@@ -2058,12 +2085,39 @@ fail:
 }
 
 
+void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set(v8::Local<v8::String> property, v8::Local<v8::Value> value,
+  const SwigV8PropertyCallbackInfoVoid& info) {
+  v8::HandleScope scope;
+  char *arg1 = (char *) 0 ;
+  int res1 ;
+  char *buf1 = 0 ;
+  int alloc1 = 0 ;
+  
+  res1 = SWIG_AsCharPtrAndSize(value, &buf1, NULL, &alloc1);
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set" "', argument " "1"" of type '" "char const *""'");
+  }
+  arg1 = (char *)(buf1);
+  if (arg1) {
+    size_t size = strlen(arg1) + 1;
+    ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = (char const *)(char*)(memcpy((new char[size]), arg1, sizeof(char)*(size)));
+  } else {
+    ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = 0;
+  }
+  if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
+  
+  goto fail;
+fail:
+  return;
+}
+
+
 SwigV8ReturnValue _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get(v8::Local<v8::String> property, const SwigV8PropertyCallbackInfo& info) {
   v8::HandleScope scope;
   v8::Handle<v8::Value> jsresult;
   char *result = 0 ;
   
-  result = (char *)(char *)ATIRE_indexer::EMPTY_DOCUMENT_FILENAME;
+  result = (char *)ATIRE_indexer::EMPTY_DOCUMENT_FILENAME;
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   SWIGV8_RETURN_INFO(jsresult, info);
@@ -3408,8 +3462,8 @@ v8::Handle<v8::Object> _exports_ATIRE_indexer_obj = _exports_ATIRE_indexer_class
 
 
   /* add static class functions and variables */
-  SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_CONTENT", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get, JS_veto_set_variable);
-SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_FILENAME", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get, JS_veto_set_variable);
+  SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_CONTENT", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set);
+SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_FILENAME", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set);
 SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOUCMENT_LENGTH", _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get, JS_veto_set_variable);
 SWIGV8_AddStaticFunction(_exports_ATIRE_indexer_obj, "initialize", _wrap_ATIRE_indexer_initialize);
 SWIGV8_AddStaticFunction(exports_obj, "atire_index", _wrap_atire_index);

@@ -1,3 +1,3 @@
-var addon = require('./build/Release/hello');
+var atire = require('./build/Release/atire');
 
-console.log(addon.hello()); // 'world'
+console.log(atire.version()); // 'world'
