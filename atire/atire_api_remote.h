@@ -39,7 +39,7 @@ public:
 	virtual ~ATIRE_API_remote();
 
 	/*
-		Open a connetion to a remote server.
+		Open a connection to a remote server.
 		The connect_string is in the format blarg.com:port where the default port number is 8088
 	*/
 	long open(char *connect_string);

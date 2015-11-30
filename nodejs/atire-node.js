@@ -1,3 +1,5 @@
-var atire = require('./build/Release/atire');
+var atire = require('./build/Release/atire_api');
 
-console.log(atire.version()); // 'world'
+//console.log(atire.version()); // 'world'
+
+var atire_api = atire.ATIRE_API_remote();

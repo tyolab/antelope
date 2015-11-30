@@ -10,20 +10,25 @@
 
 #include "../atire/indexer.h"
 
+#include <string.h>
+
 using namespace v8;
 
-const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = 0;
+const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = "<ERROR>EMPTYDOCUMENT</ERROR>"; // [30]; //
+const char *ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = "EMPTY DOCUMEN TTITLE"; // [30]; //
 
-Handle<Value> Method(const Arguments& args) {
+const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT); // 28; //
+
+Handle<Value> Version(const Arguments& args) {
   HandleScope scope;
-  return scope.Close(String::New("world"));
+  return scope.Close(String::New("atire-node: 0.0.1"));
 }
 
 void init(Handle<Object> target) {
-  target->Set(String::NewSymbol("hello"),
-      FunctionTemplate::New(Method)->GetFunction());
+  target->Set(String::NewSymbol("version"),
+      FunctionTemplate::New(Version)->GetFunction());
 }
 
-NODE_MODULE(hello, init)
+//NODE_MODULE(atire_api, init)
 
 

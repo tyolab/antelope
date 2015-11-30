@@ -3480,6 +3480,6 @@ exports_obj->Set(v8::String::NewSymbol("ATIRE_indexer"), _exports_ATIRE_indexer_
   
 }
 
-#if defined(BUILDING_NODE_EXTENSION)
+//#if defined(BUILDING_NODE_EXTENSION)
 NODE_MODULE(atire_api, atire_api_initialize)
-#endif
+//#endif
