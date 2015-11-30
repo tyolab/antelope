@@ -615,7 +615,9 @@ main_sources = $(ATIRE_DIR)/atire.c \
 			  $(ATIRE_DIR)/atire_dictionary.c \
 			  $(ATIRE_DIR)/atire_doclist.c
 			  
-main_headers = $(ATIRE_DIR)/atire_api_remote.h \
+main_headers = $(ATIRE_DIR)/atire_api.h \
+			$(ATIRE_DIR)/atire_api_remote.h \
+			$(ATIRE_DIR)/atire_api_remote.h \
 			$(ATIRE_DIR)/atire_broke_engine.h \
 			$(ATIRE_DIR)/atire_broke.h \
 			$(ATIRE_DIR)/atire_broker_param_block.h \
@@ -682,6 +684,7 @@ libatire_core_la_LIBADD = -ldl -lpthread
 libatire_core_la_LIBFLAGS = 
 
 libatire_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
+				$(ATIRE_DIR)/atire_api_server.c \
 				$(ATIRE_DIR)/atire_api_remote.c \
 				$(ATIRE_DIR)/atire_engine_result_set.c \
 				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.c \
