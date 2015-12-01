@@ -120,7 +120,7 @@ ATIRE_API_server::~ATIRE_API_server()
 		delete stats;
 
 	if (mean_average_precision)
-		delete mean_average_precision;
+		delete [] mean_average_precision;
 }
 
 /*
@@ -149,7 +149,7 @@ ANT_ANT_param_block& params = *params_ptr;
 	Instead of overwriting the global API, create a new one and return it.
 	This way, if loading the index fails, we can still use the old one.
 */
-ATIRE_API *api = new ATIRE_API();
+ATIRE_API *atire = new ATIRE_API();
 long fail;
 ANT_thesaurus *expander;
 
@@ -208,19 +208,21 @@ if ((params.query_type & ATIRE_API::QUERY_EXPANSION_WORDNET) != 0)
 
 atire->set_segmentation(params.segmentation);
 
-ant_init_ranking(); //Error value ignored...
+// can't be initialized here
+// ant_init_ranking(); //Error value ignored...
+
 atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
 
 // set the pregren to use for accumulator initialisation
 if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
 	atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
-return api;
+return atire;
 }
 
 void ATIRE_API_server::start()
 {
 ANT_ANT_param_block *params = params_ptr;
-ANT_ANT_param_block *params_rank_ptr = new ANT_ANT_param_block(params->argc, params->argv);
+/*ANT_ANT_param_block **/params_rank_ptr = new ANT_ANT_param_block(params->argc, params->argv);
 
 if (params->port != 0)
 	inchannel = outchannel = new ANT_channel_socket(params->port);	// in/out to given port
@@ -481,6 +483,9 @@ poll();
 for (; command != NULL && !interrupted; prompt(), poll())
 	{
 	process_command();
+
+	if (interrupted)
+		break;
 	}
 }
 
@@ -1233,7 +1238,10 @@ return stats;
 void ATIRE_API_server::initialize(int argc, char* argv[])
 {
 set_params(argc, argv);
+
 atire = init();
+
+ant_init_ranking(); //Error value ignored...
 }
 
 /*
