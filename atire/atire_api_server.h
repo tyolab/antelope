@@ -10,12 +10,19 @@
 
 class ATIRE_API;
 class ANT_stop_word;
+class ANT_channel;
+class ANT_snippet;
+class ANT_stem;
+class ANT_stats_time;
+class ANT_stats;
+class ANT_ANT_param_block;
 
 class ATIRE_API_server
 {
 private:
+	static const char * PROMPT;
 	static const char *new_stop_words[];
-	const long MAX_TITLE_LENGTH = 1024;
+	static const long MAX_TITLE_LENGTH = 1024;
 
 	/*
 	 * release memory on exit
@@ -26,15 +33,15 @@ private:
 
 	int interrupted;
 
-	ANT_stop_word *stop_word_list = NULL;
+	ANT_stop_word *stop_word_list;
 
 	/*
 	 * the run time fields block
 	 */
 	char *print_buffer, *pos;
-	ANT_stats_time post_processing_stats;
+	ANT_stats_time *post_processing_stats;
 	char *command, *query, *ranker;
-	long topic_id = -1, number_of_queries, number_of_queries_evaluated, evaluation;
+	long topic_id, number_of_queries, number_of_queries_evaluated, evaluation;
 	long long line;
 	long long hits, result, last_to_list, first_to_list;
 
@@ -46,26 +53,30 @@ private:
 	long long docid;
 	char *document_buffer;
 	ANT_channel *inchannel, *outchannel;
-	char *snippet = NULL, *title = NULL;
-	ANT_snippet *snippet_generator = NULL;
-	ANT_snippet *title_generator = NULL;
-	ANT_stem *snippet_stemmer = NULL;
+	char *snippet, *title;
+	ANT_snippet *snippet_generator;
+	ANT_snippet *title_generator;
+	ANT_stem *snippet_stemmer;
 	#ifdef FILENAME_INDEX
 		char *document_name;
 	#else
 		char **answer_list;
 	#endif
 
+	ANT_stats *stats;
+
 public:
 	ATIRE_API_server();
 	virtual ~ATIRE_API_server();
 
+	void initialize(int argc, char *argv[]);
+
 	ATIRE_API *get_atire() { return atire; }
 
-	void initialize();
+	void set_params(int argc, char *argv[]);
 
 	/* before ready */
-	double *start();
+	void start();
 
 	/* Option 1. standalone*/
 	void loop();
@@ -81,14 +92,23 @@ public:
 
 	void interrup();
 
-	double *finish();
+	void finish();
 
+	/* run the server in loop */
 	int run(int argc, char *argv[]);
 	int run(char *files);
 
-	double *ant();
+	void ant();
+
+	void start_stats();
+	void end_stats();
+
+	ANT_stats *get_stats();
 
 private:
+
+	ATIRE_API *init();
+
 	void prompt();
 	char *between(char *source, char *open_tag, char *close_tag);
 	long ant_init_ranking();

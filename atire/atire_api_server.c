@@ -35,6 +35,8 @@
 #include "unicode.h"
 #include "atire_api_server.h"
 
+const char *ATIRE_API_server::PROMPT  = "]";
+
 const char *ATIRE_API_server::new_stop_words[] =
 		{
 	//	"alternative",				 Needed for TREC topic 84
@@ -84,6 +86,20 @@ ATIRE_API_server::ATIRE_API_server()
 
 	params_ptr = NULL;
 	params_rank_ptr = NULL;
+
+	stop_word_list = NULL;
+	snippet = NULL;
+	title = NULL;
+	snippet_generator = NULL;
+	title_generator = NULL;
+	snippet_stemmer = NULL;
+
+	post_processing_stats = NULL;
+	stats = NULL;
+
+	mean_average_precision = NULL;
+
+	topic_id = -1;
 }
 
 ATIRE_API_server::~ATIRE_API_server()
@@ -96,6 +112,15 @@ ATIRE_API_server::~ATIRE_API_server()
 
 	if (params_rank_ptr)
 		delete params_rank_ptr;
+
+	if (post_processing_stats)
+		delete post_processing_stats;
+
+	if (stats)
+		delete stats;
+
+	if (mean_average_precision)
+		delete mean_average_precision;
 }
 
 /*
@@ -117,14 +142,14 @@ if ((finish = strstr(start, close_tag)) == NULL)
 return strnnew(start, finish - start);
 }
 
-void ATIRE_API_server::initialize()
+ATIRE_API *ATIRE_API_server::init()
 {
 ANT_ANT_param_block& params = *params_ptr;
 /*
 	Instead of overwriting the global API, create a new one and return it.
 	This way, if loading the index fails, we can still use the old one.
 */
-/*ATIRE_API **/atire = new ATIRE_API();
+ATIRE_API *api = new ATIRE_API();
 long fail;
 ANT_thesaurus *expander;
 
@@ -189,13 +214,13 @@ atire->set_processing_strategy(params.processing_strategy, params.quantum_stoppi
 // set the pregren to use for accumulator initialisation
 if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
 	atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
-//return atire;
+return api;
 }
 
-double *ATIRE_API_server::start()
+void ATIRE_API_server::start()
 {
 ANT_ANT_param_block *params = params_ptr;
-ANT_ANT_param_block params_rank_ptr = new ANT_ANT_param_block(params->argc, params->argv);
+ANT_ANT_param_block *params_rank_ptr = new ANT_ANT_param_block(params->argc, params->argv);
 
 if (params->port != 0)
 	inchannel = outchannel = new ANT_channel_socket(params->port);	// in/out to given port
@@ -299,7 +324,7 @@ if (params->title_algorithm != ANT_ANT_param_block::NONE)
 	}
 }
 
-double* ATIRE_API_server::finish()
+void ATIRE_API_server::finish()
 {
 ANT_ANT_param_block *params = params_ptr;
 /*
@@ -352,7 +377,7 @@ delete snippet_stemmer;
 /*
 	And finally report MAP
 */
-return mean_average_precision;
+//return mean_average_precision;
 }
 
 long ATIRE_API_server::ant_init_ranking()
@@ -376,7 +401,7 @@ return atire->set_feedback_ranking_function(params.feedback_ranking_function, pa
 	ANT()
 	-----
 */
-double *ATIRE_API_server::ant()
+void ATIRE_API_server::ant()
 {
 /*
  * start the server but just doing the
@@ -385,30 +410,19 @@ start();
 
 loop();
 
-return finish();
+finish();
 }
 
 int ATIRE_API_server::run(int argc, char* argv[])
 {
-params_ptr = new ANT_ANT_param_block(argc, argv);
-ANT_stats stats;
-ANT_ANT_param_block& params = *params_ptr;
+start_stats();
 
-params.parse();
-if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_NCBI)
-	stop_word_list = new ANT_stop_word(ANT_stop_word::NCBI);
-else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
-	stop_word_list = new ANT_stop_word(ANT_stop_word::PUURULA);
-if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
-	stop_word_list->addstop((const char **)new_stop_words);
+initialize(argc, argv);
 
-
-initialize();
-
-delete [] ant();
+ant();
 
 printf("Total elapsed time including startup and shutdown ");
-stats.print_elapsed_time();
+stats->print_elapsed_time();
 ANT_stats::print_operating_system_process_time();
 
 return 0;
@@ -531,7 +545,7 @@ if (strcmp(command, ".loadindex") == 0 || strncmp(command, "<ATIREloadindex>", 1
 		}
 	else
 		{
-		ATIRE_API *new_api = ant_init(*params);
+		ATIRE_API *new_api = init();
 
 		if (new_api)
 			{
@@ -559,7 +573,7 @@ if (strcmp(command, ".loadindex") == 0 || strncmp(command, "<ATIREloadindex>", 1
 			}
 		}
 	delete [] command;
-	continue;
+	return; // continue;
 	}
 else if (strcmp(command, ".quit") == 0)
 	{
@@ -567,12 +581,13 @@ else if (strcmp(command, ".quit") == 0)
 	outchannel->puts("ATIRE is now existing.");
 	outchannel->puts("</ATIREresult>");
 	delete [] command;
-	break;
+	interrupted = 1; // break;
+	return;
 	}
 else if (*command == '\0')
 	{
 	delete [] command;
-	continue;			// ignore blank lines
+	return; // continue;			// ignore blank lines
 	}
 else
 	{
@@ -583,7 +598,7 @@ else
 		outchannel->puts("<description>No index loaded</description>");
 		outchannel->puts("</ATIREerror>");
 		delete [] command;
-		continue;
+		return; // continue;
 		}
 
 	if (strncmp(command, "<ATIREdescribeindex>", 18) == 0)
@@ -627,7 +642,7 @@ else
 		outchannel->puts("</longestdoc>");
 		outchannel->puts("</ATIREdescribeindex>");
 
-		continue;
+		return; // continue;
 		}
 	else if (strcmp(command, ".describeindex") == 0)
 		{
@@ -637,7 +652,7 @@ else
 		outchannel->puts(params->index_filename);
 		outchannel->write(atire->get_document_count());
 		outchannel->puts("");
-		continue;
+		return; // continue;
 		}
 	else if (strncmp(command, ".morelike ", 10) == 0)
 		{
@@ -653,7 +668,7 @@ else
 		else
 			{
 			delete [] command;
-			continue;
+			return; // continue;
 			}
 		}
 	else if (strncmp(command, ".get ", 5) == 0)
@@ -727,7 +742,7 @@ else
 				}
 			}
 		delete [] command;
-		continue;
+		return; // continue;
 		}
 	else if (strncmp(command, ".listterm ", 10) == 0)
 		{
@@ -843,7 +858,7 @@ else
 								docid += *current++;
 
 								if (docid < 0)
-									continue;
+									return; // continue;
 
 								++count;
 #ifdef FILENAME_INDEX
@@ -943,7 +958,7 @@ else
 		free(impact_header_buffer);
 #endif
 		delete [] command;
-		continue;
+		return; // continue;
 		}
 	else if (strncmp(command, ".normalizequery ", 16) == 0)
 		{
@@ -970,7 +985,7 @@ else
 		if ((query = between(command, "<query>", "</query>")) == NULL)
 			{
 			delete [] command;
-			continue;
+			return; // continue;
 			}
 
 		if ((pos = strstr(command, "<top>")) != NULL)
@@ -996,7 +1011,7 @@ else
 				delete [] ranker;
 				delete [] command;
 
-				continue;
+				return; // continue;
 				}
 
 			delete [] ranker;
@@ -1023,7 +1038,7 @@ else
 			outchannel->puts("</ATIREgetdoc>");
 			}
 		delete [] command;
-		continue;
+		return; // continue;
 		}
 	else if (params->assessments_filename != NULL || params->output_forum != ANT_ANT_param_block::NONE || params->queries_filename != NULL)
 		{
@@ -1199,6 +1214,28 @@ else
 return query;
 }
 
+void ATIRE_API_server::start_stats()
+{
+if (stats)
+	delete stats;
+stats = new ANT_stats();
+}
+
+void ATIRE_API_server::end_stats()
+{
+}
+
+ANT_stats* ATIRE_API_server::get_stats()
+{
+return stats;
+}
+
+void ATIRE_API_server::initialize(int argc, char* argv[])
+{
+set_params(argc, argv);
+atire = init();
+}
+
 /*
 	PERFORM_QUERY()
 	---------------
@@ -1244,3 +1281,18 @@ if (params->evaluator)
 return NULL;
 }
 
+void ATIRE_API_server::set_params(int argc, char* argv[])
+{
+params_ptr = new ANT_ANT_param_block(argc, argv);
+ANT_ANT_param_block& params = *params_ptr;
+
+params.parse();
+if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_NCBI)
+	stop_word_list = new ANT_stop_word(ANT_stop_word::NCBI);
+else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
+	stop_word_list = new ANT_stop_word(ANT_stop_word::PUURULA);
+if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
+	stop_word_list->addstop((const char **)new_stop_words);
+
+
+}
