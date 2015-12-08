@@ -105,6 +105,8 @@ public:
 
 	ANT_stats *get_stats();
 
+	char *version();
+
 private:
 
 	ATIRE_API *init();

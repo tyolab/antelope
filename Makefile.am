@@ -617,7 +617,7 @@ main_sources = $(ATIRE_DIR)/atire.c \
 			  
 main_headers = $(ATIRE_DIR)/atire_api.h \
 			$(ATIRE_DIR)/atire_api_remote.h \
-			$(ATIRE_DIR)/atire_api_remote.h \
+			$(ATIRE_DIR)/atire_api_server.h \
 			$(ATIRE_DIR)/atire_broke_engine.h \
 			$(ATIRE_DIR)/atire_broke.h \
 			$(ATIRE_DIR)/atire_broker_param_block.h \

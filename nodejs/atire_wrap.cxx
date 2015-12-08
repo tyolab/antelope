@@ -1318,13 +1318,16 @@ SWIGRUNTIME void JS_veto_set_variable(v8::Local<v8::String> property, v8::Local<
 #define SWIGTYPE_p_ANT_index_document swig_types[2]
 #define SWIGTYPE_p_ANT_indexer_param_block swig_types[3]
 #define SWIGTYPE_p_ANT_memory_index swig_types[4]
-#define SWIGTYPE_p_ATIRE_API_remote swig_types[5]
-#define SWIGTYPE_p_ATIRE_indexer swig_types[6]
-#define SWIGTYPE_p_char swig_types[7]
-#define SWIGTYPE_p_long_long swig_types[8]
-#define SWIGTYPE_p_p_char swig_types[9]
-static swig_type_info *swig_types[11];
-static swig_module_info swig_module = {swig_types, 10, 0, 0, 0, 0};
+#define SWIGTYPE_p_ANT_stats swig_types[5]
+#define SWIGTYPE_p_ATIRE_API swig_types[6]
+#define SWIGTYPE_p_ATIRE_API_remote swig_types[7]
+#define SWIGTYPE_p_ATIRE_API_server swig_types[8]
+#define SWIGTYPE_p_ATIRE_indexer swig_types[9]
+#define SWIGTYPE_p_char swig_types[10]
+#define SWIGTYPE_p_long_long swig_types[11]
+#define SWIGTYPE_p_p_char swig_types[12]
+static swig_type_info *swig_types[14];
+static swig_module_info swig_module = {swig_types, 13, 0, 0, 0, 0};
 #define SWIG_TypeQuery(name) SWIG_TypeQueryModule(&swig_module, &swig_module, name)
 #define SWIG_MangledTypeQuery(name) SWIG_MangledTypeQueryModule(&swig_module, &swig_module, name)
 
@@ -1344,9 +1347,10 @@ static swig_module_info swig_module = {swig_types, 10, 0, 0, 0, 0};
 
 
 #include "../atire/atire_api_remote.h"
+#include "../atire/atire_api_server.h"
 #include "../atire/indexer.h"
-#include "../java/jni/include/index.h"
-#include "../java/jni/include/atire.h"
+//#include "../java/jni/include/index.h"
+//#include "../java/jni/include/atire.h"
 
 
 SWIGINTERNINLINE
@@ -1546,6 +1550,7 @@ SWIG_From_bool  (bool value)
 
 
 SWIGV8_ClientData _exports_ATIRE_API_remote_clientData;
+SWIGV8_ClientData _exports_ATIRE_API_server_clientData;
 SWIGV8_ClientData _exports_ATIRE_indexer_clientData;
 
 
@@ -2032,6 +2037,603 @@ SwigV8ReturnValue _wrap_ATIRE_API_remote_exit(const SwigV8Arguments& args) {
   arg1 = (ATIRE_API_remote *)(argp1);
   (arg1)->exit();
   jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_new_ATIRE_API_server(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Object> self = args.Holder();
+  ATIRE_API_server *result;
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_server.");
+  result = (ATIRE_API_server *)new ATIRE_API_server();
+  
+  
+  
+  SWIGV8_SetPrivateData(self, result, SWIGTYPE_p_ATIRE_API_server, SWIG_POINTER_OWN);
+  SWIGV8_RETURN(self);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+#if (SWIG_V8_VERSION < 0x031900)
+void _wrap_delete_ATIRE_API_server(v8::Persistent< v8::Value > object, void *parameter)
+{
+  SWIGV8_Proxy *proxy = static_cast<SWIGV8_Proxy *>(parameter);
+#else
+  void _wrap_delete_ATIRE_API_server(v8::Isolate *isolate, v8::Persistent< v8::Object > * object, SWIGV8_Proxy *proxy)
+  {
+#endif
+    if(proxy->swigCMemOwn && proxy->swigCObject) {
+      ATIRE_API_server * arg1 = (ATIRE_API_server *)proxy->swigCObject;
+      delete arg1;
+    }
+    delete proxy;
+    
+#if (SWIG_V8_VERSION < 0x031900)
+    object.Dispose();
+#elif (SWIG_V8_VERSION < 0x032100)
+    object->Dispose(isolate);
+#else
+    object->Dispose();
+#endif
+  }
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_initialize(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  int arg2 ;
+  char **arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int val2 ;
+  int ecode2 = 0 ;
+  void *argp3 = 0 ;
+  int res3 = 0 ;
+  
+  if(args.Length() != 2) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_initialize.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_initialize" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  ecode2 = SWIG_AsVal_int(args[0], &val2);
+  if (!SWIG_IsOK(ecode2)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_initialize" "', argument " "2"" of type '" "int""'");
+  } 
+  arg2 = (int)(val2);
+  res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
+  if (!SWIG_IsOK(res3)) {
+    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_server_initialize" "', argument " "3"" of type '" "char *[]""'"); 
+  } 
+  arg3 = (char **)(argp3);
+  (arg1)->initialize(arg2,arg3);
+  jsresult = v8::Undefined();
+  
+  
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_get_atire(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  ATIRE_API *result = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_atire.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_atire" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (ATIRE_API *)(arg1)->get_atire();
+  jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ATIRE_API, 0 |  0 );
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_set_params(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  int arg2 ;
+  char **arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int val2 ;
+  int ecode2 = 0 ;
+  void *argp3 = 0 ;
+  int res3 = 0 ;
+  
+  if(args.Length() != 2) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_params.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_params" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  ecode2 = SWIG_AsVal_int(args[0], &val2);
+  if (!SWIG_IsOK(ecode2)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_params" "', argument " "2"" of type '" "int""'");
+  } 
+  arg2 = (int)(val2);
+  res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
+  if (!SWIG_IsOK(res3)) {
+    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_server_set_params" "', argument " "3"" of type '" "char *[]""'"); 
+  } 
+  arg3 = (char **)(argp3);
+  (arg1)->set_params(arg2,arg3);
+  jsresult = v8::Undefined();
+  
+  
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_start(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_start" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->start();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_loop(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_loop.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_loop" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->loop();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_poll(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_poll" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->poll();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_poll_and_process(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll_and_process.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_poll_and_process" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->poll_and_process();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_process_command(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_process_command.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_process_command" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->process_command();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_interrup(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_interrup.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_interrup" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->interrup();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_finish(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_finish.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_finish" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->finish();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_run__SWIG_0(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
+{
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  int arg2 ;
+  char **arg3 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int val2 ;
+  int ecode2 = 0 ;
+  void *argp3 = 0 ;
+  int res3 = 0 ;
+  int result;
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_run" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  ecode2 = SWIG_AsVal_int(args[0], &val2);
+  if (!SWIG_IsOK(ecode2)) {
+    SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_run" "', argument " "2"" of type '" "int""'");
+  } 
+  arg2 = (int)(val2);
+  res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
+  if (!SWIG_IsOK(res3)) {
+    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_server_run" "', argument " "3"" of type '" "char *[]""'"); 
+  } 
+  arg3 = (char **)(argp3);
+  result = (int)(arg1)->run(arg2,arg3);
+  jsresult = SWIG_From_int((int)(result));
+  
+  
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_run__SWIG_1(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
+{
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  char *arg2 = (char *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  int res2 ;
+  char *buf2 = 0 ;
+  int alloc2 = 0 ;
+  int result;
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_run" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  if (!SWIG_IsOK(res2)) {
+    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_run" "', argument " "2"" of type '" "char *""'");
+  }
+  arg2 = (char *)(buf2);
+  result = (int)(arg1)->run(arg2);
+  jsresult = SWIG_From_int((int)(result));
+  
+  if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_run(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  OverloadErrorHandler errorHandler;
+  
+  
+  if(args.Length() == 2) {
+    errorHandler.err.Clear();
+#if (SWIG_V8_VERSION < 0x031900)
+    jsresult = _wrap_ATIRE_API_server_run__SWIG_0(args, errorHandler);
+    if(errorHandler.err.IsEmpty()) {
+      return scope.Close(jsresult);
+    }
+#else
+    _wrap_ATIRE_API_server_run__SWIG_0(args, errorHandler);
+    if(errorHandler.err.IsEmpty()) {
+      return;
+    }
+#endif
+  }
+  
+  
+  if(args.Length() == 1) {
+    errorHandler.err.Clear();
+#if (SWIG_V8_VERSION < 0x031900)
+    jsresult = _wrap_ATIRE_API_server_run__SWIG_1(args, errorHandler);
+    if(errorHandler.err.IsEmpty()) {
+      return scope.Close(jsresult);
+    }
+#else
+    _wrap_ATIRE_API_server_run__SWIG_1(args, errorHandler);
+    if(errorHandler.err.IsEmpty()) {
+      return;
+    }
+#endif
+  }
+  
+  
+  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function run.");
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_ant(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_ant.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_ant" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->ant();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_start_stats(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start_stats.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_start_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->start_stats();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_end_stats(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_end_stats.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_end_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  (arg1)->end_stats();
+  jsresult = v8::Undefined();
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_get_stats(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  ANT_stats *result = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_stats.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (ANT_stats *)(arg1)->get_stats();
+  jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ANT_stats, 0 |  0 );
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
+SwigV8ReturnValue _wrap_ATIRE_API_server_version(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  char *result = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_version.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_version" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (char *)(arg1)->version();
+  jsresult = SWIG_FromCharPtr((const char *)result);
   
   
   SWIGV8_RETURN(jsresult);
@@ -2813,239 +3415,6 @@ fail:
 }
 
 
-SwigV8ReturnValue _wrap_atire_index__SWIG_0(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
-{
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  char *arg1 = (char *) 0 ;
-  int res1 ;
-  char *buf1 = 0 ;
-  int alloc1 = 0 ;
-  int result;
-  
-  res1 = SWIG_AsCharPtrAndSize(args[0], &buf1, NULL, &alloc1);
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "atire_index" "', argument " "1"" of type '" "char *""'");
-  }
-  arg1 = (char *)(buf1);
-  result = (int)atire_index(arg1);
-  jsresult = SWIG_From_int((int)(result));
-  if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_atire_index__SWIG_1(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
-{
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  int arg1 ;
-  char **arg2 ;
-  int val1 ;
-  int ecode1 = 0 ;
-  void *argp2 = 0 ;
-  int res2 = 0 ;
-  int result;
-  
-  ecode1 = SWIG_AsVal_int(args[0], &val1);
-  if (!SWIG_IsOK(ecode1)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode1), "in method '" "atire_index" "', argument " "1"" of type '" "int""'");
-  } 
-  arg1 = (int)(val1);
-  res2 = SWIG_ConvertPtr(args[1], &argp2,SWIGTYPE_p_p_char, 0 |  0 );
-  if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "atire_index" "', argument " "2"" of type '" "char *[]""'"); 
-  } 
-  arg2 = (char **)(argp2);
-  result = (int)atire_index(arg1,arg2);
-  jsresult = SWIG_From_int((int)(result));
-  
-  
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_atire_index(const SwigV8Arguments& args) {
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() == 1) {
-    errorHandler.err.Clear();
-#if (SWIG_V8_VERSION < 0x031900)
-    jsresult = _wrap_atire_index__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return scope.Close(jsresult);
-    }
-#else
-    _wrap_atire_index__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-#endif
-  }
-  
-  
-  if(args.Length() == 2) {
-    errorHandler.err.Clear();
-#if (SWIG_V8_VERSION < 0x031900)
-    jsresult = _wrap_atire_index__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return scope.Close(jsresult);
-    }
-#else
-    _wrap_atire_index__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-#endif
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function atire_index.");
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_run_atire__SWIG_0(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
-{
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  char *arg1 = (char *) 0 ;
-  int res1 ;
-  char *buf1 = 0 ;
-  int alloc1 = 0 ;
-  int result;
-  
-  res1 = SWIG_AsCharPtrAndSize(args[0], &buf1, NULL, &alloc1);
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "run_atire" "', argument " "1"" of type '" "char *""'");
-  }
-  arg1 = (char *)(buf1);
-  result = (int)run_atire(arg1);
-  jsresult = SWIG_From_int((int)(result));
-  if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_run_atire__SWIG_1(const SwigV8Arguments& args, V8ErrorHandler& SWIGV8_ErrorHandler)
-{
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  int arg1 ;
-  char **arg2 ;
-  int val1 ;
-  int ecode1 = 0 ;
-  void *argp2 = 0 ;
-  int res2 = 0 ;
-  int result;
-  
-  ecode1 = SWIG_AsVal_int(args[0], &val1);
-  if (!SWIG_IsOK(ecode1)) {
-    SWIG_exception_fail(SWIG_ArgError(ecode1), "in method '" "run_atire" "', argument " "1"" of type '" "int""'");
-  } 
-  arg1 = (int)(val1);
-  res2 = SWIG_ConvertPtr(args[1], &argp2,SWIGTYPE_p_p_char, 0 |  0 );
-  if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "run_atire" "', argument " "2"" of type '" "char *[]""'"); 
-  } 
-  arg2 = (char **)(argp2);
-  result = (int)run_atire(arg1,arg2);
-  jsresult = SWIG_From_int((int)(result));
-  
-  
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_run_atire(const SwigV8Arguments& args) {
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() == 1) {
-    errorHandler.err.Clear();
-#if (SWIG_V8_VERSION < 0x031900)
-    jsresult = _wrap_run_atire__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return scope.Close(jsresult);
-    }
-#else
-    _wrap_run_atire__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-#endif
-  }
-  
-  
-  if(args.Length() == 2) {
-    errorHandler.err.Clear();
-#if (SWIG_V8_VERSION < 0x031900)
-    jsresult = _wrap_run_atire__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return scope.Close(jsresult);
-    }
-#else
-    _wrap_run_atire__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-#endif
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function run_atire.");
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
-SwigV8ReturnValue _wrap_exit_atire(const SwigV8Arguments& args) {
-  v8::HandleScope scope;
-  v8::Handle<v8::Value> jsresult;
-  
-  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_exit_atire.");
-  
-  exit_atire();
-  jsresult = v8::Undefined();
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(v8::Undefined());
-}
-
-
 /* -------- TYPE CONVERSION AND EQUIVALENCE RULES (BEGIN) -------- */
 
 static swig_type_info _swigt__p_ANT_compression_text_factory = {"_p_ANT_compression_text_factory", "ANT_compression_text_factory *", 0, 0, (void*)0, 0};
@@ -3053,7 +3422,10 @@ static swig_type_info _swigt__p_ANT_directory_iterator_object = {"_p_ANT_directo
 static swig_type_info _swigt__p_ANT_index_document = {"_p_ANT_index_document", "ANT_index_document *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_ANT_indexer_param_block = {"_p_ANT_indexer_param_block", "ANT_indexer_param_block *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_ANT_memory_index = {"_p_ANT_memory_index", "ANT_memory_index *", 0, 0, (void*)0, 0};
+static swig_type_info _swigt__p_ANT_stats = {"_p_ANT_stats", "ANT_stats *", 0, 0, (void*)0, 0};
+static swig_type_info _swigt__p_ATIRE_API = {"_p_ATIRE_API", "ATIRE_API *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_ATIRE_API_remote = {"_p_ATIRE_API_remote", "ATIRE_API_remote *|p_ATIRE_API_remote", 0, 0, (void*)0, 0};
+static swig_type_info _swigt__p_ATIRE_API_server = {"_p_ATIRE_API_server", "p_ATIRE_API_server|ATIRE_API_server *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_ATIRE_indexer = {"_p_ATIRE_indexer", "ATIRE_indexer *|p_ATIRE_indexer", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_char = {"_p_char", "char *", 0, 0, (void*)0, 0};
 static swig_type_info _swigt__p_long_long = {"_p_long_long", "long long *", 0, 0, (void*)0, 0};
@@ -3065,7 +3437,10 @@ static swig_type_info *swig_type_initial[] = {
   &_swigt__p_ANT_index_document,
   &_swigt__p_ANT_indexer_param_block,
   &_swigt__p_ANT_memory_index,
+  &_swigt__p_ANT_stats,
+  &_swigt__p_ATIRE_API,
   &_swigt__p_ATIRE_API_remote,
+  &_swigt__p_ATIRE_API_server,
   &_swigt__p_ATIRE_indexer,
   &_swigt__p_char,
   &_swigt__p_long_long,
@@ -3077,7 +3452,10 @@ static swig_cast_info _swigc__p_ANT_directory_iterator_object[] = {  {&_swigt__p
 static swig_cast_info _swigc__p_ANT_index_document[] = {  {&_swigt__p_ANT_index_document, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_ANT_indexer_param_block[] = {  {&_swigt__p_ANT_indexer_param_block, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_ANT_memory_index[] = {  {&_swigt__p_ANT_memory_index, 0, 0, 0},{0, 0, 0, 0}};
+static swig_cast_info _swigc__p_ANT_stats[] = {  {&_swigt__p_ANT_stats, 0, 0, 0},{0, 0, 0, 0}};
+static swig_cast_info _swigc__p_ATIRE_API[] = {  {&_swigt__p_ATIRE_API, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_ATIRE_API_remote[] = {  {&_swigt__p_ATIRE_API_remote, 0, 0, 0},{0, 0, 0, 0}};
+static swig_cast_info _swigc__p_ATIRE_API_server[] = {  {&_swigt__p_ATIRE_API_server, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_ATIRE_indexer[] = {  {&_swigt__p_ATIRE_indexer, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_char[] = {  {&_swigt__p_char, 0, 0, 0},{0, 0, 0, 0}};
 static swig_cast_info _swigc__p_long_long[] = {  {&_swigt__p_long_long, 0, 0, 0},{0, 0, 0, 0}};
@@ -3089,7 +3467,10 @@ static swig_cast_info *swig_cast_initial[] = {
   _swigc__p_ANT_index_document,
   _swigc__p_ANT_indexer_param_block,
   _swigc__p_ANT_memory_index,
+  _swigc__p_ANT_stats,
+  _swigc__p_ATIRE_API,
   _swigc__p_ATIRE_API_remote,
+  _swigc__p_ATIRE_API_server,
   _swigc__p_ATIRE_indexer,
   _swigc__p_char,
   _swigc__p_long_long,
@@ -3414,6 +3795,16 @@ _exports_ATIRE_API_remote_clientData.dtor = _wrap_delete_ATIRE_API_remote;
 if (SWIGTYPE_p_ATIRE_API_remote->clientdata == 0) {
   SWIGTYPE_p_ATIRE_API_remote->clientdata = &_exports_ATIRE_API_remote_clientData;
 }
+v8::Handle<v8::FunctionTemplate> _exports_ATIRE_API_server_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_API_server");
+#if (SWIG_V8_VERSION < 0x031900)
+_exports_ATIRE_API_server_clientData.class_templ = v8::Persistent<v8::FunctionTemplate>::New(_exports_ATIRE_API_server_class);
+#else
+_exports_ATIRE_API_server_clientData.class_templ.Reset(v8::Isolate::GetCurrent(), _exports_ATIRE_API_server_class);
+#endif
+_exports_ATIRE_API_server_clientData.dtor = _wrap_delete_ATIRE_API_server;
+if (SWIGTYPE_p_ATIRE_API_server->clientdata == 0) {
+  SWIGTYPE_p_ATIRE_API_server->clientdata = &_exports_ATIRE_API_server_clientData;
+}
 v8::Handle<v8::FunctionTemplate> _exports_ATIRE_indexer_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_indexer");
 #if (SWIG_V8_VERSION < 0x031900)
 _exports_ATIRE_indexer_clientData.class_templ = v8::Persistent<v8::FunctionTemplate>::New(_exports_ATIRE_indexer_class);
@@ -3437,6 +3828,22 @@ SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "search", _wrap_ATIRE_
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "get_document", _wrap_ATIRE_API_remote_get_document);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "send_command", _wrap_ATIRE_API_remote_send_command);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "exit", _wrap_ATIRE_API_remote_exit);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "initialize", _wrap_ATIRE_API_server_initialize);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_atire", _wrap_ATIRE_API_server_get_atire);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_params", _wrap_ATIRE_API_server_set_params);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "start", _wrap_ATIRE_API_server_start);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "loop", _wrap_ATIRE_API_server_loop);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "poll", _wrap_ATIRE_API_server_poll);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "poll_and_process", _wrap_ATIRE_API_server_poll_and_process);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "process_command", _wrap_ATIRE_API_server_process_command);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "interrup", _wrap_ATIRE_API_server_interrup);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "finish", _wrap_ATIRE_API_server_finish);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "run", _wrap_ATIRE_API_server_run);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "ant", _wrap_ATIRE_API_server_ant);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "start_stats", _wrap_ATIRE_API_server_start_stats);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "end_stats", _wrap_ATIRE_API_server_end_stats);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_stats", _wrap_ATIRE_API_server_get_stats);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "version", _wrap_ATIRE_API_server_version);
 SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "init", _wrap_ATIRE_indexer_init);
 SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "finish", _wrap_ATIRE_indexer_finish);
 SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "index_document", _wrap_ATIRE_indexer_index_document);
@@ -3454,6 +3861,11 @@ _exports_ATIRE_API_remote_class_0->SetCallHandler(_wrap_new_ATIRE_API_remote);
 _exports_ATIRE_API_remote_class_0->Inherit(_exports_ATIRE_API_remote_class);
 _exports_ATIRE_API_remote_class_0->SetHiddenPrototype(true);
 v8::Handle<v8::Object> _exports_ATIRE_API_remote_obj = _exports_ATIRE_API_remote_class_0->GetFunction();
+v8::Handle<v8::FunctionTemplate> _exports_ATIRE_API_server_class_0 = SWIGV8_CreateClassTemplate("ATIRE_API_server");
+_exports_ATIRE_API_server_class_0->SetCallHandler(_wrap_new_ATIRE_API_server);
+_exports_ATIRE_API_server_class_0->Inherit(_exports_ATIRE_API_server_class);
+_exports_ATIRE_API_server_class_0->SetHiddenPrototype(true);
+v8::Handle<v8::Object> _exports_ATIRE_API_server_obj = _exports_ATIRE_API_server_class_0->GetFunction();
 v8::Handle<v8::FunctionTemplate> _exports_ATIRE_indexer_class_0 = SWIGV8_CreateClassTemplate("ATIRE_indexer");
 _exports_ATIRE_indexer_class_0->SetCallHandler(_wrap_new_ATIRE_indexer);
 _exports_ATIRE_indexer_class_0->Inherit(_exports_ATIRE_indexer_class);
@@ -3466,13 +3878,11 @@ v8::Handle<v8::Object> _exports_ATIRE_indexer_obj = _exports_ATIRE_indexer_class
 SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_FILENAME", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set);
 SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOUCMENT_LENGTH", _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get, JS_veto_set_variable);
 SWIGV8_AddStaticFunction(_exports_ATIRE_indexer_obj, "initialize", _wrap_ATIRE_indexer_initialize);
-SWIGV8_AddStaticFunction(exports_obj, "atire_index", _wrap_atire_index);
-SWIGV8_AddStaticFunction(exports_obj, "run_atire", _wrap_run_atire);
-SWIGV8_AddStaticFunction(exports_obj, "exit_atire", _wrap_exit_atire);
 
 
   /* register classes */
   exports_obj->Set(v8::String::NewSymbol("ATIRE_API_remote"), _exports_ATIRE_API_remote_obj);
+exports_obj->Set(v8::String::NewSymbol("ATIRE_API_server"), _exports_ATIRE_API_server_obj);
 exports_obj->Set(v8::String::NewSymbol("ATIRE_indexer"), _exports_ATIRE_indexer_obj);
 
 
@@ -3480,6 +3890,6 @@ exports_obj->Set(v8::String::NewSymbol("ATIRE_indexer"), _exports_ATIRE_indexer_
   
 }
 
-//#if defined(BUILDING_NODE_EXTENSION)
+#if defined(BUILDING_NODE_EXTENSION)
 NODE_MODULE(atire_api, atire_api_initialize)
-//#endif
+#endif

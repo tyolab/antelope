@@ -1304,3 +1304,8 @@ if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
 
 
 }
+
+char* ATIRE_API_server::version()
+{
+return atire->version();
+}
