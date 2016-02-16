@@ -2,4 +2,4 @@
 
 . ./env.sh
 
-node-gyp build
+node-gyp build "$@"

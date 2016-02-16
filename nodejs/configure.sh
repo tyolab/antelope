@@ -2,5 +2,7 @@
 
 . ./env.sh
 
-node-gyp configure
+##  for example, --debug ##
+
+node-gyp configure "$@"
 
