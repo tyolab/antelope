@@ -170,52 +170,54 @@ if (fail)
 
 	atire = NULL;
 	}
-
-/* Load in all the pregens */
-for (int i = 0 ; i < params.pregen_count; i++)
+else
 	{
-	//Derive the pregen's filename from the index filename and pregen fieldname
-	std::stringstream buffer;
+	/* Load in all the pregens */
+	for (int i = 0 ; i < params.pregen_count; i++)
+		{
+		//Derive the pregen's filename from the index filename and pregen fieldname
+		std::stringstream buffer;
 
-	buffer << params.index_filename << "." << params.pregen_names[i];
+		buffer << params.index_filename << "." << params.pregen_names[i];
 
-	if (!atire->load_pregen(buffer.str().c_str()))
-		fprintf(stderr, "Failed to load pregen %s, ignoring...\n", params.pregen_names[i]);
+		if (!atire->load_pregen(buffer.str().c_str()))
+			fprintf(stderr, "Failed to load pregen %s, ignoring...\n", params.pregen_names[i]);
+		}
+
+	if (params.assessments_filename != NULL)
+		atire->load_assessments(params.assessments_filename, params.evaluator);
+
+	if (params.output_forum != ANT_ANT_param_block::NONE)
+		atire->set_forum(params.output_forum, params.output_filename, params.participant_id, params.run_name, params.results_list_length);
+
+	atire->set_trim_postings_k(params.trim_postings_k);
+	atire->set_stemmer(params.stemmer, params.stemmer_similarity, params.stemmer_similarity_threshold);
+	atire->set_feedbacker(params.feedbacker, params.feedback_documents, params.feedback_terms);
+	if (params.feedbacker == ANT_relevance_feedback_factory::BLIND_RM)
+		atire->set_feedback_interpolation(params.feedback_lambda);
+
+	if ((params.query_type & ATIRE_API::QUERY_EXPANSION_INPLACE_WORDNET) != 0)
+		{
+		atire->set_inplace_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
+		expander->set_allowable_relationships(params.expander_tf_types);
+		}
+	if ((params.query_type & ATIRE_API::QUERY_EXPANSION_WORDNET) != 0)
+		{
+		atire->set_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
+		expander->set_allowable_relationships(params.expander_query_types);
+		}
+
+	atire->set_segmentation(params.segmentation);
+
+	// can't be initialized here
+	// ant_init_ranking(); //Error value ignored...
+
+	atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
+
+	// set the pregren to use for accumulator initialisation
+	if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
+		atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
 	}
-
-if (params.assessments_filename != NULL)
-	atire->load_assessments(params.assessments_filename, params.evaluator);
-
-if (params.output_forum != ANT_ANT_param_block::NONE)
-	atire->set_forum(params.output_forum, params.output_filename, params.participant_id, params.run_name, params.results_list_length);
-
-atire->set_trim_postings_k(params.trim_postings_k);
-atire->set_stemmer(params.stemmer, params.stemmer_similarity, params.stemmer_similarity_threshold);
-atire->set_feedbacker(params.feedbacker, params.feedback_documents, params.feedback_terms);
-if (params.feedbacker == ANT_relevance_feedback_factory::BLIND_RM)
-	atire->set_feedback_interpolation(params.feedback_lambda);
-
-if ((params.query_type & ATIRE_API::QUERY_EXPANSION_INPLACE_WORDNET) != 0)
-	{
-	atire->set_inplace_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
-	expander->set_allowable_relationships(params.expander_tf_types);
-	}
-if ((params.query_type & ATIRE_API::QUERY_EXPANSION_WORDNET) != 0)
-	{
-	atire->set_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
-	expander->set_allowable_relationships(params.expander_query_types);
-	}
-
-atire->set_segmentation(params.segmentation);
-
-// can't be initialized here
-// ant_init_ranking(); //Error value ignored...
-
-atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
-
-// set the pregren to use for accumulator initialisation
-if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
-	atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
 return atire;
 }
 
@@ -1241,7 +1243,8 @@ set_params(argc, argv);
 
 atire = init();
 
-ant_init_ranking(); //Error value ignored...
+if (atire)
+	ant_init_ranking(); //Error value ignored...
 }
 
 /*

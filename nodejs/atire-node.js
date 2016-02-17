@@ -11,3 +11,4 @@ var server = new atire.ATIRE_API_server();
 
 console.log(server.version());
 
+server.run
