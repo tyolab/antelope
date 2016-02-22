@@ -65,15 +65,20 @@ private:
 
 	ANT_stats *stats;
 
+	// for keeping the list of arguments not the same as argv in term of memory
+	char **arg_list;
+	int	argc;
+
 public:
 	ATIRE_API_server();
 	virtual ~ATIRE_API_server();
 
-	void initialize(int argc, char *argv[]);
+	void initialize();
 
 	ATIRE_API *get_atire() { return atire; }
 
 	void set_params(int argc, char *argv[]);
+	void set_params(char *args);
 
 	/* before ready */
 	void start();

@@ -1,0 +1,23 @@
+<DOC>
+<DOCID>1</DOCID>
+<TEXT>
+this is test 1
+avengers
+</TEXT>
+</DOC>
+
+<DOC>
+<DOCID>2</DOCID>
+<TEXT>
+this is test 2
+cook
+</TEXT>
+</DOC>
+
+<DOC>
+<DOCID>3</DOCID>
+<TEXT>
+this is test 3
+more
+</TEXT>
+</DOC>

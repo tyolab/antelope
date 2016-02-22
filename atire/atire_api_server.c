@@ -100,6 +100,9 @@ ATIRE_API_server::ATIRE_API_server()
 	mean_average_precision = NULL;
 
 	topic_id = -1;
+
+	arg_list = NULL;
+	argc = 0;
 }
 
 ATIRE_API_server::~ATIRE_API_server()
@@ -121,6 +124,9 @@ ATIRE_API_server::~ATIRE_API_server()
 
 	if (mean_average_precision)
 		delete [] mean_average_precision;
+
+	if (arg_list)
+		delete [] arg_list;
 }
 
 /*
@@ -417,63 +423,27 @@ loop();
 finish();
 }
 
-int ATIRE_API_server::run(int argc, char* argv[])
+int ATIRE_API_server::run()
 {
-start_stats();
 
-initialize(argc, argv);
+initialize();
+
+start_stats();
 
 ant();
 
-printf("Total elapsed time including startup and shutdown ");
-stats->print_elapsed_time();
-ANT_stats::print_operating_system_process_time();
+end_stats();
 
 return 0;
 }
 
 int ATIRE_API_server::run(char* options)
 {
-static char *seperators = "+ ";
-char **argv, **arg_list;
-char *token;
-size_t total_length = (options ? strlen(options) : 0) + 7;
-char *copy, *copy_start;
 
-copy = copy_start = new char[total_length];
-memset(copy, 0, sizeof(*copy) * total_length);
+set_params(options);
 
-memcpy(copy, "atire+", 6);
-copy += 6;
-if (options)
-	{
-	memcpy(copy, options, strlen(options));
-	copy += strlen(options);
-	}
-*copy = '\0';
-
-argv = arg_list = new char *[total_length];
-int argc = 0;
-token = strtok(copy_start, seperators);
-
-#ifdef DEBUG
-	fprintf(stderr, "Start atire with options: %s\n", options);
-#endif
-for (; token != NULL; token = strtok(NULL, seperators))
-	{
-#ifdef DEBUG
-	fprintf(stderr, "%s ", token);
-#endif
-	*argv++ = token;
-	++argc;
-	}
-#ifdef DEBUG
-	fprintf(stderr, "\n");
-#endif
-*argv = NULL;
 int result = run(argc, arg_list);
-delete [] copy_start;
-delete [] arg_list;
+//delete [] arg_list;
 
 return result;
 }
@@ -1230,6 +1200,9 @@ stats = new ANT_stats();
 
 void ATIRE_API_server::end_stats()
 {
+printf("Total elapsed time including startup and shutdown ");
+stats->print_elapsed_time();
+ANT_stats::print_operating_system_process_time();
 }
 
 ANT_stats* ATIRE_API_server::get_stats()
@@ -1237,9 +1210,8 @@ ANT_stats* ATIRE_API_server::get_stats()
 return stats;
 }
 
-void ATIRE_API_server::initialize(int argc, char* argv[])
+void ATIRE_API_server::initialize()
 {
-set_params(argc, argv);
 
 atire = init();
 
@@ -1292,6 +1264,49 @@ if (params->evaluator)
 return NULL;
 }
 
+void ATIRE_API_server::set_params(char *args)
+{
+static char *seperators = "+ ";
+char **argv/*, **arg_list*/;
+char *token;
+size_t total_length = (options ? strlen(options) : 0) + 7;
+char *copy, *copy_start;
+
+copy = copy_start = new char[total_length];
+memset(copy, 0, sizeof(*copy) * total_length);
+
+memcpy(copy, "atire+", 6);
+copy += 6;
+if (options)
+	{
+	memcpy(copy, options, strlen(options));
+	copy += strlen(options);
+	}
+*copy = '\0';
+
+argv = arg_list = new char *[total_length];
+token = strtok(copy_start, seperators);
+
+#ifdef DEBUG
+	fprintf(stderr, "Start atire with options: %s\n", options);
+#endif
+for (; token != NULL; token = strtok(NULL, seperators))
+	{
+#ifdef DEBUG
+	fprintf(stderr, "%s ", token);
+#endif
+	*argv++ = token;
+	++argc;
+	}
+#ifdef DEBUG
+	fprintf(stderr, "\n");
+#endif
+*argv = NULL;
+delete [] copy_start;
+
+set_params(argc, arg_list);
+}
+
 void ATIRE_API_server::set_params(int argc, char* argv[])
 {
 params_ptr = new ANT_ANT_param_block(argc, argv);
@@ -1304,7 +1319,6 @@ else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
 	stop_word_list = new ANT_stop_word(ANT_stop_word::PUURULA);
 if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
 	stop_word_list->addstop((const char **)new_stop_words);
-
 
 }
 
