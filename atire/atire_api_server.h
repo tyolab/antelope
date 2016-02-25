@@ -100,7 +100,7 @@ public:
 	void finish();
 
 	/* run the server in loop */
-	int run(int argc, char *argv[]);
+	int run();
 	int run(char *files);
 
 	void ant();

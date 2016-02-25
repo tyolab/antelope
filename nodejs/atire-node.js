@@ -9,6 +9,17 @@ var atire = require('./build/Debug/atire_api');
 
 var server = new atire.ATIRE_API_server();
 
-console.log(server.version());
+//console.log(server.version());
 
-server.run
+// don't have to set it when we don't have one
+server.set_params("-nologo");
+
+server.initialize();
+
+server.start();
+
+server.loop();
+
+server.finish();
+
+

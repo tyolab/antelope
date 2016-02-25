@@ -81,8 +81,41 @@ ATIRE_API_server::ATIRE_API_server()
 #ifdef FILENAME_INDEX
 	document_name = new char [MAX_TITLE_LENGTH];
 #else
+	answer_list = NULL;
 #endif
 	interrupted = 0;
+	length_of_longest_document = 0;
+	current_document_length = 0;
+	number_of_queries = 0;
+
+	sum_of_average_precisions = NULL;
+	average_precision = NULL;
+
+	number_of_queries_evaluated = 0;
+
+	first_to_list = 0;
+	last_to_list = 0;
+	docid = 0;
+	hits = 0;
+	custom_ranking = 0;
+	line = 0;
+
+	pos = NULL;
+	print_buffer = NULL;
+	document_buffer = NULL;
+
+	evaluation = 0;
+
+	relevance = 0.0;
+
+	query = NULL;
+	ranker = NULL;
+	command = NULL;
+
+	inchannel = NULL;
+	outchannel = NULL;
+
+	result = 0;
 
 	params_ptr = NULL;
 	params_rank_ptr = NULL;
@@ -442,8 +475,7 @@ int ATIRE_API_server::run(char* options)
 
 set_params(options);
 
-int result = run(argc, arg_list);
-//delete [] arg_list;
+int result = run();
 
 return result;
 }
@@ -1213,6 +1245,9 @@ return stats;
 void ATIRE_API_server::initialize()
 {
 
+if (!params_ptr)
+	set_params(0, NULL);
+
 atire = init();
 
 if (atire)
@@ -1264,7 +1299,7 @@ if (params->evaluator)
 return NULL;
 }
 
-void ATIRE_API_server::set_params(char *args)
+void ATIRE_API_server::set_params(char *options)
 {
 static char *seperators = "+ ";
 char **argv/*, **arg_list*/;
