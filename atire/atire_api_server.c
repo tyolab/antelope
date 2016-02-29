@@ -134,8 +134,9 @@ ATIRE_API_server::ATIRE_API_server()
 
 	topic_id = -1;
 
+	options_copy = NULL;
 	arg_list = NULL;
-	argc = 0;
+	argc = 0; // argc should be at least 1, because argv[0] == program itself
 }
 
 ATIRE_API_server::~ATIRE_API_server()
@@ -160,6 +161,9 @@ ATIRE_API_server::~ATIRE_API_server()
 
 	if (arg_list)
 		delete [] arg_list;
+
+	if (options_copy)
+		delete [] options_copy;
 }
 
 /*
@@ -1305,9 +1309,9 @@ static char *seperators = "+ ";
 char **argv/*, **arg_list*/;
 char *token;
 size_t total_length = (options ? strlen(options) : 0) + 7;
-char *copy, *copy_start;
+char *copy/*, *copy_start*/;
 
-copy = copy_start = new char[total_length];
+copy = options_copy = new char[total_length];
 memset(copy, 0, sizeof(*copy) * total_length);
 
 memcpy(copy, "atire+", 6);
@@ -1319,8 +1323,8 @@ if (options)
 	}
 *copy = '\0';
 
-argv = arg_list = new char *[total_length];
-token = strtok(copy_start, seperators);
+argv = arg_list = new char *[total_length * sizeof(char *)];
+token = strtok(options_copy, seperators);
 
 #ifdef DEBUG
 	fprintf(stderr, "Start atire with options: %s\n", options);
@@ -1337,7 +1341,7 @@ for (; token != NULL; token = strtok(NULL, seperators))
 	fprintf(stderr, "\n");
 #endif
 *argv = NULL;
-delete [] copy_start;
+//delete [] copy_start;
 
 set_params(argc, arg_list);
 }

@@ -66,6 +66,7 @@ private:
 	ANT_stats *stats;
 
 	// for keeping the list of arguments not the same as argv in term of memory
+	char *options_copy;
 	char **arg_list;
 	int	argc;
 
