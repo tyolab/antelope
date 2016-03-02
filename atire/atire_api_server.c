@@ -488,11 +488,11 @@ void ATIRE_API_server::loop()
 {
 prompt();
 poll();
-for (; command != NULL && !interrupted; prompt(), poll())
+for (; has_new_command() && !is_interrupted(); prompt(), poll())
 	{
 	process_command();
 
-	if (interrupted)
+	if (is_interrupted())
 		break;
 	}
 }
@@ -505,6 +505,14 @@ void ATIRE_API_server::prompt()
 {
 if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming from stdin
 	printf(PROMPT);
+}
+
+void ATIRE_API_server::insert_command(const char *cmd)
+{
+	long len = strlen(cmd + 1);
+	command = new char[len];
+	memcpy(command, cmd, len);
+	command[len] = '\0';
 }
 
 void ATIRE_API_server::process_command()

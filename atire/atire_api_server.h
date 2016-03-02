@@ -17,6 +17,10 @@ class ANT_stats_time;
 class ANT_stats;
 class ANT_ANT_param_block;
 
+#ifndef NULL
+#define NULL 0x0
+#endif
+
 class ATIRE_API_server
 {
 private:
@@ -113,11 +117,18 @@ public:
 
 	char *version();
 
+	void prompt();
+
+	int is_interrupted() const	{ return interrupted; }
+	void set_interrupted(int interrupted) {	this->interrupted = interrupted; }
+
+	int has_new_command() { return command != NULL; };
+	void insert_command(const char *cmd);
+
 private:
 
 	ATIRE_API *init();
 
-	void prompt();
 	char *between(char *source, char *open_tag, char *close_tag);
 	long ant_init_ranking();
 	char *stop_query(char *query, long stop_type);
