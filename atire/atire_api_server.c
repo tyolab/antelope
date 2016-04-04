@@ -81,8 +81,41 @@ ATIRE_API_server::ATIRE_API_server()
 #ifdef FILENAME_INDEX
 	document_name = new char [MAX_TITLE_LENGTH];
 #else
+	answer_list = NULL;
 #endif
 	interrupted = 0;
+	length_of_longest_document = 0;
+	current_document_length = 0;
+	number_of_queries = 0;
+
+	sum_of_average_precisions = NULL;
+	average_precision = NULL;
+
+	number_of_queries_evaluated = 0;
+
+	first_to_list = 0;
+	last_to_list = 0;
+	docid = 0;
+	hits = 0;
+	custom_ranking = 0;
+	line = 0;
+
+	pos = NULL;
+	print_buffer = NULL;
+	document_buffer = NULL;
+
+	evaluation = 0;
+
+	relevance = 0.0;
+
+	query = NULL;
+	ranker = NULL;
+	command = NULL;
+
+	inchannel = NULL;
+	outchannel = NULL;
+
+	result = 0;
 
 	params_ptr = NULL;
 	params_rank_ptr = NULL;
@@ -100,6 +133,10 @@ ATIRE_API_server::ATIRE_API_server()
 	mean_average_precision = NULL;
 
 	topic_id = -1;
+
+	options_copy = NULL;
+	arg_list = NULL;
+	argc = 0; // argc should be at least 1, because argv[0] == program itself
 }
 
 ATIRE_API_server::~ATIRE_API_server()
@@ -121,6 +158,12 @@ ATIRE_API_server::~ATIRE_API_server()
 
 	if (mean_average_precision)
 		delete [] mean_average_precision;
+
+	if (arg_list)
+		delete [] arg_list;
+
+	if (options_copy)
+		delete [] options_copy;
 }
 
 /*
@@ -170,52 +213,54 @@ if (fail)
 
 	atire = NULL;
 	}
-
-/* Load in all the pregens */
-for (int i = 0 ; i < params.pregen_count; i++)
+else
 	{
-	//Derive the pregen's filename from the index filename and pregen fieldname
-	std::stringstream buffer;
+	/* Load in all the pregens */
+	for (int i = 0 ; i < params.pregen_count; i++)
+		{
+		//Derive the pregen's filename from the index filename and pregen fieldname
+		std::stringstream buffer;
 
-	buffer << params.index_filename << "." << params.pregen_names[i];
+		buffer << params.index_filename << "." << params.pregen_names[i];
 
-	if (!atire->load_pregen(buffer.str().c_str()))
-		fprintf(stderr, "Failed to load pregen %s, ignoring...\n", params.pregen_names[i]);
+		if (!atire->load_pregen(buffer.str().c_str()))
+			fprintf(stderr, "Failed to load pregen %s, ignoring...\n", params.pregen_names[i]);
+		}
+
+	if (params.assessments_filename != NULL)
+		atire->load_assessments(params.assessments_filename, params.evaluator);
+
+	if (params.output_forum != ANT_ANT_param_block::NONE)
+		atire->set_forum(params.output_forum, params.output_filename, params.participant_id, params.run_name, params.results_list_length);
+
+	atire->set_trim_postings_k(params.trim_postings_k);
+	atire->set_stemmer(params.stemmer, params.stemmer_similarity, params.stemmer_similarity_threshold);
+	atire->set_feedbacker(params.feedbacker, params.feedback_documents, params.feedback_terms);
+	if (params.feedbacker == ANT_relevance_feedback_factory::BLIND_RM)
+		atire->set_feedback_interpolation(params.feedback_lambda);
+
+	if ((params.query_type & ATIRE_API::QUERY_EXPANSION_INPLACE_WORDNET) != 0)
+		{
+		atire->set_inplace_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
+		expander->set_allowable_relationships(params.expander_tf_types);
+		}
+	if ((params.query_type & ATIRE_API::QUERY_EXPANSION_WORDNET) != 0)
+		{
+		atire->set_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
+		expander->set_allowable_relationships(params.expander_query_types);
+		}
+
+	atire->set_segmentation(params.segmentation);
+
+	// can't be initialized here
+	// ant_init_ranking(); //Error value ignored...
+
+	atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
+
+	// set the pregren to use for accumulator initialisation
+	if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
+		atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
 	}
-
-if (params.assessments_filename != NULL)
-	atire->load_assessments(params.assessments_filename, params.evaluator);
-
-if (params.output_forum != ANT_ANT_param_block::NONE)
-	atire->set_forum(params.output_forum, params.output_filename, params.participant_id, params.run_name, params.results_list_length);
-
-atire->set_trim_postings_k(params.trim_postings_k);
-atire->set_stemmer(params.stemmer, params.stemmer_similarity, params.stemmer_similarity_threshold);
-atire->set_feedbacker(params.feedbacker, params.feedback_documents, params.feedback_terms);
-if (params.feedbacker == ANT_relevance_feedback_factory::BLIND_RM)
-	atire->set_feedback_interpolation(params.feedback_lambda);
-
-if ((params.query_type & ATIRE_API::QUERY_EXPANSION_INPLACE_WORDNET) != 0)
-	{
-	atire->set_inplace_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
-	expander->set_allowable_relationships(params.expander_tf_types);
-	}
-if ((params.query_type & ATIRE_API::QUERY_EXPANSION_WORDNET) != 0)
-	{
-	atire->set_query_expansion(expander = new ANT_thesaurus_wordnet("wordnet.aspt"));
-	expander->set_allowable_relationships(params.expander_query_types);
-	}
-
-atire->set_segmentation(params.segmentation);
-
-// can't be initialized here
-// ant_init_ranking(); //Error value ignored...
-
-atire->set_processing_strategy(params.processing_strategy, params.quantum_stopping);
-
-// set the pregren to use for accumulator initialisation
-if (params.ranking_function != ANT_ranking_function_factory_object::PREGEN)
-	atire->get_search_engine()->results_list->set_pregen(atire->get_pregen(), params.pregen_ratio);
 return atire;
 }
 
@@ -415,63 +460,26 @@ loop();
 finish();
 }
 
-int ATIRE_API_server::run(int argc, char* argv[])
+int ATIRE_API_server::run()
 {
-start_stats();
 
-initialize(argc, argv);
+initialize();
+
+start_stats();
 
 ant();
 
-printf("Total elapsed time including startup and shutdown ");
-stats->print_elapsed_time();
-ANT_stats::print_operating_system_process_time();
+end_stats();
 
 return 0;
 }
 
 int ATIRE_API_server::run(char* options)
 {
-static char *seperators = "+ ";
-char **argv, **arg_list;
-char *token;
-size_t total_length = (options ? strlen(options) : 0) + 7;
-char *copy, *copy_start;
 
-copy = copy_start = new char[total_length];
-memset(copy, 0, sizeof(*copy) * total_length);
+set_params(options);
 
-memcpy(copy, "atire+", 6);
-copy += 6;
-if (options)
-	{
-	memcpy(copy, options, strlen(options));
-	copy += strlen(options);
-	}
-*copy = '\0';
-
-argv = arg_list = new char *[total_length];
-int argc = 0;
-token = strtok(copy_start, seperators);
-
-#ifdef DEBUG
-	fprintf(stderr, "Start atire with options: %s\n", options);
-#endif
-for (; token != NULL; token = strtok(NULL, seperators))
-	{
-#ifdef DEBUG
-	fprintf(stderr, "%s ", token);
-#endif
-	*argv++ = token;
-	++argc;
-	}
-#ifdef DEBUG
-	fprintf(stderr, "\n");
-#endif
-*argv = NULL;
-int result = run(argc, arg_list);
-delete [] copy_start;
-delete [] arg_list;
+int result = run();
 
 return result;
 }
@@ -480,11 +488,11 @@ void ATIRE_API_server::loop()
 {
 prompt();
 poll();
-for (; command != NULL && !interrupted; prompt(), poll())
+for (; has_new_command() && !is_interrupted(); prompt(), poll())
 	{
 	process_command();
 
-	if (interrupted)
+	if (is_interrupted())
 		break;
 	}
 }
@@ -497,6 +505,14 @@ void ATIRE_API_server::prompt()
 {
 if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming from stdin
 	printf(PROMPT);
+}
+
+void ATIRE_API_server::insert_command(const char *cmd)
+{
+	long len = strlen(cmd + 1);
+	command = new char[len];
+	memcpy(command, cmd, len);
+	command[len] = '\0';
 }
 
 void ATIRE_API_server::process_command()
@@ -1228,6 +1244,9 @@ stats = new ANT_stats();
 
 void ATIRE_API_server::end_stats()
 {
+printf("Total elapsed time including startup and shutdown ");
+stats->print_elapsed_time();
+ANT_stats::print_operating_system_process_time();
 }
 
 ANT_stats* ATIRE_API_server::get_stats()
@@ -1235,13 +1254,16 @@ ANT_stats* ATIRE_API_server::get_stats()
 return stats;
 }
 
-void ATIRE_API_server::initialize(int argc, char* argv[])
+void ATIRE_API_server::initialize()
 {
-set_params(argc, argv);
+
+if (!params_ptr)
+	set_params(0, NULL);
 
 atire = init();
 
-ant_init_ranking(); //Error value ignored...
+if (atire)
+	ant_init_ranking(); //Error value ignored...
 }
 
 /*
@@ -1289,6 +1311,49 @@ if (params->evaluator)
 return NULL;
 }
 
+void ATIRE_API_server::set_params(char *options)
+{
+static char *seperators = "+ ";
+char **argv/*, **arg_list*/;
+char *token;
+size_t total_length = (options ? strlen(options) : 0) + 7;
+char *copy/*, *copy_start*/;
+
+copy = options_copy = new char[total_length];
+memset(copy, 0, sizeof(*copy) * total_length);
+
+memcpy(copy, "atire+", 6);
+copy += 6;
+if (options)
+	{
+	memcpy(copy, options, strlen(options));
+	copy += strlen(options);
+	}
+*copy = '\0';
+
+argv = arg_list = new char *[total_length * sizeof(char *)];
+token = strtok(options_copy, seperators);
+
+#ifdef DEBUG
+	fprintf(stderr, "Start atire with options: %s\n", options);
+#endif
+for (; token != NULL; token = strtok(NULL, seperators))
+	{
+#ifdef DEBUG
+	fprintf(stderr, "%s ", token);
+#endif
+	*argv++ = token;
+	++argc;
+	}
+#ifdef DEBUG
+	fprintf(stderr, "\n");
+#endif
+*argv = NULL;
+//delete [] copy_start;
+
+set_params(argc, arg_list);
+}
+
 void ATIRE_API_server::set_params(int argc, char* argv[])
 {
 params_ptr = new ANT_ANT_param_block(argc, argv);
@@ -1301,7 +1366,6 @@ else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
 	stop_word_list = new ANT_stop_word(ANT_stop_word::PUURULA);
 if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
 	stop_word_list->addstop((const char **)new_stop_words);
-
 
 }
 

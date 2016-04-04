@@ -7,10 +7,14 @@
 #define ATIRE_ATIRE_SERVER_H_
 
 /*
+ * (deprecated)
+ *
  * the atire server class
  *
  * by default it use the socket non-blocking mode (select())
- * also, it
+ *
+ * or alternatively, use node mode because the atire server can handle one request
+ * a time anyway
  */
 
 class ANT_atire_server

@@ -6,6 +6,23 @@
 */
 
 %module atire_api
+
+/*
+%define %swig_v8_define_version(version)
+%begin %{
+#ifndef V8_VERSION
+#define V8_VERSION version
+#endif
+%}
+%enddef
+*/
+
+#ifdef SWIGJAVASCRIPT
+#ifdef SWIG_V8_VERSION
+%swig_v8_define_version(SWIG_V8_VERSION)
+#endif
+#endif
+
 %{
 #include "../atire/atire_api_remote.h"
 #include "../atire/atire_api_server.h"
