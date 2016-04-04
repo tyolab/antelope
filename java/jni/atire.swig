@@ -23,4 +23,3 @@
 %include "../java/jni/include/atire.h"
 */
 
-

@@ -1545,7 +1545,6 @@ SWIG_From_bool  (bool value)
   return v8::Boolean::New(value);
 }
 
-
 #define SWIGV8_INIT atire_api_initialize
 
 
@@ -3415,6 +3414,23 @@ fail:
 }
 
 
+SwigV8ReturnValue _wrap_cleanup(const SwigV8Arguments& args) {
+  v8::HandleScope scope;
+  v8::Handle<v8::Value> jsresult;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_cleanup.");
+  
+  cleanup();
+  jsresult = v8::Undefined();
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(v8::Undefined());
+}
+
+
 /* -------- TYPE CONVERSION AND EQUIVALENCE RULES (BEGIN) -------- */
 
 static swig_type_info _swigt__p_ANT_compression_text_factory = {"_p_ANT_compression_text_factory", "ANT_compression_text_factory *", 0, 0, (void*)0, 0};
@@ -3878,6 +3894,7 @@ v8::Handle<v8::Object> _exports_ATIRE_indexer_obj = _exports_ATIRE_indexer_class
 SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_FILENAME", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set);
 SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOUCMENT_LENGTH", _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get, JS_veto_set_variable);
 SWIGV8_AddStaticFunction(_exports_ATIRE_indexer_obj, "initialize", _wrap_ATIRE_indexer_initialize);
+SWIGV8_AddStaticFunction(exports_obj, "cleanup", _wrap_cleanup);
 
 
   /* register classes */
