@@ -68,6 +68,9 @@ public:
 	ANT_index_document *get_document_indexer() { return document_indexer; }
 
 	static bool initialize();
+
+private:
+	void cleanup();
 };
 
 #endif /* INDEXER_H_ */

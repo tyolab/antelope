@@ -44,18 +44,46 @@ stemmer = NULL;
 
 ATIRE_indexer::~ATIRE_indexer()
 {
-delete index;
-delete parser;
-delete readability;
-delete document_indexer;
-delete pregen;
+	cleanup();
+}
 
-#ifndef PARALLEL_INDEXING_DOCUMENTS
-	delete stemmer;
-#endif
+void ATIRE_indexer::cleanup() {
+	if (index) {
+		delete index;
+		index = NULL;
+	}
 
-if (factory_text)
-	delete factory_text;
+	if (parser) {
+		delete parser;
+		parser = NULL;
+	}
+
+	if (readability) {
+		delete readability;
+		readability = NULL;
+	}
+
+	if (document_indexer) {
+		delete document_indexer;
+		document_indexer = NULL;
+	}
+
+	if (pregen) {
+		delete pregen;
+		pregen = NULL;
+	}
+
+	#ifndef PARALLEL_INDEXING_DOCUMENTS
+		if (stemmer) {
+			delete stemmer;
+			stemmer = NULL;
+		}
+	#endif
+
+	if (factory_text) {
+		delete factory_text;
+		factory_text = NULL;
+	}
 }
 
 bool ATIRE_indexer::initialize()
@@ -321,5 +349,11 @@ long ATIRE_indexer::finish()
 		pregen->close();
 		}
 
-	return index->serialise();
+	// write the index information into file, and store the seialisation status
+	long ret = index->serialise();
+
+	// clean up, release resources
+	cleanup();
+
+	return ret;
 }

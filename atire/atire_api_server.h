@@ -133,6 +133,8 @@ private:
 	long ant_init_ranking();
 	char *stop_query(char *query, long stop_type);
 	double *perform_query(long topic_id, ANT_channel *outchannel, ANT_ANT_param_block *params, char *query, long long *matching_documents);
+
+	void cleanup();
 };
 
 #endif /* ATIRE_API_SERVER_H_ */

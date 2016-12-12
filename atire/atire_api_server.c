@@ -141,29 +141,61 @@ ATIRE_API_server::ATIRE_API_server()
 
 ATIRE_API_server::~ATIRE_API_server()
 {
-	if (atire)
-		delete atire;
+cleanup();
+}
 
-	if (params_ptr)
-		delete params_ptr;
+/*
+	CLEANUP()
+	---------
+*/
+void ATIRE_API_server::cleanup() {
+	if (atire) 
+	{
+	delete atire;
+	atire = NULL;
+	}
+
+	if (params_ptr) 
+	{
+	delete params_ptr;
+	params_ptr = NULL;
+	}
 
 	if (params_rank_ptr)
-		delete params_rank_ptr;
+	{
+	delete params_rank_ptr;
+	params_rank_ptr = NULL;
+	}
 
 	if (post_processing_stats)
-		delete post_processing_stats;
+	{
+	delete post_processing_stats;
+	post_processing_stats = NULL;
+	}
 
 	if (stats)
-		delete stats;
+	{
+	delete stats;
+	stats = NULL;
+	}
 
-	if (mean_average_precision)
-		delete [] mean_average_precision;
+	if (mean_average_precision) 
+	{
+	delete [] mean_average_precision;
+	mean_average_precision = NULL;
+	}
 
 	if (arg_list)
-		delete [] arg_list;
+	{
+	delete [] arg_list;
+	arg_list = NULL;
+	}
 
 	if (options_copy)
-		delete [] options_copy;
+	{
+	delete [] options_copy;
+	options_copy = NULL;
+	}
 }
 
 /*
@@ -425,6 +457,11 @@ delete snippet_stemmer;
 	And finally report MAP
 */
 //return mean_average_precision;
+
+// clean up main resources
+end_stats();
+
+cleanup();
 }
 
 long ATIRE_API_server::ant_init_ranking()
@@ -453,6 +490,8 @@ void ATIRE_API_server::ant()
 /*
  * start the server but just doing the
  */
+start_stats();
+
 start();
 
 loop();
@@ -465,11 +504,7 @@ int ATIRE_API_server::run()
 
 initialize();
 
-start_stats();
-
 ant();
-
-end_stats();
 
 return 0;
 }
@@ -1244,9 +1279,12 @@ stats = new ANT_stats();
 
 void ATIRE_API_server::end_stats()
 {
+if (stats) 
+{
 printf("Total elapsed time including startup and shutdown ");
 stats->print_elapsed_time();
 ANT_stats::print_operating_system_process_time();
+}
 }
 
 ANT_stats* ATIRE_API_server::get_stats()
