@@ -2,17 +2,21 @@
   "name": "atire_node",
   "version": "0.1.0",
   "description": "atire_node",
-  "main": "hello-world-server.js",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1"
   },
   "repository": "",
   "keywords": [
     "node.js",
-    "eclipse",
-    "nodeclipse"
+    "atire",
+    "restify"
   ],
   "author": "Eric Tang",
   "license": "BSD",
-  "readmeFilename": "README.md"
+  "readmeFilename": "README.md",
+  "dependencies": {
+    "death": "^1.0.0",
+    "restify": "^4.3.0"
+  }
 }

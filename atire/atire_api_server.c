@@ -149,49 +149,49 @@ cleanup();
 	---------
 */
 void ATIRE_API_server::cleanup() {
-	if (atire) 
+if (atire) 
 	{
 	delete atire;
 	atire = NULL;
 	}
 
-	if (params_ptr) 
+if (params_ptr) 
 	{
 	delete params_ptr;
 	params_ptr = NULL;
 	}
 
-	if (params_rank_ptr)
+if (params_rank_ptr)
 	{
 	delete params_rank_ptr;
 	params_rank_ptr = NULL;
 	}
 
-	if (post_processing_stats)
+if (post_processing_stats)
 	{
 	delete post_processing_stats;
 	post_processing_stats = NULL;
 	}
 
-	if (stats)
+if (stats)
 	{
 	delete stats;
 	stats = NULL;
 	}
 
-	if (mean_average_precision) 
+if (mean_average_precision) 
 	{
 	delete [] mean_average_precision;
 	mean_average_precision = NULL;
 	}
 
-	if (arg_list)
+if (arg_list)
 	{
 	delete [] arg_list;
 	arg_list = NULL;
 	}
 
-	if (options_copy)
+if (options_copy)
 	{
 	delete [] options_copy;
 	options_copy = NULL;
@@ -1280,11 +1280,11 @@ stats = new ANT_stats();
 void ATIRE_API_server::end_stats()
 {
 if (stats) 
-{
-printf("Total elapsed time including startup and shutdown ");
-stats->print_elapsed_time();
-ANT_stats::print_operating_system_process_time();
-}
+	{
+	printf("Total elapsed time including startup and shutdown ");
+	stats->print_elapsed_time();
+	ANT_stats::print_operating_system_process_time();
+	}
 }
 
 ANT_stats* ATIRE_API_server::get_stats()
