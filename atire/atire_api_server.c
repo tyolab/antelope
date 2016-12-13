@@ -124,8 +124,8 @@ ATIRE_API_server::ATIRE_API_server()
 	params_rank_ptr = NULL;
 
 	stop_word_list = NULL;
-	snippet = (char *)EMPTY_STRING;
-	title = (char *)EMPTY_STRING;
+	snippet = NULL;
+	title = NULL;
 	snippet_generator = NULL;
 	title_generator = NULL;
 	snippet_stemmer = NULL;
@@ -551,6 +551,10 @@ ant();
 return 0;
 }
 
+/*
+	RUN()
+	-----
+*/
 int ATIRE_API_server::run(char* options)
 {
 
@@ -561,6 +565,10 @@ int result = run();
 return result;
 }
 
+/*
+	LOOP()
+	------
+*/
 void ATIRE_API_server::loop()
 {
 prompt();
@@ -585,17 +593,21 @@ if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming fr
 }
 
 /*
-	PROMPT()
-	--------
+	INSERT_COMMAND()
+	----------------
 */
 void ATIRE_API_server::insert_command(const char *cmd)
 {
-long len = strlen(cmd + 1);
-command = new char[len];
+long len = strlen(cmd);
+command = new char[len + 1];
 memcpy(command, cmd, len);
 command[len] = '\0';
 }
 
+/*
+	RESULT_TO_OUTCHANNEL()
+	----------------------
+*/
 void ATIRE_API_server::result_to_outchannel()
 {
 ANT_ANT_param_block *params = params_ptr;	
@@ -645,23 +657,30 @@ if (params->stats & ANT_ANT_param_block::SHORT)
 	outchannel->puts("</ATIREsearch>");
 }
 
-void ATIRE_API_server::search(const char *query)
+/*
+	SEARCH()
+	--------
+*/
+void ATIRE_API_server::search(const char *q)
 {
-insert_command(query);
-search();
+// make a copy of the query (q)
+insert_command(q);
 
-		topic_id = -1;
-		query = command;
+topic_id = -1;
+query = command;
+
+search();
 }
 
+/*
+	SEARCH()
+	--------
+*/
 void ATIRE_API_server::search()
 {
 ANT_ANT_param_block *params = params_ptr;	
 first_to_list = 0;
 last_to_list = first_to_list + params->results_list_length;
-
-topic_id = -1;
-query = command;
 
 /*
 	Do the query and compute average precision
@@ -709,8 +728,8 @@ delete [] command;
 }
 
 /*
-	PROMPT()
-	--------
+	RESULT_TO_JSON()
+	----------------
 */
 const char *ATIRE_API_server::result_to_json()
 {
@@ -722,10 +741,14 @@ const char *ATIRE_API_server::result_to_json()
 					"\"title\":\"%s\","
 					"\"snippet\":\"%s\""
 					"}";
-	sprintf(formatted_result, json_template, result, docid, document_name, relevance, title, snippet);
+	sprintf(formatted_result, json_template, result, docid, document_name, relevance, !title ? EMPTY_STRING : title, !snippet ? EMPTY_STRING : snippet);
 	return formatted_result;
 }
 
+/*
+	NEXT_RESULT()
+	-------------
+*/
 long ATIRE_API_server::next_result()
 {
 if (result < last_to_list) 
@@ -745,7 +768,7 @@ if (result < last_to_list)
 		if (title_generator != NULL)
 			title_generator->get_snippet(title, document_buffer);
 		else
-			title = (char *)EMPTY_STRING;
+			title = NULL;
 
 		/*
 			Generate the snippet
@@ -753,7 +776,7 @@ if (result < last_to_list)
 		if (snippet_generator != NULL)
 			snippet_generator->get_snippet(snippet, document_buffer);
 		else
-			snippet = (char *)EMPTY_STRING;
+			snippet = NULL;
 		}	 
 
 	#ifdef FILENAME_INDEX
@@ -770,8 +793,8 @@ return FALSE;
 }
 
 /*
-	PROMPT()
-	--------
+	PROCESS_COMMAND()
+	-----------------
 */
 void ATIRE_API_server::process_command()
 {
@@ -1332,20 +1355,32 @@ else
 		}
 
 	search();
-	result_to_json();
+	result_to_outchannel();
 	}
 }
 
+/*
+	POLL()
+	------
+*/
 void ATIRE_API_server::poll()
 {
 command = inchannel->gets();
 }
 
-void ATIRE_API_server::interrup()
+/*
+	INTERRUPT()
+	-----------
+*/
+void ATIRE_API_server::interrupt()
 {
 interrupted = 1;
 }
 
+/*
+	POLL_AND_PROCESS()
+	------------------
+*/
 void ATIRE_API_server::poll_and_process()
 {
 poll();
@@ -1391,6 +1426,10 @@ else
 return query;
 }
 
+/*
+	START_STATS()
+	-------------
+*/
 void ATIRE_API_server::start_stats()
 {
 if (stats)
@@ -1398,6 +1437,10 @@ if (stats)
 stats = new ANT_stats();
 }
 
+/*
+	END_STATS()
+	-----------
+*/
 void ATIRE_API_server::end_stats()
 {
 if (stats) 
@@ -1408,11 +1451,20 @@ if (stats)
 	}
 }
 
+/*
+	GET_STATS()
+	-----------
+*/
 ANT_stats* ATIRE_API_server::get_stats()
 {
 return stats;
 }
 
+
+/*
+	INITIALIZE()
+	------------
+*/
 void ATIRE_API_server::initialize()
 {
 

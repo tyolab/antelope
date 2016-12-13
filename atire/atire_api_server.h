@@ -113,7 +113,7 @@ public:
 		may need to implement a lock mechanism
 	 */
 
-	void interrup();
+	void interrupt();
 
 	void finish();
 

@@ -15,9 +15,24 @@ var server = new atire.ATIRE_API_server();
 //server.loop();
 function respond(req, res, next) {
     // the query req.params.query
-    server.insert_command(req.params.query);
-    server.process_command();
-    res.send('hello ' + req.params.query);
+    server.search(req.params.query);
+    // server.result_to_outchannel();
+    var results = {};
+    results.results = [];
+    var ret = server.next_result();
+    while (ret) {
+        var hit = server.result_to_json();
+
+        try {
+            var obj = JSON.parse(hit);
+            results.results.push(obj);
+        }
+        catch (err) {
+            console.error(err);
+        }
+        ret = server.next_result();
+    }
+    res.send(results);
   next();
 }
 
@@ -55,10 +70,20 @@ onExit(() => {
 /**
  * The main code now 
  */
+// RESTIFY SERVER
 restServer.get('/search/:query', respond);
+restServer.listen(8080, function() {
+  console.log('%s listening at %s', restServer.name, restServer.url);
+});
 
+// ATIRE SERVER
 // don't have to set it when we don't have one
-server.set_params("-nologo");
+var options = "-nologo";
+if (process.argv.length > 2) {
+    options += "+-findex+" + process.argv[2];
+}
+
+server.set_params(options);
 
 server.initialize();
 
