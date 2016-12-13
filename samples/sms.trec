@@ -1,0 +1,104 @@
+<DOC>
+	<DOCNO>1</DOCNO>
+	<TITLE>title1 with some blah</TITLE>
+	<sms>
+		<id>1</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>INBOX</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>hi,test </msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>2</DOCNO>
+	<TITLE>title2 with some blah, and more</TITLE>
+	<sms>
+		<id>2</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>INBOX</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>hon, I will have a meeting today!</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>3</DOCNO>
+	<TITLE>title3 with some blah, really</TITLE>
+	<sms>
+		<id>3</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>INBOX</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>love you, hon</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>4</DOCNO>
+	<TITLE>title4 with some blah, come on</TITLE>
+	<sms>
+		<id>4</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>INBOX</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>mate, that is not right. Beers for all.</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>5</DOCNO>
+	<TITLE>title5 with some blah, that is ridiculous</TITLE>
+	<sms>
+		<id>5</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>SENT</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>cool, see you at eight</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>6</DOCNO>
+	<TITLE>title6 with some blah, regretting it now</TITLE>
+	<sms>
+		<id>6</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>INBOX</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>bang, TBBT today</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>7</DOCNO>
+	<TITLE>title7 with some blah, still more</TITLE>
+	<sms>
+		<id>7</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>SENT</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>you looks gorgeous</msg>
+	</sms>
+</DOC>
+<DOC>
+	<DOCNO>8</DOCNO>
+	<TITLE>title8 with some blah, I give up, wait, this is the last one?</TITLE>
+	<sms>
+		<id>8</id>
+		<state>1</state>
+		<address>0421715377</address>
+		<folder>DRAFT</folder>
+		<time>2000</time>
+		<ymd>20111111</ymd>
+		<msg>Jabiru rules</msg>
+	</sms>
+</DOC>
