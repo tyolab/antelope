@@ -24,12 +24,14 @@ class ANT_ANT_param_block;
 class ATIRE_API_server
 {
 private:
-	static const char * PROMPT;
+	static const char *PROMPT;
+	static const char *EMPTY_STRING;
 	static const char *new_stop_words[];
 	static const long MAX_TITLE_LENGTH = 1024;
+	static const long MAX_RESULT_LENGTH = 1024 * 1024;
 
 	/*
-	 * release memory on exit
+		release memory on exit
 	 */
 	ATIRE_API *atire;
 	ANT_ANT_param_block *params_ptr;
@@ -40,7 +42,7 @@ private:
 	ANT_stop_word *stop_word_list;
 
 	/*
-	 * the run time fields block
+	 	the run time fields block
 	 */
 	char *print_buffer, *pos;
 	ANT_stats_time *post_processing_stats;
@@ -55,17 +57,25 @@ private:
 	long length_of_longest_document;
 	unsigned long current_document_length;
 	long long docid;
+
 	char *document_buffer;
 	ANT_channel *inchannel, *outchannel;
 	char *snippet, *title;
 	ANT_snippet *snippet_generator;
 	ANT_snippet *title_generator;
 	ANT_stem *snippet_stemmer;
+
+	char *document_name;
 	#ifdef FILENAME_INDEX
-		char *document_name;
+		//char *document_name;
 	#else
 		char **answer_list;
 	#endif
+
+	/*
+		by default, we convert the result to JSON format
+	 */
+	char *formatted_result;
 
 	ANT_stats *stats;
 
@@ -73,6 +83,9 @@ private:
 	char *options_copy;
 	char **arg_list;
 	int	argc;
+
+public:
+	enum {CHANNEL_FILE, CHANNEL_SOCKET, CHANNEL_STREAM};
 
 public:
 	ATIRE_API_server();
@@ -96,8 +109,8 @@ public:
 	void poll_and_process();
 	void process_command();
 
-	/**
-	 * may need to implement a lock mechanism
+	/*
+		may need to implement a lock mechanism
 	 */
 
 	void interrup();
@@ -122,8 +135,36 @@ public:
 	int is_interrupted() const	{ return interrupted; }
 	void set_interrupted(int interrupted) {	this->interrupted = interrupted; }
 
+	/*
+		Query Commands
+	*/
+
 	int has_new_command() { return command != NULL; };
 	void insert_command(const char *cmd);
+
+	/*
+		Set the search result output channel
+	*/
+	void set_outchannel(long type);
+
+	/*
+		Search
+	*/
+	void search(const char *query);
+	void search();
+
+	const char *result_to_json();
+	long next_result();
+	void result_to_outchannel();	 
+
+	/*
+		List terms
+	 */
+	void listterms(const char *term);
+	void listterms();
+
+	long next_term();
+	void term_to_json();
 
 private:
 

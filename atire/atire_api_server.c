@@ -36,6 +36,7 @@
 #include "atire_api_server.h"
 
 const char *ATIRE_API_server::PROMPT  = "]";
+const char *ATIRE_API_server::EMPTY_STRING  = "";
 
 const char *ATIRE_API_server::new_stop_words[] =
 		{
@@ -83,6 +84,8 @@ ATIRE_API_server::ATIRE_API_server()
 #else
 	answer_list = NULL;
 #endif
+	formatted_result = new char [MAX_RESULT_LENGTH];
+
 	interrupted = 0;
 	length_of_longest_document = 0;
 	current_document_length = 0;
@@ -121,8 +124,8 @@ ATIRE_API_server::ATIRE_API_server()
 	params_rank_ptr = NULL;
 
 	stop_word_list = NULL;
-	snippet = NULL;
-	title = NULL;
+	snippet = (char *)EMPTY_STRING;
+	title = (char *)EMPTY_STRING;
 	snippet_generator = NULL;
 	title_generator = NULL;
 	snippet_stemmer = NULL;
@@ -196,6 +199,18 @@ if (options_copy)
 	delete [] options_copy;
 	options_copy = NULL;
 	}
+
+if (formatted_result)
+	{
+	delete [] formatted_result;
+	formatted_result = NULL;
+	}
+
+if (document_name)
+	{
+	delete [] document_name;
+	document_name = NULL;
+	}
 }
 
 /*
@@ -217,6 +232,10 @@ if ((finish = strstr(start, close_tag)) == NULL)
 return strnnew(start, finish - start);
 }
 
+/*
+	INIT()
+	------
+*/
 ATIRE_API *ATIRE_API_server::init()
 {
 ANT_ANT_param_block& params = *params_ptr;
@@ -296,6 +315,32 @@ else
 return atire;
 }
 
+/*
+	SET_OUTCHANNEL()
+	----------------
+*/
+void ATIRE_API_server::set_outchannel(long type)
+{
+	if (outchannel)
+		delete outchannel;
+
+	switch (type)
+		{
+		case CHANNEL_FILE:
+			outchannel = new ANT_channel_file;
+			break;
+		case CHANNEL_SOCKET:
+			outchannel = new ANT_channel_socket(params_ptr->port);
+			break;
+		default:
+			break;
+		}
+}	
+
+/*
+	START()
+	--------
+*/
 void ATIRE_API_server::start()
 {
 ANT_ANT_param_block *params = params_ptr;
@@ -409,9 +454,6 @@ ANT_ANT_param_block *params = params_ptr;
 /*
 	delete the document buffer (and the "filename" buffer).
 */
-#ifdef FILENAME_INDEX
-	delete [] document_name;
-#endif
 delete [] document_buffer;
 
 /*
@@ -542,14 +584,195 @@ if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming fr
 	printf(PROMPT);
 }
 
+/*
+	PROMPT()
+	--------
+*/
 void ATIRE_API_server::insert_command(const char *cmd)
 {
-	long len = strlen(cmd + 1);
-	command = new char[len];
-	memcpy(command, cmd, len);
-	command[len] = '\0';
+long len = strlen(cmd + 1);
+command = new char[len];
+memcpy(command, cmd, len);
+command[len] = '\0';
 }
 
+void ATIRE_API_server::result_to_outchannel()
+{
+ANT_ANT_param_block *params = params_ptr;	
+if (params->stats & ANT_ANT_param_block::SHORT)
+	outchannel->puts("<ATIREsearch>");	
+
+/*
+	Report the average precision for the query
+*/
+if ((params->assessments_filename != NULL) && ((params->stats & ANT_ANT_param_block::SHORT) != 0) && (average_precision != NULL))
+	{
+	*outchannel << "<topic>" << topic_id << "</topic>" << ANT_channel::endl;
+	*outchannel << "<evaluations>";
+	for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
+		{
+		sprintf(print_buffer, "%f", average_precision[evaluation]);
+		*outchannel << "<" << params->evaluator->evaluation_names[evaluation] << ">" << print_buffer << "</" << params->evaluator->evaluation_names[evaluation] << ">";
+		}
+	outchannel->puts("</evaluations>");
+	}
+
+if (first_to_list < last_to_list)
+	outchannel->puts("<hits>");	
+
+	while (next_result())
+		{
+		*outchannel << "<hit>";
+		*outchannel << "<rank>" << result << "</rank>";
+		*outchannel << "<id>" << docid << "</id>";
+		#ifdef FILENAME_INDEX
+			*outchannel << "<name>" << atire->get_document_filename(document_name, docid) << "</name>";
+		#else
+			*outchannel << "<name>" << answer_list[result] << "</name>";
+		#endif
+		sprintf(print_buffer, "%0.2f", relevance);
+		*outchannel << "<rsv>" << print_buffer << "</rsv>";
+		if (title != NULL && *title != '\0')
+			*outchannel << "<title>" << title << "</title>";
+		if (snippet != NULL && *snippet != '\0')
+			*outchannel << "<snippet>" << snippet << "</snippet>";
+		*outchannel << "</hit>" << ANT_channel::endl;
+		}
+
+	if (first_to_list < last_to_list)
+		outchannel->puts("</hits>");
+if (params->stats & ANT_ANT_param_block::SHORT)
+	outchannel->puts("</ATIREsearch>");
+}
+
+void ATIRE_API_server::search(const char *query)
+{
+insert_command(query);
+search();
+
+		topic_id = -1;
+		query = command;
+}
+
+void ATIRE_API_server::search()
+{
+ANT_ANT_param_block *params = params_ptr;	
+first_to_list = 0;
+last_to_list = first_to_list + params->results_list_length;
+
+topic_id = -1;
+query = command;
+
+/*
+	Do the query and compute average precision
+*/
+number_of_queries++;
+average_precision = perform_query(topic_id, outchannel, params, query, &hits);
+if (average_precision != NULL)
+	{
+	number_of_queries_evaluated++;
+	for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
+		sum_of_average_precisions[evaluation] += average_precision[evaluation];		// zero if we're using a focused metric
+	}
+
+/*
+	How many results to display on the screen.
+*/
+if (first_to_list > hits)
+	first_to_list = last_to_list = hits;
+if (first_to_list < 0)
+	first_to_list = 0;
+if (last_to_list > hits)
+	last_to_list = hits;
+if (last_to_list < first_to_list)
+	last_to_list = first_to_list;
+	
+result = first_to_list;		
+/*
+	Convert from a results list into a list of documents and then display (or write to the forum file)
+*/
+// if (params->output_forum != ANT_ANT_param_block::NONE)
+// 	atire->write_to_forum_file(topic_id);
+// else
+// 	{
+#ifndef FILENAME_INDEX
+	answer_list = atire->generate_results_list();
+#endif
+
+/*
+	We're going to generate snippets to parse the query for that purpose
+*/
+if (snippet_generator != NULL)
+	snippet_generator->parse_query(query);
+
+delete [] command;
+}
+
+/*
+	PROMPT()
+	--------
+*/
+const char *ATIRE_API_server::result_to_json()
+{
+	static const char *json_template = "{"
+					"\"rank\":%lld,"
+					"\"id\":%lld,"
+					"\"name\":\"%s\","
+					"\"rsv\":%0.2f,"
+					"\"title\":\"%s\","
+					"\"snippet\":\"%s\""
+					"}";
+	sprintf(formatted_result, json_template, result, docid, document_name, relevance, title, snippet);
+	return formatted_result;
+}
+
+long ATIRE_API_server::next_result()
+{
+if (result < last_to_list) 
+	{
+	docid = atire->get_relevant_document_details(result, &docid, &relevance);
+	if ((current_document_length = length_of_longest_document) != 0)
+		{
+		/*
+			Load the document if we need a snippet or a title
+		*/
+		if (title_generator != NULL || snippet_generator != NULL)
+			atire->get_document(document_buffer, &current_document_length, docid);
+
+		/*
+			Generate the title
+		*/
+		if (title_generator != NULL)
+			title_generator->get_snippet(title, document_buffer);
+		else
+			title = (char *)EMPTY_STRING;
+
+		/*
+			Generate the snippet
+		*/
+		if (snippet_generator != NULL)
+			snippet_generator->get_snippet(snippet, document_buffer);
+		else
+			snippet = (char *)EMPTY_STRING;
+		}	 
+
+	#ifdef FILENAME_INDEX
+		atire->get_document_filename(document_name, docid);
+	#else
+		memcpy(document_name, answer_list[result], strlen(answer_list[result]));
+	#endif
+	
+	result++;
+	return TRUE;
+	}
+
+return FALSE;
+}
+
+/*
+	PROMPT()
+	--------
+*/
 void ATIRE_API_server::process_command()
 {
 ANT_ANT_param_block *params = params_ptr;
@@ -1108,110 +1331,8 @@ else
 		query = command;
 		}
 
-	if (params->stats & ANT_ANT_param_block::SHORT)
-		outchannel->puts("<ATIREsearch>");
-	/*
-		Do the query and compute average precision
-	*/
-	number_of_queries++;
-	average_precision = perform_query(topic_id, outchannel, params, query, &hits);
-	if (average_precision != NULL)
-		{
-		number_of_queries_evaluated++;
-		for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
-			sum_of_average_precisions[evaluation] += average_precision[evaluation];		// zero if we're using a focused metric
-		}
-	/*
-		Report the average precision for the query
-	*/
-	if ((params->assessments_filename != NULL) && ((params->stats & ANT_ANT_param_block::SHORT) != 0) && (average_precision != NULL))
-		{
-		*outchannel << "<topic>" << topic_id << "</topic>" << ANT_channel::endl;
-		*outchannel << "<evaluations>";
-		for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
-			{
-			sprintf(print_buffer, "%f", average_precision[evaluation]);
-			*outchannel << "<" << params->evaluator->evaluation_names[evaluation] << ">" << print_buffer << "</" << params->evaluator->evaluation_names[evaluation] << ">";
-			}
-		outchannel->puts("</evaluations>");
-		}
-
-	/*
-		How many results to display on the screen.
-	*/
-	if (first_to_list > hits)
-		first_to_list = last_to_list = hits;
-	if (first_to_list < 0)
-		first_to_list = 0;
-	if (last_to_list > hits)
-		last_to_list = hits;
-	if (last_to_list < first_to_list)
-		last_to_list = first_to_list;
-	/*
-		Convert from a results list into a list of documents and then display (or write to the forum file)
-	*/
-	if (params->output_forum != ANT_ANT_param_block::NONE)
-		atire->write_to_forum_file(topic_id);
-	else
-		{
-		#ifndef FILENAME_INDEX
-			answer_list = atire->generate_results_list();
-		#endif
-
-		if (first_to_list < last_to_list)
-			outchannel->puts("<hits>");
-
-		/*
-			We're going to generate snippets to parse the query for that purpose
-		*/
-		if (snippet_generator != NULL)
-			snippet_generator->parse_query(query);
-		for (result = first_to_list; result < last_to_list; result++)
-			{
-			docid = atire->get_relevant_document_details(result, &docid, &relevance);
-			if ((current_document_length = length_of_longest_document) != 0)
-				{
-				/*
-					Load the document if we need a snippet or a title
-				*/
-				if (title_generator != NULL || snippet_generator != NULL)
-					atire->get_document(document_buffer, &current_document_length, docid);
-
-				/*
-					Generate the title
-				*/
-				if (title_generator != NULL)
-					title_generator->get_snippet(title, document_buffer);
-
-				/*
-					Generate the snippet
-				*/
-				if (snippet_generator != NULL)
-					snippet_generator->get_snippet(snippet, document_buffer);
-				}
-			*outchannel << "<hit>";
-			*outchannel << "<rank>" << result + 1 << "</rank>";
-			*outchannel << "<id>" << docid << "</id>";
-			#ifdef FILENAME_INDEX
-				*outchannel << "<name>" << atire->get_document_filename(document_name, docid) << "</name>";
-			#else
-				*outchannel << "<name>" << answer_list[result] << "</name>";
-			#endif
-			sprintf(print_buffer, "%0.2f", relevance);
-			*outchannel << "<rsv>" << print_buffer << "</rsv>";
-			if (title != NULL && *title != '\0')
-				*outchannel << "<title>" << title << "</title>";
-			if (snippet != NULL && *snippet != '\0')
-				*outchannel << "<snippet>" << snippet << "</snippet>";
-			*outchannel << "</hit>" << ANT_channel::endl;
-			}
-		if (first_to_list < last_to_list)
-			outchannel->puts("</hits>");
-		}
-
-	if (params->stats & ANT_ANT_param_block::SHORT)
-		outchannel->puts("</ATIREsearch>");
-	delete [] command;
+	search();
+	result_to_json();
 	}
 }
 

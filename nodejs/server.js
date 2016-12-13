@@ -15,7 +15,9 @@ var server = new atire.ATIRE_API_server();
 //server.loop();
 function respond(req, res, next) {
     // the query req.params.query
-  res.send('hello ' + req.params.query);
+    server.insert_command(req.params.query);
+    server.process_command();
+    res.send('hello ' + req.params.query);
   next();
 }
 
@@ -62,18 +64,18 @@ server.initialize();
 
 server.start();
 
-server.prompt();
-server.poll();
+// server.prompt();
+// server.poll();
 
-for (; server.has_new_command() && !server.is_interrupted(); server.prompt(), server.poll())
-	{
-	server.process_command();
+// for (; server.has_new_command() && !server.is_interrupted(); server.prompt(), server.poll())
+// 	{
+// 	server.process_command();
 
-	if (server.is_interrupted())
-		break;
-	}
+// 	if (server.is_interrupted())
+// 		break;
+// 	}
 
-finalize();
+// finalize();
 
 
 
