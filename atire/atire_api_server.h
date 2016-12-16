@@ -49,7 +49,7 @@ private:
 	char *command, *query, *ranker;
 	long topic_id, number_of_queries, number_of_queries_evaluated, evaluation;
 	long long line;
-	long long hits, result, last_to_list, first_to_list;
+	long long hits, result, last_to_list, first_to_list, search_time;;
 
 	int custom_ranking;
 	double *average_precision, *sum_of_average_precisions, *mean_average_precision;
@@ -153,7 +153,7 @@ public:
 	long search(const char *query);
 	long search();
 
-	void goto(long index);
+	void goto_result(long index);
 
 	const char *result_to_json();
 	long next_result();

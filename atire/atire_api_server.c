@@ -612,7 +612,14 @@ void ATIRE_API_server::result_to_outchannel()
 {
 ANT_ANT_param_block *params = params_ptr;	
 if (params->stats & ANT_ANT_param_block::SHORT)
-	outchannel->puts("<ATIREsearch>");	
+	outchannel->puts("<ATIREsearch>");
+
+/*
+	Report
+*/
+if (params->stats & ANT_ANT_param_block::SHORT)
+	*outchannel << "<query>" << query << "</query>" << "<numhits>" << hits << "</numhits>" << "<time>" << search_time << "</time>" << ANT_channel::endl;
+	
 
 /*
 	Report the average precision for the query
@@ -730,10 +737,10 @@ return hits;
 }
 
 /*
-	GOTO()
-	--------
+	GOTO_RESULT()
+	-------------
 */
-void ATIRE_API_server::goto(long index)
+void ATIRE_API_server::goto_result(long index)
 {
 if (index >= last_to_list) 
 	result = last_to_list;
@@ -1500,7 +1507,7 @@ if (atire)
 double *ATIRE_API_server::perform_query(long topic_id, ANT_channel *outchannel, ANT_ANT_param_block *params, char *query, long long *matching_documents)
 {
 ANT_stats_time stats;
-long long now, search_time;
+long long now;
 long valid_to_evaluate;
 double *evaluations;
 
@@ -1512,13 +1519,7 @@ if (params->query_stopping != ANT_ANT_param_block::NONE)
 */
 now = stats.start_timer();
 *matching_documents = atire->search(query, params->sort_top_k, params->query_type);
-search_time = stats.stop_timer(now);
-
-/*
-	Report
-*/
-if (params->stats & ANT_ANT_param_block::SHORT)
-	*outchannel << "<query>" << query << "</query>" << "<numhits>" << *matching_documents << "</numhits>" << "<time>" << stats.time_to_milliseconds(search_time) << "</time>" << ANT_channel::endl;
+search_time = stats.time_to_milliseconds(stats.stop_timer(now));
 
 if (params->stats & ANT_ANT_param_block::QUERY)
 	atire->stats_text_render();

@@ -16,6 +16,7 @@
   "license": "BSD",
   "readmeFilename": "README.md",
   "dependencies": {
+    "bunyan": "^1.8.5",
     "death": "^1.0.0",
     "restify": "^4.3.0",
     "restify-plugins": "^1.4.0"
