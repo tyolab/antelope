@@ -150,8 +150,10 @@ public:
 	/*
 		Search
 	*/
-	void search(const char *query);
-	void search();
+	long search(const char *query);
+	long search();
+
+	void goto(long index);
 
 	const char *result_to_json();
 	long next_result();

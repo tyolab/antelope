@@ -661,7 +661,7 @@ if (params->stats & ANT_ANT_param_block::SHORT)
 	SEARCH()
 	--------
 */
-void ATIRE_API_server::search(const char *q)
+long ATIRE_API_server::search(const char *q)
 {
 // make a copy of the query (q)
 insert_command(q);
@@ -669,14 +669,14 @@ insert_command(q);
 topic_id = -1;
 query = command;
 
-search();
+return search();
 }
 
 /*
 	SEARCH()
 	--------
 */
-void ATIRE_API_server::search()
+long ATIRE_API_server::search()
 {
 ANT_ANT_param_block *params = params_ptr;	
 first_to_list = 0;
@@ -725,6 +725,22 @@ if (snippet_generator != NULL)
 	snippet_generator->parse_query(query);
 
 delete [] command;
+
+return hits;
+}
+
+/*
+	GOTO()
+	--------
+*/
+void ATIRE_API_server::goto(long index)
+{
+if (index >= last_to_list) 
+	result = last_to_list;
+else if (index < 0)
+	result = 0;
+else
+	result = index;
 }
 
 /*

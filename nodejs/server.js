@@ -1,27 +1,66 @@
 var restify = require('restify');
+var plugins = require('restify-plugins');
 
 var onExit = require('death'); //this is intentionally ugly
 
 var atire = require('./build/Release/atire_api');
 // var atire = require('./build/Debug/atire_api');
 
+var PAGE_SIZE_DEFAULT = 20; // hard-coded page size, @todo add ajustable page size later
+var PAGE_SIZE_MAX = 50;
+
 // RESTIFY Server
-var restServer = restify.createServer();
+var restServer = restify.createServer({
+        name: 'api.tyo.com.au',
+        version: '1.0.0'    
+    }
+);
+
+restServer.use(plugins.acceptParser(restServer.acceptable));
+restServer.use(plugins.queryParser());
+restServer.use(plugins.bodyParser());
 
 // ATIRE Server
-var server = new atire.ATIRE_API_server();
+var engine = new atire.ATIRE_API_server();
 
-/* no embeded loop */
-//server.loop();
-function respond(req, res, next) {
-    // the query req.params.query
-    server.search(req.params.query);
+function searchRespondGet (req, res, next) {
+        // the query req.params.query
+    var query = req.params.query;
+
+    if (!query || query.length === 0) {
+        res.status(204);
+        next();
+        return;
+    }
+
+
+
+    res.send(results);
+    next();
+}
+
+function searchRespondPost (req, res, next) {
+
+}
+
+function search (query, pageNumber, pageSize) {
+    pageNumber = pageNumber || 1;
+    pageSize = pageSize || PAGE_SIZE_DEFAULT;
+
+    if (pageSize >= PAGE_SIZE_MAX) 
+        pageSize = PAGE_SIZE_MAX;
+
+    var hits = engine.search(query);
+
+    if (pageNumber > 1) 
+        engine.goto((pageNumber - 1) * pageSize);
+
     // server.result_to_outchannel();
     var results = {};
-    results.results = [];
-    var ret = server.next_result();
+    results.list = [];
+    var ret = engine.next_result();
     while (ret) {
-        var hit = server.result_to_json();
+        var hit = engine.result_to_json();
 
         try {
             var obj = JSON.parse(hit);
@@ -30,10 +69,13 @@ function respond(req, res, next) {
         catch (err) {
             console.error(err);
         }
-        ret = server.next_result();
+        ret = engine.next_result();
     }
-    res.send(results);
-  next();
+}
+
+function getdoc(req, res, next) {
+
+    next();
 }
 
 /**
@@ -41,7 +83,7 @@ function respond(req, res, next) {
  */
 
 function version () {
-	console.log(server.version());
+	console.log(engine.version());
 }
 
 /**
@@ -57,13 +99,14 @@ function isEmpty(str) {
  */
 function finalize () {
     // clean up resources
-    server.finish();
+    engine.finish();
 
 	process.stdin.destroy();
 	process.exit(0);
 }
 
 onExit(() => {
+    console.log("Exception / Signal caught, existing...");
     finalize();
 });
 
@@ -71,7 +114,10 @@ onExit(() => {
  * The main code now 
  */
 // RESTIFY SERVER
-restServer.get('/search/:query', respond);
+restServer.get('/search/:query', searchRespondGet);
+restServer.post('/search', searchRespondPost);
+restServer.get('/doc/:id', getDocRespondGet);
+
 restServer.listen(8080, function() {
   console.log('%s listening at %s', restServer.name, restServer.url);
 });
@@ -83,11 +129,11 @@ if (process.argv.length > 2) {
     options += "+-findex+" + process.argv[2];
 }
 
-server.set_params(options);
+engine.set_params(options);
 
-server.initialize();
+engine.initialize();
 
-server.start();
+engine.start();
 
 // server.prompt();
 // server.poll();
