@@ -6,7 +6,6 @@ var logger = require('bunyan').createLogger({name: "api.tyo.com.au"});
 var onExit = require('death'); //this is intentionally ugly
 
 var atire = require('./build/Release/atire_api');
-// var atire = require('./build/Debug/atire_api');
 
 // RESTIFY Server
 var server = restify.createServer({
@@ -33,35 +32,40 @@ function searchRespondPost (req, res, next) {
 }
 
 function searchRespond (req, res, next) {
-    var query = req.params.query;
-    var index = parseInt(req.params.index);
-    var size = parseInt(req.params.size);
+    var query = req.params.query || req.query;
+    var q = query.q;
+    var page = parseInt(query.page || 1);
+    var size = parseInt(query.pagesize || 20);
 
     if (size < 1 || size > 50)
         size = 50;
 
-    if (!query || query.length === 0) {
+    if (!q || q.length === 0) {
         res.status(204);
         next();
         return;
     }
 
-    var results = search(query, index);
+    var results = search(q, page, size);
 
     res.send(results);
     next();
 }
 
-function search (query, index, size) {
-    var hits = engine.search(query);
-    index = index || 0;
+function search (query, page, size) {
+    page = page || 1;
     size = size || 20;
+
+    if (page < 1) page = 1;
+    var index = (page - 1) * size;
+
+    var hits = engine.search(query);
 
     if (index > 0) 
         engine.goto_result(index);
 
     // server.result_to_outchannel();
-    var results = {total:hits};
+    var results = {pagetotal: hits, page: page, size: size};
     results.list = [];
     var ret = engine.next_result();
     var count = 0;
@@ -125,7 +129,8 @@ onExit(() => {
  * The main code now 
  */
 // RESTIFY SERVER
-server.get('/search/:query/:index/:size', searchRespondGet);
+//server.get('/search/:q/:page/:pagesize', searchRespondGet);
+server.get('/search', searchRespondGet);
 server.post('/search', searchRespondPost);
 server.get('/doc/:id', getdoc);
 
