@@ -60,7 +60,7 @@ public:
 	void init(ANT_indexer_param_block& param_block);
 	long finish();
 
-	void index_document(ANT_directory_iterator_object *current_file, long long *doc = 0x0, char *doc_to_store = 0x0);
+	long long index_document(ANT_directory_iterator_object *current_file, char *doc_to_store = 0x0);
 	void index_document(char *file_name, char *file, char *doc_to_store = 0x0);
 
 	ANT_memory_index *get_index() { return index; }

@@ -1712,6 +1712,15 @@ int SWIG_AsVal_int (v8::Handle<v8::Value> valRef, int* val)
 }
 
 
+#ifdef SWIG_LONG_LONG_AVAILABLE
+SWIGINTERNINLINE
+v8::Handle<v8::Value> SWIG_From_long_SS_long  (long long value)
+{
+  return SWIGV8_NUMBER_NEW(value);
+}
+#endif
+
+
 SWIGINTERNINLINE
 v8::Handle<v8::Value>
 SWIG_From_bool  (bool value)
@@ -3923,17 +3932,15 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_0(const SwigV8
   v8::Handle<v8::Value> jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   ANT_directory_iterator_object *arg2 = (ANT_directory_iterator_object *) 0 ;
-  long long *arg3 = (long long *) 0 ;
-  char *arg4 = (char *) 0 ;
+  char *arg3 = (char *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   void *argp2 = 0 ;
   int res2 = 0 ;
-  void *argp3 = 0 ;
-  int res3 = 0 ;
-  int res4 ;
-  char *buf4 = 0 ;
-  int alloc4 = 0 ;
+  int res3 ;
+  char *buf3 = 0 ;
+  int alloc3 = 0 ;
+  long long result;
   
   res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
@@ -3945,22 +3952,16 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_0(const SwigV8
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "ANT_directory_iterator_object *""'"); 
   }
   arg2 = (ANT_directory_iterator_object *)(argp2);
-  res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_long_long, 0 |  0 );
+  res3 = SWIG_AsCharPtrAndSize(args[1], &buf3, NULL, &alloc3);
   if (!SWIG_IsOK(res3)) {
-    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "long long *""'"); 
+    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "char *""'");
   }
-  arg3 = (long long *)(argp3);
-  res4 = SWIG_AsCharPtrAndSize(args[2], &buf4, NULL, &alloc4);
-  if (!SWIG_IsOK(res4)) {
-    SWIG_exception_fail(SWIG_ArgError(res4), "in method '" "ATIRE_indexer_index_document" "', argument " "4"" of type '" "char *""'");
-  }
-  arg4 = (char *)(buf4);
-  (arg1)->index_document(arg2,arg3,arg4);
-  jsresult = SWIGV8_UNDEFINED();
+  arg3 = (char *)(buf3);
+  result = (long long)(arg1)->index_document(arg2,arg3);
+  jsresult = SWIG_From_long_SS_long((long long)(result));
   
   
-  
-  if (alloc4 == SWIG_NEWOBJ) delete[] buf4;
+  if (alloc3 == SWIG_NEWOBJ) delete[] buf3;
   
   SWIGV8_RETURN(jsresult);
   
@@ -3977,13 +3978,11 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_1(const SwigV8
   v8::Handle<v8::Value> jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   ANT_directory_iterator_object *arg2 = (ANT_directory_iterator_object *) 0 ;
-  long long *arg3 = (long long *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   void *argp2 = 0 ;
   int res2 = 0 ;
-  void *argp3 = 0 ;
-  int res3 = 0 ;
+  long long result;
   
   res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
@@ -3995,14 +3994,8 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_1(const SwigV8
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "ANT_directory_iterator_object *""'"); 
   }
   arg2 = (ANT_directory_iterator_object *)(argp2);
-  res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_long_long, 0 |  0 );
-  if (!SWIG_IsOK(res3)) {
-    SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "long long *""'"); 
-  }
-  arg3 = (long long *)(argp3);
-  (arg1)->index_document(arg2,arg3);
-  jsresult = SWIGV8_UNDEFINED();
-  
+  result = (long long)(arg1)->index_document(arg2);
+  jsresult = SWIG_From_long_SS_long((long long)(result));
   
   
   
@@ -4015,41 +4008,6 @@ fail:
 
 
 static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_2(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  v8::Handle<v8::Value> jsresult;
-  ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
-  ANT_directory_iterator_object *arg2 = (ANT_directory_iterator_object *) 0 ;
-  void *argp1 = 0 ;
-  int res1 = 0 ;
-  void *argp2 = 0 ;
-  int res2 = 0 ;
-  
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
-  if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index_document" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
-  }
-  arg1 = (ATIRE_indexer *)(argp1);
-  res2 = SWIG_ConvertPtr(args[0], &argp2,SWIGTYPE_p_ANT_directory_iterator_object, 0 |  0 );
-  if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "ANT_directory_iterator_object *""'"); 
-  }
-  arg2 = (ANT_directory_iterator_object *)(argp2);
-  (arg1)->index_document(arg2);
-  jsresult = SWIGV8_UNDEFINED();
-  
-  
-  
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
-}
-
-
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_3(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
 {
   SWIGV8_HANDLESCOPE();
   
@@ -4105,7 +4063,7 @@ fail:
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_4(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
+static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_3(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
 {
   SWIGV8_HANDLESCOPE();
   
@@ -4158,7 +4116,7 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(
   OverloadErrorHandler errorHandler;
   
   
-  if(args.Length() == 3) {
+  if(args.Length() == 2) {
     errorHandler.err.Clear();
 #if (V8_MAJOR_VERSION-0) < 4 && (SWIG_V8_VERSION < 0x031903)
     jsresult = _wrap_ATIRE_indexer_index_document__SWIG_0(args, errorHandler);
@@ -4174,7 +4132,7 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(
   }
   
   
-  if(args.Length() == 2) {
+  if(args.Length() == 1) {
     errorHandler.err.Clear();
 #if (V8_MAJOR_VERSION-0) < 4 && (SWIG_V8_VERSION < 0x031903)
     jsresult = _wrap_ATIRE_indexer_index_document__SWIG_1(args, errorHandler);
@@ -4190,7 +4148,7 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(
   }
   
   
-  if(args.Length() == 1) {
+  if(args.Length() == 3) {
     errorHandler.err.Clear();
 #if (V8_MAJOR_VERSION-0) < 4 && (SWIG_V8_VERSION < 0x031903)
     jsresult = _wrap_ATIRE_indexer_index_document__SWIG_2(args, errorHandler);
@@ -4206,7 +4164,7 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(
   }
   
   
-  if(args.Length() == 3) {
+  if(args.Length() == 2) {
     errorHandler.err.Clear();
 #if (V8_MAJOR_VERSION-0) < 4 && (SWIG_V8_VERSION < 0x031903)
     jsresult = _wrap_ATIRE_indexer_index_document__SWIG_3(args, errorHandler);
@@ -4215,22 +4173,6 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(
     }
 #else
     _wrap_ATIRE_indexer_index_document__SWIG_3(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-#endif
-  }
-  
-  
-  if(args.Length() == 2) {
-    errorHandler.err.Clear();
-#if (V8_MAJOR_VERSION-0) < 4 && (SWIG_V8_VERSION < 0x031903)
-    jsresult = _wrap_ATIRE_indexer_index_document__SWIG_4(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      SWIGV8_ESCAPE(jsresult);
-    }
-#else
-    _wrap_ATIRE_indexer_index_document__SWIG_4(args, errorHandler);
     if(errorHandler.err.IsEmpty()) {
       return;
     }

@@ -234,7 +234,7 @@ if (param_block.num_pregen_fields)
 	}
 }
 
-void ATIRE_indexer::index_document(ANT_directory_iterator_object *current_file, long long *doc, char *doc_to_store)
+long long ATIRE_indexer::index_document(ANT_directory_iterator_object *current_file, char *doc_to_store)
 {
 long terms_in_document;
 long skip_document = 0;
@@ -321,9 +321,7 @@ if (!skip_document)
 	id_list.puts(strip_space_inplace(filename));
 #endif
 	}
-
-if (doc)
-	(*doc) = docno;
+return docno;
 }
 
 void ATIRE_indexer::index_document(char *file_name, char *file, char *doc_to_store)
@@ -333,7 +331,7 @@ current_file.file = file;
 current_file.filename = file_name;
 current_file.length = strlen(file);
 
-index_document(&current_file, NULL, doc_to_store);
+index_document(&current_file, doc_to_store);
 }
 
 long ATIRE_indexer::finish()

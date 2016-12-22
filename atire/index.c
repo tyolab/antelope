@@ -422,7 +422,7 @@ for (param = first_param; param < argc; param++)
 			now = stats.start_timer();
 			//printf("INDEX:%s\n", current_file->filename);
 
-			indexer.index_document(current_file, &doc);
+			doc = indexer.index_document(current_file);
 			stats.add_indexing_time(stats.stop_timer(now));
 
 			/*
@@ -449,7 +449,7 @@ for (param = first_param; param < argc; param++)
 
 				current_file->file = (char *)ATIRE_indexer::EMPTY_DOCUMENT_CONTENT;
 				current_file->filename = (char *)ATIRE_indexer::EMPTY_DOCUMENT_FILENAME;
-				indexer.index_document(current_file, &doc);
+				doc = indexer.index_document(current_file);
 			}
 #endif
 
