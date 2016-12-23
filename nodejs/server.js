@@ -71,15 +71,28 @@ function search (query, page, size) {
     var count = 0;
     while (ret && count < size) {
         var hit = engine.result_to_json();
-
+        var doc = engine.load_document();
+        var obj;
         try {
-            var obj = JSON.parse(hit);
-            results.list.push(obj);
+            obj = JSON.parse(hit);
         }
         catch (err) {
+            obj = {};
             logger.error(err);
         }
+
+        if (doc) 
+            try {
+                obj.data = JSON.parse(doc);
+            }
+            catch (err) {
+                logger.error(err);
+            }
+
+        results.list.push(obj);
+
         ret = engine.next_result();
+
         ++count;
     }
 

@@ -774,6 +774,8 @@ const char *ATIRE_API_server::result_to_json()
 */
 long ATIRE_API_server::next_result()
 {
+*document_buffer = '\0';
+
 if (result < last_to_list) 
 	{
 	docid = atire->get_relevant_document_details(result, &docid, &relevance);
@@ -783,7 +785,7 @@ if (result < last_to_list)
 			Load the document if we need a snippet or a title
 		*/
 		if (title_generator != NULL || snippet_generator != NULL)
-			atire->get_document(document_buffer, &current_document_length, docid);
+			load_document();
 
 		/*
 			Generate the title
@@ -813,6 +815,16 @@ if (result < last_to_list)
 	}
 
 return FALSE;
+}
+
+/*
+	LOAd_DOCUMENT()
+	---------------
+*/
+const char *ATIRE_API_server::load_document()
+{
+atire->get_document(document_buffer, &current_document_length, docid);
+return document_buffer;
 }
 
 /*

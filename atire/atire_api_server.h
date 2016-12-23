@@ -157,7 +157,10 @@ public:
 
 	const char *result_to_json();
 	long next_result();
-	void result_to_outchannel();	 
+	void result_to_outchannel();
+
+	const char *load_document();
+	const char *get_current_document() { return document_buffer; }
 
 	/*
 		List terms

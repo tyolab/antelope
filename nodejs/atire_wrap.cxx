@@ -3392,6 +3392,62 @@ fail:
 }
 
 
+static SwigV8ReturnValue _wrap_ATIRE_API_server_load_document(const SwigV8Arguments &args) {
+  SWIGV8_HANDLESCOPE();
+  
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  char *result = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_load_document.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_load_document" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (char *)(arg1)->load_document();
+  jsresult = SWIG_FromCharPtr((const char *)result);
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+}
+
+
+static SwigV8ReturnValue _wrap_ATIRE_API_server_get_current_document(const SwigV8Arguments &args) {
+  SWIGV8_HANDLESCOPE();
+  
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  char *result = 0 ;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_current_document.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_current_document" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (char *)(arg1)->get_current_document();
+  jsresult = SWIG_FromCharPtr((const char *)result);
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+}
+
+
 static SwigV8ReturnValue _wrap_ATIRE_API_server_listterms__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
 {
   SWIGV8_HANDLESCOPE();
@@ -4715,6 +4771,8 @@ SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "goto_result", _wrap_A
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "result_to_json", _wrap_ATIRE_API_server_result_to_json);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "next_result", _wrap_ATIRE_API_server_next_result);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "result_to_outchannel", _wrap_ATIRE_API_server_result_to_outchannel);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "load_document", _wrap_ATIRE_API_server_load_document);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_current_document", _wrap_ATIRE_API_server_get_current_document);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "listterms", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_listterms);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "next_term", _wrap_ATIRE_API_server_next_term);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "term_to_json", _wrap_ATIRE_API_server_term_to_json);

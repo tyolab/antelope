@@ -26,7 +26,7 @@
 	#include <limits.h>
 #endif
 
-const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = "<ERROR>EMPTYDOCUMENT</ERROR>"; // [30]; //
+const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = "<error>EMPTYDOCUMENT</error>"; // [30]; //
 const char *ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = "EMPTY DOCUMEN TTITLE"; // [30]; //
 
 const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT); // 28; //
@@ -271,8 +271,11 @@ if (terms_in_document == 0)
 	 */
 	length = EMPTY_DOUCMENT_LENGTH;
 	filename = (char *)EMPTY_DOCUMENT_FILENAME;
-	file = (char *)EMPTY_DOCUMENT_CONTENT;
+	file = new char[length + 1];
+	strncpy(file, EMPTY_DOCUMENT_CONTENT, length);
+	file[length] = '\0';
 	terms_in_document = document_indexer->index_document(index, stemmer, segmentation, readability, docno, file);
+	delete file;
 #endif
 	}
 
