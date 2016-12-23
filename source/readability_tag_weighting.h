@@ -40,6 +40,8 @@ private:
 	long should_segment;  // for keeping the old segment information
 	char **special_tags;
 	long has_title_tag;
+	char *title_start;
+	char *title_end;
 
 private:
 	void clean_up();

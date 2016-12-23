@@ -17,7 +17,7 @@
 #endif
 
 /*
- * to add special term into vocab, it can't contain upper case letter, because it is for tag
+  to add special term into vocab, it can't contain upper case letter, because it is for tag
  */
 char *ANT_readability_TAG_WEIGHTING::special_tags_general[] = {"CATEGORY", "TITLE"};
 
@@ -38,6 +38,8 @@ term_count = 0;
 tag_processing_on = FALSE;
 terms = new char*[MAX_TERM_COUNT + 1];
 has_title_tag = FALSE;
+title_start = NULL;
+title_end = NULL;
 
 int tag_count = sizeof(special_tags_general)/sizeof(special_tags_general[0]);
 
@@ -83,12 +85,15 @@ buffer[0] = '\0';
 if (term_count > 0)
 	{
 	for (int i = 0; i < term_count; ++i)
-			delete terms[i];
+		delete terms[i];
 	term_count = 0;
 	}
 tag_processing_on = FALSE;
 where = -1;
-matching_tag = NULL;
+/*
+ don't do this, because matching_tag is the address of special tag, it might cause the special tag error later
+ matching_tag = NULL;
+ */
 }
 
 /*
@@ -126,6 +131,11 @@ if (tag_open)
 			parser->set_segment_info(ANT_parser::NOSEGMENTATION);
 			break;
 			}
+	if (tag_processing_on && strcmp(matching_tag, "TITLE") == 0) 
+		{
+		title_start = tag->start + 6; // "TITLE>..."
+		title_end = NULL;
+		}
 	}
 else
 	{
@@ -157,6 +167,9 @@ else
 			 */
 			if (/*NULL != matching_tag && */strcmp(matching_tag, "TITLE") == 0)
 				{
+				// closing TITLE tag
+				title_end = tag->start - 2; // "</TITLE
+
 				has_title_tag = TRUE;
 				what.start = buffer;
 
@@ -172,11 +185,11 @@ else
 					//	if (prefix_char == 'T' && i == 0)
 					//		continue;
 						/*
-						 * first term
+						  first term
 						 */
 						add_term(indexer, i, what, &start, doc);
 						/*
-						 * just simply ignore all the spaces
+						  just simply ignore all the spaces
 						 */
 		//				if (!is_first_term_punct && !is_cjk_language(terms[i-1]) && !ANT_ispunct(terms[i-1][0]) && !utf8_ispuntuation(terms[i-1])) // we need to restore the title, so only put spaces between characters that are not puntuations
 		//					{
@@ -184,7 +197,7 @@ else
 		//					what.string_length++;
 		//					}
 						/*
-						 * second term
+						  second term
 						 */
 						if (++i < term_count)
 							add_term(indexer, i, what, &start, doc);
@@ -312,43 +325,48 @@ if (has_title_tag)
 	what.string_length = 3;
 
 	/*
-	 * TODO
-	 *
-	 * this is assuming the filename fed in the title string
-	 * we might need a better a way to get the title
+	  TODO
+	 
+	  this is assuming the filename fed in the title string
+	  we might need a better a way to get the title
+
+	  current_file->filename
 	 */
-	std::string title(current_file->filename);
-	unscape_xml(title);
-
-	length = title.length();
-
-	memcpy(info_buf_start, title.c_str(), length);
-	what.string_length += length;
-	*(info_buf_start + length) = '\0';
-
-	size_t normalized_string_length = 0;
-	strcpy(what.normalized_buf, "tf:");
-	start = what.normalized_buf + 3;
-
-	int result = ANT_UNICODE_normalize_string_tolowercase(start, MAX_TERM_LENGTH, &normalized_string_length, (char *)title.c_str());
-
-	if (result)
+	if (title_start && title_end)
 		{
-		what.normalized.string_length = normalized_string_length + 3;
+		std::string title(title_start, title_end - title_start);
+		unscape_xml(title);
 
-		indexer->add_term(&what.normalized, doc, 99); // avoid being culled of optimization
+		length = title.length();
 
-		}
-	else
-		{
-		*what.normalized_buf = '\0';
-		what.normalized.string_length = 0;
+		memcpy(info_buf_start, title.c_str(), length);
+		what.string_length += length;
+		*(info_buf_start + length) = '\0';
+
+		size_t normalized_string_length = 0;
+		strcpy(what.normalized_buf, "tf:");
+		start = what.normalized_buf + 3;
+
+		int result = ANT_UNICODE_normalize_string_tolowercase(start, MAX_TERM_LENGTH, &normalized_string_length, (char *)title.c_str());
+
+		if (result)
+			{
+			what.normalized.string_length = normalized_string_length + 3;
+
+			indexer->add_term(&what.normalized, doc, 99); // avoid being culled of optimization
+
+			}
+		else
+			{
+			*what.normalized_buf = '\0';
+			what.normalized.string_length = 0;
 
 
-		while (*info_buf_start != '\0')
-			info_buf_start = utf8_tolower(info_buf_start);
+			while (*info_buf_start != '\0')
+				info_buf_start = utf8_tolower(info_buf_start);
 
-		indexer->add_term(&what, doc, 99); // avoid being culled of optimization
+			indexer->add_term(&what, doc, 99); // avoid being culled of optimization
+			}
 		}
 	}
 
