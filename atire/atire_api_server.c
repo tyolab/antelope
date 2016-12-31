@@ -608,8 +608,26 @@ command[len] = '\0';
 	RESULT_TO_OUTCHANNEL()
 	----------------------
 */
-void ATIRE_API_server::result_to_outchannel()
+void ATIRE_API_server::result_to_outchannel(long last_to)
 {
+	
+if (last_to <= 0) 
+	last_to_list = first_to_list + params_ptr->results_list_length;	
+else
+	last_to_list = last_to;		
+
+/*
+	How many results to display on the screen.
+*/
+if (first_to_list > hits)
+	first_to_list = last_to_list = hits;
+if (first_to_list < 0)
+	first_to_list = 0;
+if (last_to_list > hits)
+	last_to_list = hits;
+if (last_to_list < first_to_list)
+	last_to_list = first_to_list;
+
 ANT_ANT_param_block *params = params_ptr;	
 if (params->stats & ANT_ANT_param_block::SHORT)
 	outchannel->puts("<ATIREsearch>");
@@ -687,7 +705,6 @@ long ATIRE_API_server::search()
 {
 ANT_ANT_param_block *params = params_ptr;	
 first_to_list = 0;
-last_to_list = first_to_list + params->results_list_length;
 
 /*
 	Do the query and compute average precision
@@ -700,20 +717,9 @@ if (average_precision != NULL)
 	for (evaluation = 0; evaluation < params->evaluator->number_evaluations_used; evaluation++)
 		sum_of_average_precisions[evaluation] += average_precision[evaluation];		// zero if we're using a focused metric
 	}
-
-/*
-	How many results to display on the screen.
-*/
-if (first_to_list > hits)
-	first_to_list = last_to_list = hits;
-if (first_to_list < 0)
-	first_to_list = 0;
-if (last_to_list > hits)
-	last_to_list = hits;
-if (last_to_list < first_to_list)
-	last_to_list = first_to_list;
 	
-result = first_to_list;		
+result = first_to_list;
+last_to_list = hits;
 /*
 	Convert from a results list into a list of documents and then display (or write to the forum file)
 */

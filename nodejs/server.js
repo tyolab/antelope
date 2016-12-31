@@ -21,15 +21,27 @@ server.use(plugins.bodyParser());
 // ATIRE Server
 var engine = new atire.ATIRE_API_server();
 
+/**
+ * 
+ */
+
 function searchRespondGet (req, res, next) {
     // the query req.params.query
     searchRespond(req, res, next);
 }
 
+/**
+ * 
+ */
+
 function searchRespondPost (req, res, next) {
     // request = {query: , index, size: }
     searchRespond(req, res, next);
 }
+
+/**
+ * 
+ */
 
 function searchRespond (req, res, next) {
     var query = req.params.query || req.query;
@@ -52,6 +64,10 @@ function searchRespond (req, res, next) {
     next();
 }
 
+/**
+ * 
+ */
+
 function search (query, page, size) {
     page = page || 1;
     size = size || 20;
@@ -67,6 +83,7 @@ function search (query, page, size) {
     // server.result_to_outchannel();
     var results = {total: hits, page: page, size: size};
     results.list = [];
+    
     var ret = engine.next_result();
     var count = 0;
     while (ret && count < size) {
@@ -99,11 +116,6 @@ function search (query, page, size) {
     logger.info({query: query, index: index, page_size: size, hits: hits, size: results.list.length});
 
     return results;
-}
-
-function getdoc(req, res, next) {
-
-    next();
 }
 
 /**
@@ -145,7 +157,7 @@ onExit(() => {
 //server.get('/search/:q/:page/:pagesize', searchRespondGet);
 server.get('/search', searchRespondGet);
 server.post('/search', searchRespondPost);
-server.get('/doc/:id', getdoc);
+//server.get('/doc/:id', getdoc);
 
 server.listen(8080, function() {
   logger.info('%s listening at %s', server.name, server.url);
