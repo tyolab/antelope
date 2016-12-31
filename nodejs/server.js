@@ -65,7 +65,7 @@ function search (query, page, size) {
         engine.goto_result(index);
 
     // server.result_to_outchannel();
-    var results = {pagetotal: hits, page: page, size: size};
+    var results = {total: hits, page: page, size: size};
     results.list = [];
     var ret = engine.next_result();
     var count = 0;
