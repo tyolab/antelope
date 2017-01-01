@@ -127,6 +127,7 @@ public:
 	void end_stats();
 
 	ANT_stats *get_stats();
+	long long get_search_time() { return search_time; }
 
 	char *version();
 

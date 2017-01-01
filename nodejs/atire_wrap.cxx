@@ -2942,6 +2942,34 @@ fail:
 }
 
 
+static SwigV8ReturnValue _wrap_ATIRE_API_server_get_search_time(const SwigV8Arguments &args) {
+  SWIGV8_HANDLESCOPE();
+  
+  v8::Handle<v8::Value> jsresult;
+  ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
+  void *argp1 = 0 ;
+  int res1 = 0 ;
+  long long result;
+  
+  if(args.Length() != 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_search_time.");
+  
+  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  if (!SWIG_IsOK(res1)) {
+    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_search_time" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
+  }
+  arg1 = (ATIRE_API_server *)(argp1);
+  result = (long long)(arg1)->get_search_time();
+  jsresult = SWIG_From_long_SS_long((long long)(result));
+  
+  
+  SWIGV8_RETURN(jsresult);
+  
+  goto fail;
+fail:
+  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+}
+
+
 static SwigV8ReturnValue _wrap_ATIRE_API_server_version(const SwigV8Arguments &args) {
   SWIGV8_HANDLESCOPE();
   
@@ -4840,6 +4868,7 @@ SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "ant", _wrap_ATIRE_API
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "start_stats", _wrap_ATIRE_API_server_start_stats);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "end_stats", _wrap_ATIRE_API_server_end_stats);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_stats", _wrap_ATIRE_API_server_get_stats);
+SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_search_time", _wrap_ATIRE_API_server_get_search_time);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "version", _wrap_ATIRE_API_server_version);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "prompt", _wrap_ATIRE_API_server_prompt);
 SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "is_interrupted", _wrap_ATIRE_API_server_is_interrupted);
