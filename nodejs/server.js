@@ -48,6 +48,7 @@ function searchRespond (req, res, next) {
     var q = query.q;
     var page = parseInt(query.page || 1);
     var size = parseInt(query.pagesize || 20);
+    var needdata = !query.nodata;
 
     if (size < 1 || size > 50)
         size = 50;
@@ -68,7 +69,7 @@ function searchRespond (req, res, next) {
  * 
  */
 
-function search (query, page, size) {
+function search (query, page, size, needdata) {
     page = page || 1;
     size = size || 20;
 
@@ -81,36 +82,38 @@ function search (query, page, size) {
         engine.goto_result(index);
 
     // server.result_to_outchannel();
-    var results = {total: hits, page: page, size: size};
+    var results = {total: hits, page: page, size: size, time: engine.get_search_time()};
     results.list = [];
     
-    var ret = engine.next_result();
-    var count = 0;
-    while (ret && count < size) {
-        var hit = engine.result_to_json();
-        var doc = engine.load_document();
-        var obj;
-        try {
-            obj = JSON.parse(hit);
-        }
-        catch (err) {
-            obj = {};
-            logger.error(err);
-        }
-
-        if (doc) 
+    if (needdata) {
+        var ret = engine.next_result();
+        var count = 0;
+        while (ret && count < size) {
+            var hit = engine.result_to_json();
+            var doc = engine.load_document();
+            var obj;
             try {
-                obj.data = JSON.parse(doc);
+                obj = JSON.parse(hit);
             }
             catch (err) {
+                obj = {};
                 logger.error(err);
             }
 
-        results.list.push(obj);
+            if (doc) 
+                try {
+                    obj.data = JSON.parse(doc);
+                }
+                catch (err) {
+                    logger.error(err);
+                }
 
-        ret = engine.next_result();
+            results.list.push(obj);
 
-        ++count;
+            ret = engine.next_result();
+
+            ++count;
+        }
     }
 
     logger.info({query: query, index: index, page_size: size, hits: hits, size: results.list.length});
