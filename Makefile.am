@@ -19,8 +19,9 @@ TESTS_DIR = tests
 ###############################################################################
 # ldd -d xxxx.so might produce undefined symbol: __cxa_pure_virtual errors.
 # so add linking options as follows
+#  -Wl,--gc-sections 
 ###############################################################################
-AM_LDFLAGS = -Wl,--gc-sections -fPIC -shared -lstdc++ @LIBS@
+AM_LDFLAGS =-fPIC -shared -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
 MINUS_D = -DHASHER=1 -DHEADER_NUM=1 
