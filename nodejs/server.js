@@ -59,7 +59,7 @@ function searchRespond (req, res, next) {
         return;
     }
 
-    var results = search(q, page, size);
+    var results = search(q, page, size, needdata);
 
     res.send(results);
     next();
