@@ -1,5 +1,5 @@
 /*
-	ATIRE_API_REMOTE.C
+	ATIRE_API_SERVER.C
 	------------------
 	Created on: 30 Nov 2015
     Author: Eric Tang (eric.tang@tyo.com.au)

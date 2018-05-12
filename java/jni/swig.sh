@@ -1,18 +1,20 @@
 #!/bin/bash
 
 
-swig -java -c++ -package org.atire.swig atire.swig
+swig -java -c++ -package au.com.tyo.antelope.jni antelope.swig
 
-if ! [ -e "src/org/atire/swig/" ]
+java_src=src/au/com/tyo/antelope/jni
+
+if ! [ -e "$java_src" ]
 then
-	mkdir -p src/org/atire/swig/
+	mkdir -p $java_src
 fi
 
-\rm -f src/org/atire/swig/*
-mv *.java src/org/atire/swig/
+\rm -f src/au/com/tyo/antelope/jni/*
+mv *.java $java_src/
 
 for i in `ls *.cxx`
 do
 	name=`echo $i | cut -f 1 -d "."`
-	cp $i $name.c
+	ln -sf $i $name.c
 done

@@ -166,11 +166,10 @@ public:
 	/*
 		List terms
 	 */
+	/* Not in use
 	void listterms(const char *term);
-	void listterms();
-
 	long next_term();
-	void term_to_json();
+	*/
 
 private:
 

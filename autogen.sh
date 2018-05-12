@@ -11,4 +11,4 @@ case `uname` in
         ;; 
 esac
 
-aclocal && $libtool --copy && automake --add-missing --force && autoconf
+aclocal && $libtool --copy && automake --add-missing --copy --force-missing && autoconf
