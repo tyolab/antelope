@@ -1,4 +1,4 @@
 APP_OPTIM := release
 APP_CFLAGS := 
 
-APP_ABI := all
+APP_ABI := armeabi-v7a arm64-v8a x86

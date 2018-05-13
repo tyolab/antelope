@@ -249,9 +249,9 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/unicode_tables.c \
 	$(SRC_DIR)/version.c 
 
-OTHER_SOURCES := glob.c atire_helper.c
+OTHER_SOURCES := glob.c antelope_helper.c
 
-LOCAL_MODULE    := search4m_android
+LOCAL_MODULE    := antelope
 
 LOCAL_SRC_FILES := $(OTHER_SOURCES) \
 				$(CORE_SOURCES) 
@@ -278,6 +278,7 @@ LOCAL_CPP_EXTENSION := .c
 API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
 			$(ATIRE_DIR)/antelope.c \
 			$(ATIRE_DIR)/atire_api.c \
+			$(ATIRE_DIR)/atire_api_server.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			
 INDEX_SOURCES =	$(ATIRE_DIR)/index.c \
@@ -288,15 +289,15 @@ INDEX_SOURCES =	$(ATIRE_DIR)/index.c \
 			 $(ATIRE_DIR)/indexer_param_block_pregen.c \
 			 $(ATIRE_DIR)/indexer_param_block_stem.c
 			 
-JNI_SOURCES = ./atire_wrap.c
+JNI_SOURCES = ./antelope_wrap.c
 
-LOCAL_MODULE    := search4m_android_jni
+LOCAL_MODULE    := antelope_jni
 LOCAL_SRC_FILES := \
 			$(JNI_SOURCES) \
 			$(API_SOURCES) \
 			$(INDEX_SOURCES)
 			
-LOCAL_STATIC_LIBRARIES := search4m_android
+LOCAL_STATIC_LIBRARIES := antelope
 
 LOCAL_LDLIBS += -llog -lz
 
@@ -313,11 +314,11 @@ include $(CLEAR_VARS)
 
 LOCAL_CPP_EXTENSION := .c
 
-LOCAL_MODULE := s4m
-LOCAL_SRC_FILES := main.c
+LOCAL_MODULE := al
+LOCAL_SRC_FILES := $(ATIRE_DIR)/antelope.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz
-LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_SHARED_LIBRARIES += antelope_jni
 LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
 
 include $(BUILD_EXECUTABLE) 
@@ -326,11 +327,11 @@ include $(CLEAR_VARS)
 
 LOCAL_CPP_EXTENSION := .c
 
-LOCAL_MODULE := s4m-dict
+LOCAL_MODULE := al-dict
 LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz
-LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_SHARED_LIBRARIES += antelope_jni
 LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
 
 include $(BUILD_EXECUTABLE)  
@@ -343,7 +344,7 @@ LOCAL_MODULE := index
 LOCAL_SRC_FILES := index.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz
-LOCAL_SHARED_LIBRARIES += search4m_android_jni
+LOCAL_SHARED_LIBRARIES += antelope_jni
 LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
 
 include $(BUILD_EXECUTABLE)  

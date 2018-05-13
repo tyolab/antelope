@@ -30,8 +30,10 @@
 using namespace std;
 
 #if (defined(ANDROID) || defined(__ANDROID__))
-	#include <hash_map>
-	#define ATIRE_KROVETZ_HAS_HASH_MAP
+// 	#include <hash_map>
+//	#define ATIRE_KROVETZ_HAS_HASH_MAP
+	#include <unordered_map>
+	#define ATIRE_KROVETZ_HAS_UNORDERED_MAP
 #elif defined(__APPLE__)
 	#define ATIRE_KROVETZ_HAS_UNORDERED_MAP
 	#include <AvailabilityMacros.h>

@@ -70,7 +70,7 @@ __FBSDID("$FreeBSD$");
  *    cast to wchar_t.
  * 3. State-dependent encodings are not currently supported.
  */
-#include "glob.h""
+#include "glob.h"
 
 #include <sys/param.h>
 #include <sys/stat.h>

@@ -1,4 +1,4 @@
 #!/bin/bash
-mkdir -p ../libs.release
-ln -sf ../libs.release ../libs
+mkdir -p build/release
+ln -sf `pwd`/build/release `pwd`/../libs
 ndk-build

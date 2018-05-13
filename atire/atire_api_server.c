@@ -589,7 +589,7 @@ for (; has_new_command() && !is_interrupted(); prompt(), poll())
 void ATIRE_API_server::prompt()
 {
 if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming from stdin
-	printf(PROMPT);
+	printf("%s", PROMPT);
 }
 
 /*
