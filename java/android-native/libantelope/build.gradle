@@ -30,7 +30,7 @@ android {
 //            path "CMakeLists.txt"
 //        }
         ndkBuild {
-            path "../Android.mk"
+            path "../jni/Android.mk"
         }
     }
 }

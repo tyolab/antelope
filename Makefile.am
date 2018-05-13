@@ -662,6 +662,8 @@ library_headers = \
 	$(SRC_DIR)/compress.h \
 	$(ATIRE_DIR)/atire_api.h \
 	$(ATIRE_DIR)/atire_api_remote.h \
+	$(ATIRE_DIR)/atire_api_server.h \
+	$(ATIRE_DIR)/atire_api_result.h \
 	$(ATIRE_DIR)/atire_engine_result_set.h \
 	$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h \
 	$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h
@@ -685,6 +687,7 @@ libatire_core_la_LIBADD = -ldl -lpthread
 libatire_core_la_LIBFLAGS = 
 
 libatire_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
+				$(ATIRE_DIR)/atire_api_result.c \
 				$(ATIRE_DIR)/atire_api_server.c \
 				$(ATIRE_DIR)/atire_api_remote.c \
 				$(ATIRE_DIR)/atire_engine_result_set.c \
