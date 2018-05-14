@@ -23,6 +23,7 @@ class ATIRE_API_server
 {
 private:
     static const long MAX_RESULT_LENGTH = 1024 * 1024;
+	static const long MAX_COMMAND_LENGTH = 4 * 1024;
 
 	static const char *PROMPT;
 
@@ -44,7 +45,9 @@ private:
 	 */
 	char *print_buffer, *pos;
 	ANT_stats_time *post_processing_stats;
-	char *command, *query, *ranker;
+	char *command;
+	char *command_buffer;
+	char *query, *ranker;
 	long topic_id, number_of_queries, number_of_queries_evaluated, evaluation;
 	long long line;
 	long long hits, result, last_to_list, first_to_list, search_time;;

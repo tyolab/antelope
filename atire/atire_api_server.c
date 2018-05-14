@@ -108,7 +108,7 @@ ATIRE_API_server::ATIRE_API_server()
 
 	query = NULL;
 	ranker = NULL;
-	command = NULL;
+	command = command_buffer =  new char [MAX_COMMAND_LENGTH];
 
 	inchannel = NULL;
 	outchannel = NULL;
@@ -199,6 +199,13 @@ if (formatted_result)
 	delete [] formatted_result;
 	formatted_result = NULL;
 	}
+
+if (command_buffer)
+	{
+	delete [] command_buffer;
+	command_buffer = NULL;
+	}
+
 }
 
 /*
@@ -585,9 +592,10 @@ if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming fr
 void ATIRE_API_server::insert_command(const char *cmd)
 {
 long len = strlen(cmd);
-command = new char[len + 1];
-memcpy(command, cmd, len);
-command[len] = '\0';
+long max_len = MAX_COMMAND_LENGTH < len ? MAX_COMMAND_LENGTH : len;
+memcpy(command_buffer, cmd, max_len);
+command_buffer[len] = '\0';
+command = command_buffer;
 }
 
 /*
@@ -722,8 +730,6 @@ last_to_list = hits;
 */
 if (snippet_generator != NULL)
 	snippet_generator->parse_query(query);
-
-delete [] command;
 
 return hits;
 }
@@ -920,7 +926,7 @@ if (strcmp(command, ".loadindex") == 0 || strncmp(command, "<ATIREloadindex>", 1
 			delete [] params->swap_index_filename(oldindexfilename);
 			}
 		}
-	delete [] command;
+	// delete [] command;
 	return; // continue;
 	}
 else if (strcmp(command, ".quit") == 0)
@@ -928,13 +934,13 @@ else if (strcmp(command, ".quit") == 0)
 	outchannel->puts("<ATIREresult>");
 	outchannel->puts("ATIRE is now existing.");
 	outchannel->puts("</ATIREresult>");
-	delete [] command;
+	// delete [] command;
 	interrupted = 1; // break;
 	return;
 	}
 else if (*command == '\0')
 	{
-	delete [] command;
+	// delete [] command;
 	return; // continue;			// ignore blank lines
 	}
 else
@@ -945,13 +951,13 @@ else
 		outchannel->puts("<ATIREerror>");
 		outchannel->puts("<description>No index loaded</description>");
 		outchannel->puts("</ATIREerror>");
-		delete [] command;
+		// delete [] command;
 		return; // continue;
 		}
 
 	if (strncmp(command, "<ATIREdescribeindex>", 18) == 0)
 		{
-		delete [] command;
+		// delete [] command;
 
 		outchannel->puts("<ATIREdescribeindex>");
 
@@ -994,7 +1000,7 @@ else
 		}
 	else if (strcmp(command, ".describeindex") == 0)
 		{
-		delete [] command;
+		// delete [] command;
 
 		outchannel->puts(params->doclist_filename);
 		outchannel->puts(params->index_filename);
@@ -1010,12 +1016,12 @@ else
 			atire->get_document(document_buffer, &current_document_length, atoll(command + 10));
 			query = atire->extract_query_terms(document_buffer, 10);		// choose top 10 terms
 
-			delete [] command;
+			// delete [] command;
 			command = query;
 			}
 		else
 			{
-			delete [] command;
+			// delete [] command;
 			return; // continue;
 			}
 		}
@@ -1089,7 +1095,7 @@ else
 				outchannel->write(document_buffer, current_document_length);
 				}
 			}
-		delete [] command;
+		// delete [] command;
 		return; // continue;
 		}
 	else if (strncmp(command, ".listterm ", 10) == 0)
@@ -1119,7 +1125,7 @@ else
 //			first_term = command + 10;
 		if (result)
 			{
-			delete [] command;
+			// delete [] command;
 			first_term = command = buffer;
 			}
 		else
@@ -1305,7 +1311,7 @@ else
 #ifdef IMPACT_HEADER
 		free(impact_header_buffer);
 #endif
-		delete [] command;
+		// delete [] command;
 		return; // continue;
 		}
 	else if (strncmp(command, ".normalizequery ", 16) == 0)
@@ -1318,7 +1324,7 @@ else
 		int result = ANT_UNICODE_normalize_string_tolowercase(buffer, buffer_length, &normalized_string_length, start);
 		if (result)
 			{
-			delete [] command;
+			// delete [] command;
 			query = command = buffer;
 			}
 		else
@@ -1332,7 +1338,7 @@ else
 		topic_id = -1;
 		if ((query = between(command, "<query>", "</query>")) == NULL)
 			{
-			delete [] command;
+			// delete [] command;
 			return; // continue;
 			}
 
@@ -1357,7 +1363,7 @@ else
 				outchannel->puts("</ATIREsearch>");
 				delete [] query;
 				delete [] ranker;
-				delete [] command;
+				// delete [] command;
 
 				return; // continue;
 				}
@@ -1365,7 +1371,7 @@ else
 			delete [] ranker;
 			}
 
-		delete [] command;
+		// delete [] command;
 		command = query;
 		}
 	else if (strncmp(command, "<ATIREgetdoc>", 13) == 0)
@@ -1385,7 +1391,7 @@ else
 			outchannel->puts("<length>0</length>");
 			outchannel->puts("</ATIREgetdoc>");
 			}
-		delete [] command;
+		// delete [] command;
 		return; // continue;
 		}
 	else if (params->assessments_filename != NULL || params->output_forum != ANT_ANT_param_block::NONE || params->queries_filename != NULL)
@@ -1411,7 +1417,9 @@ else
 */
 void ATIRE_API_server::poll()
 {
-command = inchannel->gets();
+const char *cmd = inchannel->gets();
+insert_command(cmd);
+delete [] cmd;
 }
 
 /*
