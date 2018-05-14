@@ -278,6 +278,7 @@ LOCAL_CPP_EXTENSION := .c
 API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
 			$(ATIRE_DIR)/antelope.c \
 			$(ATIRE_DIR)/atire_api.c \
+			$(ATIRE_DIR)/atire_api_result.c \
 			$(ATIRE_DIR)/atire_api_server.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			

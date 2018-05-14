@@ -840,6 +840,15 @@ return FALSE;
 */
 const char *ATIRE_API_server::load_document()
 {
+return get_document(result_document.docid);
+}
+
+/*
+	GET_DOCUMENT()
+	---------------
+*/
+const char *ATIRE_API_server::get_document(long docid)
+{
 atire->get_document(document_buffer, &current_document_length, docid);
 return document_buffer;
 }

@@ -158,6 +158,7 @@ public:
 	void result_to_outchannel(long last_to = -1);
 
 	const char *load_document();
+	const char *get_document(long docid);
 	const char *get_current_document() { return document_buffer; }
 
 	/*
