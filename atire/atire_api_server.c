@@ -36,7 +36,6 @@
 #include "atire_api_server.h"
 
 const char *ATIRE_API_server::PROMPT  = "]";
-const char *ATIRE_API_server::EMPTY_STRING  = "";
 
 const char *ATIRE_API_server::new_stop_words[] =
 		{
@@ -79,11 +78,7 @@ const char *ATIRE_API_server::new_stop_words[] =
 ATIRE_API_server::ATIRE_API_server()
 {
 	atire = NULL;
-#ifdef FILENAME_INDEX
-	document_name = new char [MAX_TITLE_LENGTH];
-#else
-	answer_list = NULL;
-#endif
+
 	formatted_result = new char [MAX_RESULT_LENGTH];
 
 	interrupted = 0;
@@ -124,8 +119,7 @@ ATIRE_API_server::ATIRE_API_server()
 	params_rank_ptr = NULL;
 
 	stop_word_list = NULL;
-	snippet = NULL;
-	title = NULL;
+
 	snippet_generator = NULL;
 	title_generator = NULL;
 	snippet_stemmer = NULL;
@@ -204,12 +198,6 @@ if (formatted_result)
 	{
 	delete [] formatted_result;
 	formatted_result = NULL;
-	}
-
-if (document_name)
-	{
-	delete [] document_name;
-	document_name = NULL;
 	}
 }
 
@@ -407,7 +395,7 @@ else
 		}
 	}
 
-print_buffer = new char [MAX_TITLE_LENGTH + 1024];
+print_buffer = new char [ATIRE_API_result::MAX_TITLE_LENGTH + 1024];
 
 if (atire != NULL)
 	{
@@ -429,8 +417,8 @@ custom_ranking = 0;
 
 if (params->snippet_algorithm != ANT_ANT_param_block::NONE)
 	{
-	snippet = new (std::nothrow) char [params->snippet_length + 1];
-	*snippet = '\0';
+	result_document.snippet = new (std::nothrow) char [params->snippet_length + 1];
+	*result_document.snippet = '\0';
 	if (params->snippet_stemmer == ANT_stemmer_factory::NONE)
 		snippet_stemmer = NULL;
 	else
@@ -442,8 +430,8 @@ if (params->snippet_algorithm != ANT_ANT_param_block::NONE)
 
 if (params->title_algorithm != ANT_ANT_param_block::NONE)
 	{
-	title = new (std::nothrow) char [params->title_length + 1];
-	*title = '\0';
+	result_document.title = new (std::nothrow) char [params->title_length + 1];
+	*result_document.title = '\0';
 	title_generator = ANT_snippet_factory::get_snippet_maker(params->title_algorithm, params->title_length, atire->get_longest_document_length(), params->title_tag);
 	}
 }
@@ -488,8 +476,6 @@ if (outchannel != inchannel)
 delete inchannel;
 
 delete [] print_buffer;
-delete [] snippet;
-delete [] title;
 delete [] sum_of_average_precisions;
 delete snippet_generator;
 delete title_generator;
@@ -660,19 +646,19 @@ if (first_to_list < last_to_list)
 	while (next_result())
 		{
 		*outchannel << "<hit>";
-		*outchannel << "<rank>" << result << "</rank>";
-		*outchannel << "<id>" << docid << "</id>";
+		*outchannel << "<rank>" << result_document.rank << "</rank>";
+		*outchannel << "<id>" << result_document.docid << "</id>";
 		#ifdef FILENAME_INDEX
-			*outchannel << "<name>" << atire->get_document_filename(document_name, docid) << "</name>";
+			*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
 		#else
 			*outchannel << "<name>" << answer_list[result] << "</name>";
 		#endif
-		sprintf(print_buffer, "%0.2f", relevance);
+		sprintf(print_buffer, "%0.2f", result_document.rsv);
 		*outchannel << "<rsv>" << print_buffer << "</rsv>";
-		if (title != NULL && *title != '\0')
-			*outchannel << "<title>" << title << "</title>";
-		if (snippet != NULL && *snippet != '\0')
-			*outchannel << "<snippet>" << snippet << "</snippet>";
+		if (result_document.title != NULL && *result_document.title != '\0')
+			*outchannel << "<title>" << result_document.title << "</title>";
+		if (result_document.snippet != NULL && *result_document.snippet != '\0')
+			*outchannel << "<snippet>" << result_document.snippet << "</snippet>";
 		*outchannel << "</hit>" << ANT_channel::endl;
 		}
 
@@ -760,6 +746,15 @@ else
 	RESULT_TO_JSON()
 	----------------
 */
+ATIRE_API_result *ATIRE_API_server::get_result()
+{
+	return &result_document;
+}
+
+/*
+	RESULT_TO_JSON()
+	----------------
+*/
 const char *ATIRE_API_server::result_to_json()
 {
 	static const char *json_template = "{"
@@ -770,7 +765,14 @@ const char *ATIRE_API_server::result_to_json()
 					"\"title\":\"%s\","
 					"\"snippet\":\"%s\""
 					"}";
-	sprintf(formatted_result, json_template, result, docid, document_name, relevance, !title ? EMPTY_STRING : title, !snippet ? EMPTY_STRING : snippet);
+	sprintf(formatted_result, 
+				json_template, 
+				result_document.rank, 
+				result_document.docid, 
+				result_document.document_name, 
+				result_document.rsv, 
+				!result_document.title ? ATIRE_API_result::EMPTY_STRING : result_document.title, 
+				!result_document.snippet ? ATIRE_API_result::EMPTY_STRING : result_document.snippet);
 	return formatted_result;
 }
 
@@ -784,7 +786,10 @@ long ATIRE_API_server::next_result()
 
 if (result < last_to_list) 
 	{
-	docid = atire->get_relevant_document_details(result, &docid, &relevance);
+	result_document.rank = result;
+	result_document.docid = atire->get_relevant_document_details(result, &docid, &relevance);
+	result_document.rsv = relevance;
+
 	if ((current_document_length = length_of_longest_document) != 0)
 		{
 		/*
@@ -797,23 +802,23 @@ if (result < last_to_list)
 			Generate the title
 		*/
 		if (title_generator != NULL)
-			title_generator->get_snippet(title, document_buffer);
+			title_generator->get_snippet(result_document.title, document_buffer);
 		else
-			title = NULL;
+			result_document.title = NULL;
 
 		/*
 			Generate the snippet
 		*/
 		if (snippet_generator != NULL)
-			snippet_generator->get_snippet(snippet, document_buffer);
+			snippet_generator->get_snippet(result_document.snippet, document_buffer);
 		else
-			snippet = NULL;
+			result_document.snippet = NULL;
 		}	 
 
 	#ifdef FILENAME_INDEX
-		atire->get_document_filename(document_name, docid);
+		atire->get_document_filename(result_document.document_name, result_document.docid);
 	#else
-		memcpy(document_name, answer_list[result], strlen(answer_list[result]));
+		memcpy(result_document.document_name, answer_list[result], strlen(answer_list[result]));
 	#endif
 	
 	result++;

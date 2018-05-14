@@ -8,6 +8,8 @@
 #ifndef ATIRE_API_SERVER_H_
 #define ATIRE_API_SERVER_H_
 
+#include "atire_api_result.h"
+
 class ATIRE_API;
 class ANT_stop_word;
 class ANT_channel;
@@ -17,18 +19,14 @@ class ANT_stats_time;
 class ANT_stats;
 class ANT_ANT_param_block;
 
-#ifndef NULL
-#define NULL 0x0
-#endif
-
 class ATIRE_API_server
 {
 private:
+    static const long MAX_RESULT_LENGTH = 1024 * 1024;
+
 	static const char *PROMPT;
-	static const char *EMPTY_STRING;
+
 	static const char *new_stop_words[];
-	static const long MAX_TITLE_LENGTH = 1024;
-	static const long MAX_RESULT_LENGTH = 1024 * 1024;
 
 	/*
 		release memory on exit
@@ -60,17 +58,12 @@ private:
 
 	char *document_buffer;
 	ANT_channel *inchannel, *outchannel;
-	char *snippet, *title;
+
 	ANT_snippet *snippet_generator;
 	ANT_snippet *title_generator;
 	ANT_stem *snippet_stemmer;
 
-	char *document_name;
-	#ifdef FILENAME_INDEX
-		//char *document_name;
-	#else
-		char **answer_list;
-	#endif
+	ATIRE_API_result result_document;
 
 	/*
 		by default, we convert the result to JSON format
@@ -157,6 +150,7 @@ public:
 	void goto_result(long index);
 
 	const char *result_to_json();
+	ATIRE_API_result *get_result();
 	long next_result();
 	void result_to_outchannel(long last_to = -1);
 
