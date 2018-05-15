@@ -84,6 +84,7 @@ core_sources =  \
 	$(SRC_DIR)/channel_inex.c \
 	$(SRC_DIR)/channel_socket.c \
 	$(SRC_DIR)/channel_trec.c \
+	$(SRC_DIR)/channel_memory.c \
 	$(SRC_DIR)/compress_carryover12.c \
 	$(SRC_DIR)/compress_elias_delta.c \
 	$(SRC_DIR)/compress_elias_gamma.c \
@@ -314,6 +315,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/channel_inex.h \
 	$(SRC_DIR)/channel_socket.h \
 	$(SRC_DIR)/channel_trec.h \
+	$(SRC_DIR)/channel_memory.h \
 	$(SRC_DIR)/compress_carryover12.h \
 	$(SRC_DIR)/compress_carryover12_internals.h \
 	$(SRC_DIR)/compress_elias_delta.h \

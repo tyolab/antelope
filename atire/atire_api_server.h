@@ -80,8 +80,11 @@ private:
 	char **arg_list;
 	int	argc;
 
+	int output_format;
+
 public:
-	enum {CHANNEL_FILE, CHANNEL_SOCKET, CHANNEL_STREAM};
+	enum ATIRE_channel_type {CHANNEL_FILE, CHANNEL_SOCKET, CHANNEL_MEMORY};
+	enum ATIRE_output_format {XML = 0, JSON = 1};
 
 public:
 	ATIRE_API_server();
@@ -143,6 +146,7 @@ public:
 		Set the search result output channel
 	*/
 	void set_outchannel(long type);
+	char *get_outchannel_content();
 
 	/*
 		Search
@@ -168,6 +172,7 @@ public:
 	void listterms(const char *term);
 	long next_term();
 	*/
+	void set_output_format(int format);
 
 private:
 

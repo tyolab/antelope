@@ -18,6 +18,7 @@
 #include "channel_socket.h"
 #include "channel_trec.h"
 #include "channel_inex.h"
+#include "channel_memory.h"
 #include "relevance_feedback_factory.h"
 #include "ranking_function_pregen.h"
 #include "ranking_function_factory_object.h"
@@ -75,6 +76,11 @@ const char *ATIRE_API_server::new_stop_words[] =
 		NULL
 		} ;
 
+
+/*
+	ATIRE_API_SERVER()
+	------------------
+*/
 ATIRE_API_server::ATIRE_API_server()
 {
 	atire = NULL;
@@ -134,11 +140,26 @@ ATIRE_API_server::ATIRE_API_server()
 	options_copy = NULL;
 	arg_list = NULL;
 	argc = 0; // argc should be at least 1, because argv[0] == program itself
+
+	output_format = JSON;
 }
 
+/*
+	~ATIRE_API_SERVER()
+	------------------
+*/
 ATIRE_API_server::~ATIRE_API_server()
 {
 cleanup();
+}
+
+/*
+	SET_OUTPUT_FORMAT()
+	-------------------
+*/
+void ATIRE_API_server::set_output_format(int format) 
+{
+	output_format = format;
 }
 
 /*
@@ -327,10 +348,22 @@ void ATIRE_API_server::set_outchannel(long type)
 		case CHANNEL_SOCKET:
 			outchannel = new ANT_channel_socket(params_ptr->port);
 			break;
+		case CHANNEL_MEMORY:
+			outchannel = new ANT_channel_memory;
+			break;
 		default:
 			break;
 		}
-}	
+}
+
+/*
+	GET_OUTCHANNEL_CONTENT()
+	------------------------
+*/
+char *ATIRE_API_server::get_outchannel_content()
+{
+return outchannel->gets();	
+}
 
 /*
 	START()
@@ -346,7 +379,9 @@ if (params->port != 0)
 else
 	{
 	inchannel = new ANT_channel_file(params->queries_filename);		// my stdin
-	outchannel = new ANT_channel_file();							// my stdout
+
+	if (!outchannel)
+		outchannel = new ANT_channel_file();							// my stdout
 
 	if (params->queries_filename != NULL)
 		{
