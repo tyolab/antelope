@@ -43,6 +43,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/channel_file.c \
 	$(SRC_DIR)/channel_inex.c \
 	$(SRC_DIR)/channel_socket.c \
+	$(SRC_DIR)/channel_memory.c \
 	$(SRC_DIR)/channel_trec.c \
 	$(SRC_DIR)/compress_carryover12.c \
 	$(SRC_DIR)/compress_elias_delta.c \

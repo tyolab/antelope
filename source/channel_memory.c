@@ -9,9 +9,10 @@
 	------------------------------------
 	if filename == NULL then use stdin and stout else use the named file
 */
-ANT_channel_memory::ANT_channel_memory(char *filename)
+ANT_channel_memory::ANT_channel_memory()
 {
 memory = new char[(memory_size)];
+position = 0;
 }
 
 /*

@@ -30,7 +30,7 @@ protected:
 	virtual char *getsz(char terminator = '\0');
 
 public:
-	ANT_channel_memory(char *filename = NULL);
+	ANT_channel_memory();
 	virtual ~ANT_channel_memory();
 } ;
 
