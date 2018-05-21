@@ -1,7 +1,11 @@
 LOCAL_PATH := $(call my-dir)
-LOCAL_CFLAGS := -g
 
 include $(CLEAR_VARS)
+
+# Enable PIE manually. Will get reset on $(CLEAR_VARS). This
+# is what enabling PIE translates to behind the scenes.
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += -pie
 
 LOCAL_CPP_EXTENSION := .c
 
@@ -252,7 +256,7 @@ CORE_SOURCES =  \
 
 OTHER_SOURCES := glob.c antelope_helper.c
 
-LOCAL_MODULE    := antelope
+LOCAL_MODULE    := antelope_core
 
 LOCAL_SRC_FILES := $(OTHER_SOURCES) \
 				$(CORE_SOURCES) 
@@ -273,11 +277,12 @@ include $(BUILD_STATIC_LIBRARY)
 #
 
 include $(CLEAR_VARS)
+LOCAL_CFLAGS := -fPIC
+LOCAL_LDFLAGS += -pie
 
 LOCAL_CPP_EXTENSION := .c
 
 API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
-			$(ATIRE_DIR)/antelope.c \
 			$(ATIRE_DIR)/atire_api.c \
 			$(ATIRE_DIR)/atire_api_result.c \
 			$(ATIRE_DIR)/atire_api_server.c \
@@ -299,9 +304,9 @@ LOCAL_SRC_FILES := \
 			$(API_SOURCES) \
 			$(INDEX_SOURCES)
 			
-LOCAL_STATIC_LIBRARIES := antelope
+LOCAL_STATIC_LIBRARIES := antelope_core
 
-LOCAL_LDLIBS += -llog -lz
+LOCAL_LDLIBS += -llog -lz -pie
 
 LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
 		-D_CRT_SECURE_NO_WARNINGS -DATIRE_MOBILE -DATIRE_JNI \
@@ -313,20 +318,22 @@ LOCAL_C_INCLUDES += $(SRC_DIR)
 include $(BUILD_SHARED_LIBRARY)
 
 include $(CLEAR_VARS)
-
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += -pie
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := al
 LOCAL_SRC_FILES := $(ATIRE_DIR)/antelope.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
-LOCAL_LDLIBS += -llog -lz
+LOCAL_LDLIBS += -llog -lz  -pie
 LOCAL_SHARED_LIBRARIES += antelope_jni
 LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
 
 include $(BUILD_EXECUTABLE) 
 
 include $(CLEAR_VARS)
-
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += -pie
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := al-dict
@@ -339,13 +346,14 @@ LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
 include $(BUILD_EXECUTABLE)  
 
 include $(CLEAR_VARS)
-
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += -pie
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := index
 LOCAL_SRC_FILES := index.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
-LOCAL_LDLIBS += -llog -lz
+LOCAL_LDLIBS += -llog -lz 
 LOCAL_SHARED_LIBRARIES += antelope_jni
 LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
 

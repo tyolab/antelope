@@ -1,7 +1,7 @@
-APP_OPTIM := release
-APP_CFLAGS := 
+APP_OPTIM := debug
+APP_CFLAGS := -DDEBUG -g
 
-APP_ABI := armeabi-v7a arm64-v8a x86
+APP_ABI := armeabi-v7a arm64-v8a  x86
 
 APP_CPPFLAGS += -frtti -fexceptions
 
@@ -13,6 +13,4 @@ APP_CPPFLAGS += -frtti -fexceptions
 ## 
 APP_STL := c++_shared
 
-APP_PLATFORM := android-14
-
-LOCAL_ARM_MODE := thumb
+APP_PLATFORM := android-27
