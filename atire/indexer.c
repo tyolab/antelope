@@ -31,7 +31,11 @@ const char *ATIRE_indexer::EMPTY_DOCUMENT_FILENAME = "EMPTY DOCUMEN TTITLE"; // 
 
 const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT); // 28; //
 
-static bool indexer_static_initialzed = ATIRE_indexer::initialize();
+#if (defined(ANDROID) || defined(__ANDROID__))
+	// NOTHING
+#else
+	static bool indexer_static_initialzed = ATIRE_indexer::initialize();
+#endif
 
 ATIRE_indexer::ATIRE_indexer()
 {

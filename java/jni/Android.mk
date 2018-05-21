@@ -260,7 +260,6 @@ LOCAL_MODULE    := antelope_core
 
 LOCAL_SRC_FILES := $(OTHER_SOURCES) \
 				$(CORE_SOURCES) 
-#				$(API_SOURCES)
 				
 LOCAL_LDLIBS    := -llog -lz
 
@@ -288,8 +287,7 @@ API_SOURCES = $(ATIRE_DIR)/ant_param_block.c \
 			$(ATIRE_DIR)/atire_api_server.c \
 			$(ATIRE_DIR)/atire_api_remote.c
 			
-INDEX_SOURCES =	$(ATIRE_DIR)/index.c \
-			 $(ATIRE_DIR)/indexer.c \
+INDEX_SOURCES =	$(ATIRE_DIR)/indexer.c \
 			 $(ATIRE_DIR)/indexer_param_block.c \
 			 $(ATIRE_DIR)/indexer_param_block_rank.c \
 			 $(ATIRE_DIR)/indexer_param_block_topsig.c \
@@ -351,10 +349,11 @@ LOCAL_LDFLAGS += -pie
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := index
-LOCAL_SRC_FILES := index.c
+LOCAL_SRC_FILES := $(ATIRE_DIR)/index.c 
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
-LOCAL_LDLIBS += -llog -lz 
+LOCAL_LDLIBS += -llog -lz
+LOCAL_STATIC_LIBRARIES := antelope_core
 LOCAL_SHARED_LIBRARIES += antelope_jni
-LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR)
+LOCAL_CFLAGS += $(MINUS_D) -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
 
 include $(BUILD_EXECUTABLE)  
