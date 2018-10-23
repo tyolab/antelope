@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="au.com.tyo.antelope.droid">
+    package="au.com.tyo.antelope.jni">
 
     <application
         android:allowBackup="true"

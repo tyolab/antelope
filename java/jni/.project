@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <projectDescription>
-	<name>atire_jni</name>
+	<name>antelope_jni</name>
 	<comment></comment>
 	<projects>
 	</projects>
@@ -32,7 +32,7 @@
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.buildLocation</key>
-					<value>${workspace_loc:/atire_jni/Build (GNU)}</value>
+					<value>${workspace_loc:/antelope_jni/Build (GNU)}</value>
 				</dictionary>
 				<dictionary>
 					<key>org.eclipse.cdt.make.core.contents</key>
