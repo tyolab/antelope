@@ -72,12 +72,12 @@ protected:
 #ifdef IMPACT_HEADER
 	ANT_impact_header impact_header;
 #endif
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	long long filename_index_start;
 	long long filename_index_finish;
 	long long filename_start;
 	long long filename_finish;
-#endif
+// #endif
 	ANT_compressable_integer *decompress_buffer;
 	ANT_compression_factory factory;
 	ANT_memory *memory;
@@ -93,6 +93,7 @@ protected:
 	long long collection_length_in_terms;
 	long unique_terms;
 	long long is_quantized;					// true if the index is quantized, false if the index is TF values.
+	long ant_version;						// the ant version the created index
 
 public:
 	ANT_search_engine_result *results_list;
@@ -107,6 +108,7 @@ public:
 	ANT_search_engine(ANT_memory *memory, long memory_model = 0);
 	virtual ~ANT_search_engine();
 
+	void set_ant_version(long version);
 	virtual int open(const char *filename = INDEX_FILENAME, unsigned long header_offset = 0);
 	void set_accumulator_width(long long width);
 	void init_accumulators(long long top_k);
@@ -139,11 +141,11 @@ public:
 	virtual void process_one_thesaurus_search_term(ANT_thesaurus *expander, ANT_stemmer *stemmer, char *base_term, ANT_ranking_function *ranking_function, double prescalar = 1, double postscalar = 1, double query_frequency = 1, ANT_bitstring *bitstring = NULL);
 
 	ANT_search_engine_accumulator **sort_results_list(long long accurrate_rank_point, long long *hits);
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	char *get_document_filename(char *filename, long long internal_document_id);
-#else
+// #else
 	char **generate_results_list(char **document_id_list, char **sorted_id_list, long long top_k);
-#endif
+// #endif
 	long long document_count(void) { return documents; }
 	long long term_count(void) { return collection_length_in_terms; }
 	ANT_compressable_integer *get_document_lengths(double *mean) { *mean = mean_document_length; return document_lengths; }

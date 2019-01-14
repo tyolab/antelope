@@ -15,11 +15,11 @@
 #include "search_engine_btree_leaf.h"
 #include "search_engine_accumulator.h"
 #include "search_engine_result.h"
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	#include "search_engine_result_id_iterator.h"
-#else
+// #else
 	#include "search_engine_result_iterator.h"
-#endif
+// #endif
 #include "stats_search_engine.h"
 #include "ranking_function_bm25.h"
 #include "stemmer.h"
@@ -55,6 +55,15 @@ else
 	index = new ANT_file;
 
 this->memory_model = memory_model;
+ant_version = ANT_V5;
+}
+
+/*
+    ANT_SEARCH_ENGINE::SET_ANT_VERSION
+*/
+ANT_search_engine::void set_ant_version(long version) 
+{
+ant_version = version;
 }
 
 /*
@@ -295,7 +304,9 @@ if ((global_trim_postings_k = get_variable("~trimpoint")) == 0)
 
 stats_for_all_queries->add_disk_bytes_read_on_init(index->get_bytes_read());
 
-#ifdef FILENAME_INDEX
+if (ant_version == ANT_V5) 
+	{
+// #ifdef FILENAME_INDEX
 	/*
 		Get the location of the filename and the index to the filenames.
 	*/
@@ -303,7 +314,8 @@ stats_for_all_queries->add_disk_bytes_read_on_init(index->get_bytes_read());
 	filename_finish = get_variable("~documentfilenamesfinish");
 	filename_index_start = get_variable("~documentfilenamesindexstart");
 	filename_index_finish = get_variable("~documentfilenamesindexfinish");
-#endif
+// #endif
+	}
 
 return 1;
 }
@@ -1477,7 +1489,7 @@ stats->add_rank_time(stats->stop_timer(now));
 return hits;
 }
 
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	/*
 		ANT_SEARCH_ENGINE::GET_DOCUMENT_FILENAME()
 		------------------------------------------
@@ -1506,7 +1518,7 @@ return hits;
 
 	return filename;
 	}
-#else
+// #else
 	/*
 		ANT_SEARCH_ENGINE::GENERATE_RESULTS_LIST()
 		------------------------------------------
@@ -1536,7 +1548,7 @@ return hits;
 
 	return sorted_id_list;
 	}
-#endif
+// #endif
 
 /*
 	ANT_SEARCH_ENGINE::GET_VARIABLE()
