@@ -96,7 +96,8 @@ public:
 	long quantization_bits;				// how many bits to quantize into
 	long quantization;					// whether or not we should quantize
 
-	unsigned long header_offset;					// for looking for the actual position of header
+	unsigned long header_offset;		// for looking for the actual position of header
+	unsigned long ant_version;			// the verson of index when it is created
 
 private:
 	void export_format(char *forum);

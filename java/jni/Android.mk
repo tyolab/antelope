@@ -320,7 +320,7 @@ LOCAL_CFLAGS := -g -fPIC
 LOCAL_LDFLAGS += 
 LOCAL_CPP_EXTENSION := .c
 
-LOCAL_MODULE := al
+LOCAL_MODULE := antelope
 LOCAL_SRC_FILES := $(ATIRE_DIR)/antelope.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz -ldl 
@@ -334,7 +334,7 @@ LOCAL_CFLAGS := -g -fPIC
 LOCAL_LDFLAGS += 
 LOCAL_CPP_EXTENSION := .c
 
-LOCAL_MODULE := al-dict
+LOCAL_MODULE := antelope-dict
 LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
 #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
 LOCAL_LDLIBS += -llog -lz -ldl

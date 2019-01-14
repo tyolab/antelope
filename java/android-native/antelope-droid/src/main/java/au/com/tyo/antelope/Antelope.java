@@ -40,19 +40,12 @@ public class Antelope extends AntelopeClient {
         this.parser = parser;
     }
 
-    /**
-     * @param args
-     */
-    public static void main(String[] args) {
-
-//		if (args.length == 0) {
-//			atire_apis.run_atire("-q:+-findex+/mnt/sdcard/Android/data/au.com.tyo.wiki.offline/index.aspt+-fdoclist+/mnt/sdcard/Android/data/au.com.tyo.wiki.offline/doclist.aspt");
-//		}
-//		atire_apis.run_atire(args[0]);
-    }
-
     public void start() {
         server.start();
+    }
+
+    public void stop() {
+        server.finish();
     }
 
     public List<AntelopeDoc> search(String query, boolean loadContent) throws Exception {

@@ -4,6 +4,8 @@
 */
 #include <stdio.h>
 
+#include "version.h"
+
 #if defined(_WIN64) || (__WORDSIZE == 64) || (defined(__APPLE__) && (_LP64 == 1))
 	#define BITNESS "64"
 #elif defined(_WIN32) || (__WORDSIZE == 32) || defined(__APPLE__)
@@ -24,14 +26,15 @@
 	#define PURIFYNESS ""
 #endif
 
+// For the current ant version
 #ifdef FILENAME_INDEX
-long ANT_version = 0x0005;		// version number in BCD
+long ANT_version = ANT_V5;		// version number in BCD
 char *ANT_version_string = "ATIRE Version 0.5 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
 #elif defined(IMPACT_HEADER)
-long ANT_version = 0x0004;		// version number in BCD
+long ANT_version = ANT_V4;		// version number in BCD
 char *ANT_version_string = "ATIRE Version 0.4 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
 #else
-long ANT_version = 0x0003;		// version number in BCD
+long ANT_version = ANT_V3;		// version number in BCD
 char *ANT_version_string = "ATIRE Version 0.3 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
 #endif
 

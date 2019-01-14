@@ -76,6 +76,7 @@ quantization = false; // by default don't quantize
 quantization_bits = -1; // by default use the maths to calculate the bits we need
 quantum_stopping = QUANTUM_STOP_NONE;
 header_offset = 0;
+ant_version = ANT_V5;
 }
 
 /*

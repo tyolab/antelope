@@ -670,25 +670,25 @@ library_headers = \
 	$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h \
 	$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h
 	
-ATIRE_API_LIB = libatire_api.la
+ATIRE_API_LIB = libantelope_api.la
 
-ATIRE_CORE_LIB = libatire_core.la
-ATIRE_INDEX_PARAM_LIB = libatire_index_param.la
-ATIRE_ANT_PARAM_LIB = libatire_ant_param.la
+ATIRE_CORE_LIB = libantelope_core.la
+ATIRE_INDEX_PARAM_LIB = libantelope_index_param.la
+ATIRE_ANT_PARAM_LIB = libantelope_ant_param.la
 
 ATIRE_LIBS = $(ATIRE_CORE_LIB)  $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB)
 	
 includedir = $(prefix)/include
 include_HEADERS = $(library_headers)
 		
-noinst_LTLIBRARIES = libatire_index.la 
+noinst_LTLIBRARIES = libantelope_index.la 
 lib_LTLIBRARIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_API_LIB) 
 
-libatire_core_la_SOURCES = $(core_sources)
-libatire_core_la_LIBADD = -ldl -lpthread
-libatire_core_la_LIBFLAGS = 
+libantelope_core_la_SOURCES = $(core_sources)
+libantelope_core_la_LIBADD = -ldl -lpthread
+libantelope_core_la_LIBFLAGS = 
 
-libatire_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
+libantelope_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
 				$(ATIRE_DIR)/atire_api_result.c \
 				$(ATIRE_DIR)/atire_api_server.c \
 				$(ATIRE_DIR)/atire_api_remote.c \
@@ -696,37 +696,37 @@ libatire_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
 				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.c \
 				$(ATIRE_DIR)/atire_engine_result_set_export_TREC.c
 				
-libatire_api_la_DEPENDENCIES = $(ATIRE_ANT_PARAM_LIB)
-libatire_api_la_LIBADD = $(ATIRE_ANT_PARAM_LIB)
-#libatire_api_la_LIBFLAGS = -static
-#libatire_api_ladir = $(prefix)/lib
-#libatire_api_la_HEADERS = $(library_headers)
+libantelope_api_la_DEPENDENCIES = $(ATIRE_ANT_PARAM_LIB)
+libantelope_api_la_LIBADD = $(ATIRE_ANT_PARAM_LIB)
+#libantelope_api_la_LIBFLAGS = -static
+#libantelope_api_ladir = $(prefix)/lib
+#libantelope_api_la_HEADERS = $(library_headers)
 #$(library_noinst_headers)
 
-libatire_index_param_la_SOURCES = \
+libantelope_index_param_la_SOURCES = \
 	$(INDEX_PARAM_LIST)
-libatire_index_param_la_LDFLAGS = 
-libatire_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
-libatire_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
+libantelope_index_param_la_LDFLAGS = 
+libantelope_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
+libantelope_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
 
-libatire_index_la_SOURCES = \
+libantelope_index_la_SOURCES = \
 	$(ATIRE_DIR)/index.c 
-libatire_index_la_LDFLAGS = 
-libatire_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
-libatire_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
-libatire_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_index_la_LDFLAGS = 
+libantelope_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
+libantelope_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 
-libatire_ant_param_la_SOURCES = \
+libantelope_ant_param_la_SOURCES = \
 	$(ATIRE_PARAM_LIST)
-libatire_ant_param_la_LDFLAGS =
-libatire_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
-libatire_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_ant_param_la_LDFLAGS =
+libantelope_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 
 #ATIRE_API_LIB = -L. -latire_core -ldl -lpthread
 
 # this lists the binaries to produce, the (non-PHONY, binary) targets in
 # the previous manual Makefile
-bin_PROGRAMS = index antelope atire_client atire_broker atire_dictionary atire_doclist ant
+bin_PROGRAMS = index antelope antelope_client antelope_broker antelope_dictionary antelope_doclist ant
 
 antelope_SOURCES = \
 	$(ATIRE_DIR)/antelope.c 
@@ -748,18 +748,18 @@ antelope_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 #antelope_LDFLAGS = -static -export-dynamic
 #antelope_DEPENDENCIES = $(ATIRE_API_LIB)
 
-atire_clientdir=$(ATIRE_DIR)
-atire_client_SOURCES = \
+antelope_clientdir=$(ATIRE_DIR)
+antelope_client_SOURCES = \
 	$(ATIRE_DIR)/atire_client.c \
 	$(ATIRE_DIR)/atire_client_param_block.c
 #atire_client_HEADERS = atire_client_param_block.h
-atire_client_LDADD = $(ATIRE_API_LIB)
+antelope_client_LDADD = $(ATIRE_API_LIB)
 #atire_client_LDFLAGS = -rdynamic
-atire_client_LDFLAGS = -static -export-dynamic
-atire_client_DEPENDENCIES = $(ATIRE_API_LIB)
+antelope_client_LDFLAGS = -static -export-dynamic
+antelope_client_DEPENDENCIES = $(ATIRE_API_LIB)
 
-atire_brokerdir=$(ATIRE_DIR)
-atire_broker_SOURCES = \
+antelope_brokerdir=$(ATIRE_DIR)
+antelope_broker_SOURCES = \
 	$(ATIRE_DIR)/atire_broke_engine.c \
 	$(ATIRE_DIR)/atire_broke.c \
 	$(ATIRE_DIR)/atire_broker.c \
@@ -767,10 +767,10 @@ atire_broker_SOURCES = \
 #atire_broker_HEADERS = $(ATIRE_DIR)/atire_broker_param_block.h \
 	$(ATIRE_DIR)/atire_broke_engine.h \
 	$(ATIRE_DIR)/atire_broke.h
-atire_broker_LDADD = $(ATIRE_API_LIB)
+antelope_broker_LDADD = $(ATIRE_API_LIB)
 #atire_broker_LDFLAGS = -rdynamic
-atire_broker_LDFLAGS = -static -export-dynamic
-atire_broker_DEPENDENCIES = $(ATIRE_API_LIB)
+antelope_broker_LDFLAGS = -static -export-dynamic
+antelope_broker_DEPENDENCIES = $(ATIRE_API_LIB)
 
 index_SOURCES = \
 	$(ATIRE_DIR)/index.c 
@@ -780,13 +780,13 @@ index_LDFLAGS = -static -export-dynamic
 index_DEPENDENCIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB)
 index_CFLAGS = $(AM_CFLAGS)
 
-atire_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.c 
-atire_dictionary_LDADD = $(ATIRE_CORE_LIB)
-atire_dictionary_DEPENDENCIES = $(ATIRE_CORE_LIB)
+antelope_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.c 
+antelope_dictionary_LDADD = $(ATIRE_CORE_LIB)
+antelope_dictionary_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
-atire_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.c 
-atire_doclist_LDADD = $(ATIRE_CORE_LIB)
-atire_doclist_DEPENDENCIES = $(ATIRE_CORE_LIB)
+antelope_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.c 
+antelope_doclist_LDADD = $(ATIRE_CORE_LIB)
+antelope_doclist_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
 ### The original atire main - we use it for comparison ###
 ant_SOURCES = \
