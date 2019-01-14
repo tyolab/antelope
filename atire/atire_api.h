@@ -244,17 +244,17 @@ public:
 	*/
 	ANT_search_engine_memory_index *rerank(long long top_k);
 
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	/*
 		Given an ATIRE document ID, return the esternal ID (the ATIRE "filename")
 	*/
 	char *get_document_filename(char *filename, long long internal_document_id);
-#else
+// #else
 	/*
 		Turn the numeric internal IDs into a list of external string IDs (post search)
 	*/
 	char **generate_results_list(void);
-#endif
+// #endif
 	/*
 		Given a positing in the results list return the internal search engine docid and its relevance
 	*/

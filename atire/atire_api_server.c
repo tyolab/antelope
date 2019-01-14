@@ -691,11 +691,17 @@ if (first_to_list < last_to_list)
 		*outchannel << "<hit>";
 		*outchannel << "<rank>" << result_document.rank << "</rank>";
 		*outchannel << "<id>" << result_document.docid << "</id>";
-		#ifdef FILENAME_INDEX
+		// #ifdef FILENAME_INDEX
+		if (params->ant_version == ANT_V5) 
+			{
 			*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
-		#else
+			}
+		else 
+			{
+			// #else
 			*outchannel << "<name>" << answer_list[result] << "</name>";
-		#endif
+			// #endif
+			}
 		sprintf(print_buffer, "%0.2f", result_document.rsv);
 		*outchannel << "<rsv>" << print_buffer << "</rsv>";
 		if (result_document.title != NULL && *result_document.title != '\0')
@@ -756,9 +762,10 @@ last_to_list = hits;
 // 	atire->write_to_forum_file(topic_id);
 // else
 // 	{
-#ifndef FILENAME_INDEX
+if (params->ant_version != ANT_V5) 
+//#ifndef FILENAME_INDEX
 	answer_list = atire->generate_results_list();
-#endif
+// #endif
 
 /*
 	We're going to generate snippets to parse the query for that purpose
@@ -856,11 +863,13 @@ if (result < last_to_list)
 			result_document.snippet = NULL;
 		}	 
 
-	#ifdef FILENAME_INDEX
+	// #ifdef FILENAME_INDEX
+	if (params->ant_version == ANT_V5) 
 		atire->get_document_filename(result_document.document_name, result_document.docid);
-	#else
+	else
+	// #else
 		memcpy(result_document.document_name, answer_list[result], strlen(answer_list[result]));
-	#endif
+	// #endif
 	
 	result++;
 	return TRUE;
@@ -1259,10 +1268,13 @@ else
 									return; // continue;
 
 								++count;
-#ifdef FILENAME_INDEX
-								static char filename[1024*1024];
-								*outchannel << atire->get_document_filename(filename, docid) << ":";
-#endif
+								if (params->ant_version == ANT_V5) 
+									{
+// #ifdef FILENAME_INDEX
+									static char filename[1024*1024];
+									*outchannel << atire->get_document_filename(filename, docid) << ":";
+// #endif
+									}
 								*outchannel << docid << ANT_channel::endl;
 //									if (verbose)
 //										if (one_postings_per_line)
@@ -1301,10 +1313,13 @@ else
 							while (*current != 0 && count < limits)
 								{
 								docid += *current++;
-#ifdef FILENAME_INDEX
-								static char filename[1024*1024];
-								*outchannel << atire->get_document_filename(filename, docid) << ":";
-#endif
+								if (params->ant_version == ANT_V5) 
+									{
+// #ifdef FILENAME_INDEX
+									static char filename[1024*1024];
+									*outchannel << atire->get_document_filename(filename, docid) << ":";
+// #endif
+									}
 								*outchannel << docid << ANT_channel::endl;
 //									if (verbose)
 //										if (one_postings_per_line)

@@ -261,12 +261,15 @@ ANT_search_engine_readability *readable_search_engine;
 if (document_list != NULL)
 	return 1;		//we're already open;
 
-#ifndef FILENAME_INDEX
-document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
-if (document_list == NULL)
-	return 1;		//document list could not be read
-answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
-#endif
+if (*version_number != ANT_V5) 
+	{
+	// #ifndef FILENAME_INDEX
+	document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
+	if (document_list == NULL)
+		return 1;		//document list could not be read
+	answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
+	// #endif
+	}
 
 if (type & READABILITY_SEARCH_ENGINE)
 	{
@@ -532,12 +535,18 @@ void ATIRE_API::write_to_forum_file(long topic_id)
 if (forum_writer == NULL)
 	return;
 
-#ifdef FILENAME_INDEX
+if (version_number == ANT_V5) 
+	{
+// #ifdef FILENAME_INDEX
 	forum_writer->write(topic_id, forum_results_list_length > hits ? hits : forum_results_list_length, search_engine, NULL);
-#else
+	}
+// #else
+else
+	{
 	search_engine->generate_results_list(document_list, answer_list, hits);
 	forum_writer->write(topic_id, answer_list, forum_results_list_length > hits ? hits : forum_results_list_length, search_engine, NULL);
-#endif
+	}
+// #endif
 }
 
 /*
@@ -1759,7 +1768,7 @@ in_memory_index->open();
 return in_memory_index;
 }
 
-#ifdef FILENAME_INDEX
+// #ifdef FILENAME_INDEX
 	/*
 		ATIRE_API::GET_DOCUMENT_FILENAME()
 		----------------------------------
@@ -1769,7 +1778,7 @@ return in_memory_index;
 	return search_engine->get_document_filename(filename, internal_document_id);
 	}
 
-#else
+// #else
 	/*
 		ATIRE_API::GENERATE_RESULTS_LIST()
 		----------------------------------
@@ -1779,7 +1788,7 @@ return in_memory_index;
 	search_engine->generate_results_list(filename_list, answer_list, hits);
 	return answer_list;
 	}
-#endif
+// #endif
 
 /*
 	ATIRE_API::GET_RELEVANT_DOCUMENT_DETAILS()
