@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.63])
-AC_INIT([Atire], [0.5-alpha], [BUG-REPORT-ADDRESS])
+AC_INIT([antelope], [0.5-alpha], [dev@tyo.com.au])
 
 AC_CONFIG_SRCDIR([atire/atire.c])
 #AC_CONFIG_HEADERS([config.h])
@@ -17,6 +17,7 @@ AC_PROG_LIBTOOL
 # Checks for programs.
 #AC_PROG_CC
 AC_PROG_CXX
+AC_LANG([C++])
 
 AM_PROG_CC_C_O
 

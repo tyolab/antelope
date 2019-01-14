@@ -83,7 +83,7 @@ private:
 	int output_format;
 
 public:
-	enum ATIRE_channel_type {CHANNEL_FILE, CHANNEL_SOCKET, CHANNEL_MEMORY};
+	enum ATIRE_channel_type {CHANNEL_FILE = 0, CHANNEL_SOCKET = 1, CHANNEL_MEMORY = 3};
 	enum ATIRE_output_format {XML = 0, JSON = 1};
 
 public:
