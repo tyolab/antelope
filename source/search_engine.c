@@ -15,6 +15,7 @@
 #include "search_engine_btree_leaf.h"
 #include "search_engine_accumulator.h"
 #include "search_engine_result.h"
+#include "search_engine_result_doc_iterator.h"
 // #ifdef FILENAME_INDEX
 	#include "search_engine_result_id_iterator.h"
 // #else
@@ -61,7 +62,7 @@ ant_version = ANT_V5;
 /*
     ANT_SEARCH_ENGINE::SET_ANT_VERSION
 */
-ANT_search_engine::void set_ant_version(long version) 
+void ANT_search_engine::set_ant_version(long version) 
 {
 ant_version = version;
 }
@@ -1708,22 +1709,30 @@ return destination;
 long long ANT_search_engine::get_documents(char **destination, unsigned long **destination_length, long long from, long long to)
 {
 long long start, end, times, get, id;
-#ifdef FILENAME_INDEX
-	ANT_search_engine_result_id_iterator current;
-#else
-	ANT_search_engine_result_iterator current;
-#endif
+// #ifdef FILENAME_INDEX
+	// ANT_search_engine_result_id_iterator current;
+// #else
+	// ANT_search_engine_result_iterator current;
+// #endif
 
 if (document_offsets == NULL)
 	return 0;
 
 times = 0;
 get = to - from;
-#ifdef FILENAME_INDEX
-for (id = current.first(this->results_list, from); id >= 0 && times < get; id = current.next())
-#else
-for (id = current.first(this, from); id >= 0 && times < get; id = current.next())
-#endif
+// #ifdef FILENAME_INDEX
+// for (id = current.first(this->results_list, from); id >= 0 && times < get; id = current.next())
+ANT_search_engine_result_iterator_base *iterator = NULL;
+
+if (ant_version == ANT_V5) 
+	iterator = new ANT_search_engine_result_id_iterator(this->results_list);
+else
+	iterator = new ANT_search_engine_result_doc_iterator(this);
+ANT_search_engine_result_iterator_base& current = *iterator;
+// #else
+	// ANT_search_engine_result_iterator current;
+for (id = current.first(from); id >= 0 && times < get; id = current.next())
+// #endif
 	{
 	/*
 		This isn't really the best way to do this but it will suffice in the mean time.  The best way is to
@@ -1741,6 +1750,7 @@ for (id = current.first(this, from); id >= 0 && times < get; id = current.next()
 	destination_length++;
 	}
 
+delete iterator;
 return times;
 }
 

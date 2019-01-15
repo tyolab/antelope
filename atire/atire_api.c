@@ -202,6 +202,15 @@ return ANT_version_string;
 }
 
 /*
+	ATIRE_API::SET_ANT_VERSION()
+	--------------------
+*/
+void ATIRE_API::set_ant_version(long version_number)
+{
+ant_version = version_number;
+}
+
+/*
 	ATIRE_API::READ_DOCID_LIST()
 	----------------------------
 
@@ -261,7 +270,7 @@ ANT_search_engine_readability *readable_search_engine;
 if (document_list != NULL)
 	return 1;		//we're already open;
 
-if (*version_number != ANT_V5) 
+if (ant_version != ANT_V5) 
 	{
 	// #ifndef FILENAME_INDEX
 	document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
@@ -500,21 +509,22 @@ ANT_search_engine_forum *output;
 
 switch (type)
 	{
-	case ANT_ANT_param_block::TREC:
-		output = new ANT_search_engine_forum_TREC(output_filename, participant_id, run_name, "RelevantInContext");
-		break;
-	case ANT_ANT_param_block::INEX:
-		output = new ANT_search_engine_forum_INEX(output_filename, participant_id, run_name, "RelevantInContext");
-		break;
-	case ANT_ANT_param_block::INEX_EFFICIENCY:
-		output = new ANT_search_engine_forum_INEX_efficiency(output_filename, participant_id, run_name, max_results_list_length, "RelevantInContext");
-		break;
-	case ANT_ANT_param_block::INEX_FOCUS:
-		output = new ANT_search_engine_forum_INEX_focus(output_filename, participant_id, run_name, "RelevantInContext");
-		break;
-	case ANT_ANT_param_block::INEX_BEP:
-		output = new ANT_search_engine_forum_INEX_bep(output_filename, participant_id, run_name, "RelevantInContext");
-		break;
+	// THE FORUM COULD BE DONE OUTSIDE THE ENGINE WITH BETTER FORMATING SUPPORT
+	// case ANT_ANT_param_block::TREC:
+	// 	output = new ANT_search_engine_forum_TREC(output_filename, participant_id, run_name, "RelevantInContext");
+	// 	break;
+	// case ANT_ANT_param_block::INEX:
+	// 	output = new ANT_search_engine_forum_INEX(output_filename, participant_id, run_name, "RelevantInContext");
+	// 	break;
+	// case ANT_ANT_param_block::INEX_EFFICIENCY:
+	// 	output = new ANT_search_engine_forum_INEX_efficiency(output_filename, participant_id, run_name, max_results_list_length, "RelevantInContext");
+	// 	break;
+	// case ANT_ANT_param_block::INEX_FOCUS:
+	// 	output = new ANT_search_engine_forum_INEX_focus(output_filename, participant_id, run_name, "RelevantInContext");
+	// 	break;
+	// case ANT_ANT_param_block::INEX_BEP:
+	// 	output = new ANT_search_engine_forum_INEX_bep(output_filename, participant_id, run_name, "RelevantInContext");
+	// 	break;
 	default:
 		return 1;		// failure, invalid parameter
 	}
@@ -535,7 +545,7 @@ void ATIRE_API::write_to_forum_file(long topic_id)
 if (forum_writer == NULL)
 	return;
 
-if (version_number == ANT_V5) 
+if (ant_version == ANT_V5) 
 	{
 // #ifdef FILENAME_INDEX
 	forum_writer->write(topic_id, forum_results_list_length > hits ? hits : forum_results_list_length, search_engine, NULL);
@@ -1418,7 +1428,7 @@ void ATIRE_API::feedback_interpolated(long long top_k)
 {
 ANT_search_engine_memory_index *memory_index;
 ANT_NEXI_term_iterator term_iterator;
-ANT_search_engine_result_id_iterator iterator;
+// ANT_search_engine_result_id_iterator iterator;
 ANT_NEXI_term_ant *term_string;
 double normalizer, term_normaliser, document_score, document_term_score;
 ANT_search_engine_btree_leaf term_details;

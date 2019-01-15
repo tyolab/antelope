@@ -11,8 +11,9 @@
 #include "atire_engine_result_set.h"
 #include "atire_client_param_block.h"
 #include "version.h"
-#include "atire_engine_result_set_export_TREC.h"
-#include "atire_engine_result_set_export_INEX_snippet.h"
+#include "atire_engine_result_set_export.h"
+// #include "atire_engine_result_set_export_TREC.h"
+// #include "atire_engine_result_set_export_INEX_snippet.h"
 
 #include "str.h"
 #include "ctypes.h"
@@ -133,10 +134,11 @@ if (params.queries_format == ATIRE_client_param_block::QUERIES_TREC)
 */
 if (params.output_forum == ATIRE_client_param_block::NONE)
 	run = NULL;
-else if (params.output_forum == ATIRE_client_param_block::TREC)
-	run = new ATIRE_engine_result_set_export_TREC(params.run_name);
-else if (params.output_forum == ATIRE_client_param_block::INEX_SNIPPET)
-	run = new ATIRE_engine_result_set_export_INEX_snippet(params.group_name, params.run_name, params.run_description);
+// NOTE: Let other programs / languages to dealwith forum formatting
+// else if (params.output_forum == ATIRE_client_param_block::TREC)
+// 	run = new ATIRE_engine_result_set_export_TREC(params.run_name);
+// else if (params.output_forum == ATIRE_client_param_block::INEX_SNIPPET)
+// 	run = new ATIRE_engine_result_set_export_INEX_snippet(params.group_name, params.run_name, params.run_description);
 else
 	run = NULL;
 

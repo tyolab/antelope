@@ -10,6 +10,20 @@
 cd [path/to/antelope]
 ./autogen.sh
 mkdir -p build/{release,debug}
+
+## for DEBUG
+## In a new terminal
+cd build/debug
+sh ../../scripts/setdebugenv.sh
+../../configure
+make
+sudo make install
+## for RELEASE
+## In a new terminal
+cd build/release
+../../configure
+make
+sudo make install
 '''
 
 ## Usage Examples

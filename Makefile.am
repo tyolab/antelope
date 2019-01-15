@@ -67,14 +67,20 @@ AM_CFLAGS += -I $(srcdir)/$(SRC_DIR)
 #OBJDIR = 
 #BINDIR = 
 
+#	$(SRC_DIR)/assessment_INEX.c 
+#	$(SRC_DIR)/assessment_TREC.c 
+#	$(SRC_DIR)/search_engine_forum_INEX_bep.c 
+#	$(SRC_DIR)/search_engine_forum_INEX.c 
+#	$(SRC_DIR)/search_engine_forum_INEX_efficiency.c 
+#	$(SRC_DIR)/search_engine_forum_INEX_focus.c 
+#	$(SRC_DIR)/search_engine_forum_TREC.c 
+
 core_sources =  \
 	$(SRC_DIR)/arithmetic_model_bigram.c \
 	$(SRC_DIR)/arithmetic_model_tables.c \
 	$(SRC_DIR)/arithmetic_model_unigram.c \
 	$(SRC_DIR)/assessment.c \
 	$(SRC_DIR)/assessment_factory.c \
-	$(SRC_DIR)/assessment_INEX.c \
-	$(SRC_DIR)/assessment_TREC.c \
 	$(SRC_DIR)/barrier.c \
 	$(SRC_DIR)/bitstream.c \
 	$(SRC_DIR)/bitstring.c \
@@ -244,15 +250,11 @@ core_sources =  \
 	$(SRC_DIR)/search_engine_accumulator.c \
 	$(SRC_DIR)/search_engine.c \
 	$(SRC_DIR)/search_engine_forum.c \
-	$(SRC_DIR)/search_engine_forum_INEX_bep.c \
-	$(SRC_DIR)/search_engine_forum_INEX.c \
-	$(SRC_DIR)/search_engine_forum_INEX_efficiency.c \
-	$(SRC_DIR)/search_engine_forum_INEX_focus.c \
-	$(SRC_DIR)/search_engine_forum_TREC.c \
 	$(SRC_DIR)/search_engine_memory_index.c \
 	$(SRC_DIR)/search_engine_readability.c \
 	$(SRC_DIR)/search_engine_result.c \
 	$(SRC_DIR)/search_engine_result_id_iterator.c \
+	$(SRC_DIR)/search_engine_result_doc_iterator.c \
 	$(SRC_DIR)/search_engine_result_iterator.c \
 	$(SRC_DIR)/semaphores.c \
 	$(SRC_DIR)/snippet_beginning.c \
@@ -289,7 +291,14 @@ core_sources =  \
 	$(SRC_DIR)/unicode.c \
 	$(SRC_DIR)/unicode_tables.c \
 	$(SRC_DIR)/version.c 
-				
+
+#	$(SRC_DIR)/assessment_INEX.h 
+#	$(SRC_DIR)/assessment_TREC.h 
+#	$(SRC_DIR)/search_engine_forum_INEX_bep.h 
+#	$(SRC_DIR)/search_engine_forum_INEX_efficiency.h 
+#	$(SRC_DIR)/search_engine_forum_INEX_focus.h 
+#	$(SRC_DIR)/search_engine_forum_INEX.h 
+#	$(SRC_DIR)/search_engine_forum_TREC.h 
 core_noinst_headers = \
 	$(SRC_DIR)/arithmetic_coding_decoder.h \
 	$(SRC_DIR)/arithmetic_coding_encoder.h \
@@ -300,8 +309,6 @@ core_noinst_headers = \
 	$(SRC_DIR)/arithmetic_model_unigram.h \
 	$(SRC_DIR)/assessment_factory.h \
 	$(SRC_DIR)/assessment.h \
-	$(SRC_DIR)/assessment_INEX.h \
-	$(SRC_DIR)/assessment_TREC.h \
 	$(SRC_DIR)/barrier.h \
 	$(SRC_DIR)/bitstream.h \
 	$(SRC_DIR)/bitstring.h \
@@ -535,11 +542,6 @@ core_noinst_headers = \
 	$(SRC_DIR)/search_engine_btree_leaf.h \
 	$(SRC_DIR)/search_engine_btree_node.h \
 	$(SRC_DIR)/search_engine_forum.h \
-	$(SRC_DIR)/search_engine_forum_INEX_bep.h \
-	$(SRC_DIR)/search_engine_forum_INEX_efficiency.h \
-	$(SRC_DIR)/search_engine_forum_INEX_focus.h \
-	$(SRC_DIR)/search_engine_forum_INEX.h \
-	$(SRC_DIR)/search_engine_forum_TREC.h \
 	$(SRC_DIR)/search_engine.h \
 	$(SRC_DIR)/search_engine_init_flags_boolean.h \
 	$(SRC_DIR)/search_engine_init_flags.h \
@@ -547,6 +549,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/search_engine_readability.h \
 	$(SRC_DIR)/search_engine_result.h \
 	$(SRC_DIR)/search_engine_result_id_iterator.h \
+	$(SRC_DIR)/search_engine_result_doc_iterator.h \
 	$(SRC_DIR)/search_engine_result_iterator.h \
 	$(SRC_DIR)/semaphores.h \
 	$(SRC_DIR)/semaphores_internals.h \
@@ -618,6 +621,8 @@ main_sources = $(ATIRE_DIR)/atire.c \
 			  $(ATIRE_DIR)/atire_dictionary.c \
 			  $(ATIRE_DIR)/atire_doclist.c
 			  
+#$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h 
+#$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h 	  
 main_headers = $(ATIRE_DIR)/atire_api.h \
 			$(ATIRE_DIR)/atire_api_remote.h \
 			$(ATIRE_DIR)/atire_api_server.h \
@@ -629,8 +634,6 @@ main_headers = $(ATIRE_DIR)/atire_api.h \
 			$(ATIRE_DIR)/atire_engine_param_block.h \
 			$(ATIRE_DIR)/atire_engine_result.h \
 			$(ATIRE_DIR)/atire_engine_result_set_export.h \
-			$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h \
-			$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h \
 			$(ATIRE_DIR)/atire_engine_result_set.h \
 			$(ATIRE_DIR)/indexer.h \
 			$(ATIRE_DIR)/indexer_param_block.h \
@@ -655,6 +658,8 @@ INDEX_PARAM_LIST = $(ATIRE_DIR)/indexer.c \
 				 $(ATIRE_DIR)/indexer_param_block_pregen.c \
 				 $(ATIRE_DIR)/indexer_param_block_stem.c
 	
+#$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h 
+#$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h
 library_headers = \
 	$(SRC_DIR)/heap.h \
 	$(SRC_DIR)/max_quantum.h \
@@ -666,9 +671,7 @@ library_headers = \
 	$(ATIRE_DIR)/atire_api_remote.h \
 	$(ATIRE_DIR)/atire_api_server.h \
 	$(ATIRE_DIR)/atire_api_result.h \
-	$(ATIRE_DIR)/atire_engine_result_set.h \
-	$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h \
-	$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h
+	$(ATIRE_DIR)/atire_engine_result_set.h
 	
 ATIRE_API_LIB = libantelope_api.la
 
@@ -692,9 +695,10 @@ libantelope_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
 				$(ATIRE_DIR)/atire_api_result.c \
 				$(ATIRE_DIR)/atire_api_server.c \
 				$(ATIRE_DIR)/atire_api_remote.c \
-				$(ATIRE_DIR)/atire_engine_result_set.c \
-				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.c \
-				$(ATIRE_DIR)/atire_engine_result_set_export_TREC.c
+				$(ATIRE_DIR)/atire_engine_result_set.c 
+#				
+#				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.c 
+#				$(ATIRE_DIR)/atire_engine_result_set_export_TREC.c
 				
 libantelope_api_la_DEPENDENCIES = $(ATIRE_ANT_PARAM_LIB)
 libantelope_api_la_LIBADD = $(ATIRE_ANT_PARAM_LIB)

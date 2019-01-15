@@ -83,65 +83,66 @@ const char *ATIRE_API_server::new_stop_words[] =
 */
 ATIRE_API_server::ATIRE_API_server()
 {
-	atire = NULL;
+atire = NULL;
 
-	formatted_result = new char [MAX_RESULT_LENGTH];
+formatted_result = new char [MAX_RESULT_LENGTH];
 
-	interrupted = 0;
-	length_of_longest_document = 0;
-	current_document_length = 0;
-	number_of_queries = 0;
+interrupted = 0;
+length_of_longest_document = 0;
+current_document_length = 0;
+number_of_queries = 0;
 
-	sum_of_average_precisions = NULL;
-	average_precision = NULL;
+sum_of_average_precisions = NULL;
+average_precision = NULL;
 
-	number_of_queries_evaluated = 0;
+number_of_queries_evaluated = 0;
 
-	first_to_list = 0;
-	last_to_list = 0;
-	docid = 0;
-	hits = 0;
-	custom_ranking = 0;
-	line = 0;
+first_to_list = 0;
+last_to_list = 0;
+docid = 0;
+hits = 0;
+custom_ranking = 0;
+line = 0;
 
-	pos = NULL;
-	print_buffer = NULL;
-	document_buffer = NULL;
+pos = NULL;
+print_buffer = NULL;
+document_buffer = NULL;
 
-	evaluation = 0;
+evaluation = 0;
 
-	relevance = 0.0;
+relevance = 0.0;
 
-	query = NULL;
-	ranker = NULL;
-	command = command_buffer =  new char [MAX_COMMAND_LENGTH];
+query = NULL;
+ranker = NULL;
+command = command_buffer =  new char [MAX_COMMAND_LENGTH];
 
-	inchannel = NULL;
-	outchannel = NULL;
+inchannel = NULL;
+outchannel = NULL;
 
-	result = 0;
+result = 0;
 
-	params_ptr = NULL;
-	params_rank_ptr = NULL;
+params_ptr = NULL;
+params_rank_ptr = NULL;
 
-	stop_word_list = NULL;
+stop_word_list = NULL;
 
-	snippet_generator = NULL;
-	title_generator = NULL;
-	snippet_stemmer = NULL;
+snippet_generator = NULL;
+title_generator = NULL;
+snippet_stemmer = NULL;
 
-	post_processing_stats = NULL;
-	stats = NULL;
+post_processing_stats = NULL;
+stats = NULL;
 
-	mean_average_precision = NULL;
+mean_average_precision = NULL;
 
-	topic_id = -1;
+topic_id = -1;
 
-	options_copy = NULL;
-	arg_list = NULL;
-	argc = 0; // argc should be at least 1, because argv[0] == program itself
+options_copy = NULL;
+arg_list = NULL;
+argc = 0; // argc should be at least 1, because argv[0] == program itself
 
-	output_format = JSON;
+output_format = JSON;
+ant_version = ANT_V5;
 }
 
 /*
@@ -159,7 +160,16 @@ cleanup();
 */
 void ATIRE_API_server::set_output_format(int format) 
 {
-	output_format = format;
+output_format = format;
+}
+
+/*
+	ATIRE_API_SERVER::SET_ANT_VERSION()
+	--------------------
+*/
+void ATIRE_API_server::set_ant_version(long version_number)
+{
+ant_version = version_number;
 }
 
 /*
@@ -255,11 +265,14 @@ return strnnew(start, finish - start);
 ATIRE_API *ATIRE_API_server::init()
 {
 ANT_ANT_param_block& params = *params_ptr;
+ant_version = params.ant_version;
 /*
 	Instead of overwriting the global API, create a new one and return it.
 	This way, if loading the index fails, we can still use the old one.
 */
 ATIRE_API *atire = new ATIRE_API();
+atire->set_ant_version(ant_version);
+
 long fail;
 ANT_thesaurus *expander;
 
@@ -692,7 +705,7 @@ if (first_to_list < last_to_list)
 		*outchannel << "<rank>" << result_document.rank << "</rank>";
 		*outchannel << "<id>" << result_document.docid << "</id>";
 		// #ifdef FILENAME_INDEX
-		if (params->ant_version == ANT_V5) 
+		if (ant_version == ANT_V5) 
 			{
 			*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
 			}
@@ -740,7 +753,6 @@ long ATIRE_API_server::search()
 {
 ANT_ANT_param_block *params = params_ptr;	
 first_to_list = 0;
-
 /*
 	Do the query and compute average precision
 */
@@ -762,7 +774,7 @@ last_to_list = hits;
 // 	atire->write_to_forum_file(topic_id);
 // else
 // 	{
-if (params->ant_version != ANT_V5) 
+if (ant_version != ANT_V5) 
 //#ifndef FILENAME_INDEX
 	answer_list = atire->generate_results_list();
 // #endif
@@ -864,7 +876,7 @@ if (result < last_to_list)
 		}	 
 
 	// #ifdef FILENAME_INDEX
-	if (params->ant_version == ANT_V5) 
+	if (ant_version == ANT_V5) 
 		atire->get_document_filename(result_document.document_name, result_document.docid);
 	else
 	// #else
@@ -1268,7 +1280,7 @@ else
 									return; // continue;
 
 								++count;
-								if (params->ant_version == ANT_V5) 
+								if (ant_version == ANT_V5) 
 									{
 // #ifdef FILENAME_INDEX
 									static char filename[1024*1024];
@@ -1313,7 +1325,7 @@ else
 							while (*current != 0 && count < limits)
 								{
 								docid += *current++;
-								if (params->ant_version == ANT_V5) 
+								if (ant_version == ANT_V5) 
 									{
 // #ifdef FILENAME_INDEX
 									static char filename[1024*1024];

@@ -59,6 +59,11 @@ private:
 	unsigned long current_document_length;
 	long long docid;
 
+	/*
+		for ANT index version 3
+	*/
+	char **answer_list;
+	
 	char *document_buffer;
 	ANT_channel *inchannel, *outchannel;
 
@@ -82,6 +87,8 @@ private:
 
 	int output_format;
 
+	long ant_version;
+
 public:
 	enum ATIRE_channel_type {CHANNEL_FILE = 0, CHANNEL_SOCKET = 1, CHANNEL_MEMORY = 3};
 	enum ATIRE_output_format {XML = 0, JSON = 1};
@@ -96,6 +103,8 @@ public:
 
 	void set_params(int argc, char *argv[]);
 	void set_params(char *args);
+
+	void set_ant_version(long version);
 
 	/* before ready */
 	void start();

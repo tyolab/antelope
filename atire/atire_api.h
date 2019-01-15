@@ -127,6 +127,9 @@ private:
 	uint8_t early_termination;
 	long long processed_postings;
 
+	// ANT version
+	long ant_version;
+
 protected:
 	char **read_docid_list(char * doclist_filename, long long *documents_in_id_list, char ***filename_list, char **mem1, char **mem2);
 	static char *max(char *a, char *b, char *c);
@@ -157,6 +160,11 @@ public:
 		What version are we?
 	*/
 	char *version(long *version_number = 0);
+
+	/*
+		Setting the version of ant index
+	*/
+	void set_ant_version(long version_number);
 
 	/*
 		Load all the necessary stuff for the search engine to start up

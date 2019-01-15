@@ -217,6 +217,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/search_engine_readability.c \
 	$(SRC_DIR)/search_engine_result.c \
 	$(SRC_DIR)/search_engine_result_id_iterator.c \
+	$(SRC_DIR)/search_engine_result_doc_iterator.c \
 	$(SRC_DIR)/search_engine_result_iterator.c \
 	$(SRC_DIR)/semaphores.c \
 	$(SRC_DIR)/snippet_beginning.c \

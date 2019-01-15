@@ -7,13 +7,22 @@
 #include "search_engine_result_id_iterator.h"
 
 /*
-	ANT_SEARCH_ENGINE_RESULT_ID_ITERATOR::FIRST()
-	---------------------------------------------
+	ANT_SEARCH_ENGINE_RESULT_ID_ITERATOR::ANT_SEARCH_ENGINE_RESULT_ID_ITERATOR()
+	----------------------------------------------------------------------------
 */
-long long ANT_search_engine_result_id_iterator::first(ANT_search_engine_result *results_list, long long start)
+ANT_search_engine_result_id_iterator::ANT_search_engine_result_id_iterator(
+		ANT_search_engine_result* results_list)
 {
 result = results_list;
 results_list_length = result->results_list_length;
+}
+
+/*
+	ANT_SEARCH_ENGINE_RESULT_ID_ITERATOR::FIRST()
+	---------------------------------------------
+*/
+long long ANT_search_engine_result_id_iterator::first(long long start)
+{
 current = start - 1;
 
 return next();
@@ -37,3 +46,4 @@ if (result->is_zero_rsv(result->accumulator_pointers[current] - result->accumula
 else
 	return result->accumulator_pointers[current] - result->accumulator;
 }
+
