@@ -32,10 +32,15 @@ MINUS_D +=  -DTOP_K_READ_AND_DECOMPRESSOR
 MINUS_D +=  -DANT_ACCUMULATOR_T="double"
 MINUS_D +=  -DANT_PREGEN_T="unsigned long long"
 MINUS_D +=  -DNOMINMAX
-MINUS_D +=  -DIMPACT_HEADER
+
 MINUS_D +=  -DFILENAME_INDEX
 MINUS_D +=  -DATIRE_SOCKET_NONBLOCK
 MINUS_D +=  -DWITH_EMPTY_DOCUMENT
+
+### Don't use impact header, as the old index files were created without using it
+### for search engine use in the desktop with the intention to set it on you can
+### do it in the CFLAGS/CXXFLAGS
+#MINUS_D +=  -DIMPACT_HEADER
 
 ################################################################################
 #

@@ -295,6 +295,9 @@ if (type & READABILITY_SEARCH_ENGINE)
 else
 	{
 	search_engine = new ANT_search_engine(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
+	// set the ant index version
+	search_engine->set_ant_version(ant_version);
+
 	if (search_engine->open(index_filename, header_offset) == 0)
 		return 1; //fail
 

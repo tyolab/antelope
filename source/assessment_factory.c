@@ -6,8 +6,8 @@
 #include <stdio.h>
 #include "str.h"
 #include "assessment_factory.h"
-#include "assessment_TREC.h"
-#include "assessment_INEX.h"
+// #include "assessment_TREC.h"
+// #include "assessment_INEX.h"
 
 /*
 	ANT_ASSESSMENT_FACTORY::~ANT_ASSESSMENT_FACTORY()
@@ -37,15 +37,15 @@ while (fgets(buffer, sizeof(buffer), fp) != 0)
 
 fclose(fp);
 
-if ((strrcmp(filename, ".tgz") == 0) || (strrcmp(filename, ".tar.gz") == 0))
-	factory = new ANT_assessment_TREC();		// assume its a TREC assessment file
-else if (strrcmp(filename, ".zip") == 0)
-	factory = new ANT_assessment_INEX();		// assume its an INEX assessment file
-else if (separators >= 4)
-	factory = new ANT_assessment_INEX();
-else if (separators == 3)
-	factory = new ANT_assessment_TREC();
-else	
+// if ((strrcmp(filename, ".tgz") == 0) || (strrcmp(filename, ".tar.gz") == 0))
+// 	factory = new ANT_assessment_TREC();		// assume its a TREC assessment file
+// else if (strrcmp(filename, ".zip") == 0)
+// 	factory = new ANT_assessment_INEX();		// assume its an INEX assessment file
+// else if (separators >= 4)
+// 	factory = new ANT_assessment_INEX();
+// else if (separators == 3)
+// 	factory = new ANT_assessment_TREC();
+// else	
 	exit(fprintf(stderr, "Unrecognised assessment format.\n"));
 
 factory->copy(this);

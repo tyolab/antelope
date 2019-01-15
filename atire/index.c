@@ -165,9 +165,9 @@ long long bytes_indexed;
 ANT_instream *file_stream = NULL, *decompressor = NULL, *instream_buffer = NULL, *scrubber = NULL;
 ANT_directory_iterator *dir_scrubber = NULL;
 ANT_directory_iterator_object file_object, *current_file;
-#ifdef PARALLEL_INDEXING
+//#ifdef PARALLEL_INDEXING
 	ANT_directory_iterator_multiple *parallel_disk;
-#endif
+//#endif
 
 if (argc < 2)
 	param_block.usage();

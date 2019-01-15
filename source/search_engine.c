@@ -132,7 +132,7 @@ if (eight_byte != ANT_file_signature_index)
 
 // read version number
 index->read(&four_byte);
-if (four_byte != ANT_version)
+if (four_byte != ant_version)
 	exit(printf("ERROR: version mismatch\n"));
 
 // read file signature

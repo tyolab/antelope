@@ -62,6 +62,7 @@ quantization_bits = -1; // -1 indicates run-time calculation, wil be overwritten
 quantization_automatic = FALSE;
 puurula_length_g = ANT_RANKING_FUNCTION_PUURULA_G;
 inversion_extras = ANT_memory_index::NONE;
+parallel_indexing = FALSE;
 }
 
 /*
@@ -155,6 +156,11 @@ puts("   b            bz2");
 puts("   n            not-compressed");
 puts("   s            Snappy");
 puts("   z            zip (deflate)");
+puts("");
+
+puts("SEGMENTATION");
+puts("------------");
+puts("-pararell      Enable pararell indexing");
 puts("");
 
 puts("SEGMENTATION");
@@ -593,6 +599,8 @@ for (param = 1; param < argc; param++)
 			}
 		else if (*command == 't')
 			term_expansion(command + 1, FALSE);
+		else if (strcmp(command, "pararell") == 0)
+			parallel_indexing = TRUE;
 		else if (strcmp(command, "nologo") == 0)
 			logo = FALSE;
 		else if (strcmp(command, "people") == 0)

@@ -764,10 +764,23 @@ for (param = 1; param < argc; param++)
 			}
 		else if (strncmp(command, "findex", 6) == 0)
 			{
+			/*
+			findex:v3:offset
+			findex:v5:offset
+			findex:offset
+			*/
 			if (strlen(command) > 7)
 				{
 				command += 7;
-				header_offset = atol(command);
+				if (*command == 'v' || *command == 'V')
+					{
+					++command;
+					ant_version = *command - 48/* number 0*/;
+					if (strlen(++command) > 0) // '3' or '5'
+						header_offset = atol(++command); // ':'
+					}
+				else
+					header_offset = atol(command);
 
 				if (header_offset < 0)
 					header_offset = 0;

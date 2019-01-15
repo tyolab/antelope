@@ -1,0 +1,4 @@
+#!/bin/bash
+
+export CFLAGS="-m32 -g -DDEBUG"
+export CXXFLAGS="-m32 -g -DDEBUG"
