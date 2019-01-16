@@ -3,7 +3,7 @@
 
 swig -java -c++ -package au.com.tyo.antelope.jni antelope.swig
 
-java_path='../android-native/libantelope/src/main/java'
+java_path='../android-native/antelope-droid/src/main/java'
 
 if ! [ -z "$1" ]
 then

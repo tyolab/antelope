@@ -29,13 +29,13 @@
 // For the current ant version
 #ifdef FILENAME_INDEX
 long ANT_version = ANT_V5;		// version number in BCD
-char *ANT_version_string = "ATIRE Version 0.5 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
+char *ANT_version_string = "ATIRE Version 0.5 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago\nAntelope Version 2.0\nMaintained by TYO Lab (2014-2019)\nhttp://tyo.com.au";
 #elif defined(IMPACT_HEADER)
 long ANT_version = ANT_V4;		// version number in BCD
-char *ANT_version_string = "ATIRE Version 0.4 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
+char *ANT_version_string = "ATIRE Version 0.4 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago\nAntelope Version 2.0\nMaintained by TYO Lab (2014-2019)\nhttp://tyo.com.au";
 #else
 long ANT_version = ANT_V3;		// version number in BCD
-char *ANT_version_string = "ATIRE Version 0.3 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago";
+char *ANT_version_string = "ATIRE Version 0.3 alpha (" BITNESS "-bit" DEBUGNESS PURIFYNESS")\nWritten (w) 2008-2014 Andrew Trotman, University of Otago\nAntelope Version 2.0\nMaintained by TYO Lab (2014-2019)\nhttp://tyo.com.au";
 #endif
 
 /*
@@ -47,6 +47,17 @@ void ANT_credits(void)
 puts(ANT_version_string);
 puts("");
 
+puts("#######################");
+puts("###### ANTELOPE #######");
+puts("#######################");
+puts("-----------------------");
+puts("Eric Tang");
+puts("");
+
+puts("#######################");
+puts("######## ATIRE ########");
+puts("#######################");
+puts("");
 puts("DESIGN & IMPLEMENTATION");
 puts("-----------------------");
 puts("Andrew Trotman");
