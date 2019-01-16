@@ -166,7 +166,7 @@ ANT_instream *file_stream = NULL, *decompressor = NULL, *instream_buffer = NULL,
 ANT_directory_iterator *dir_scrubber = NULL;
 ANT_directory_iterator_object file_object, *current_file;
 //#ifdef PARALLEL_INDEXING
-	ANT_directory_iterator_multiple *parallel_disk;
+	ANT_directory_iterator_multiple *parallel_disk = NULL;
 //#endif
 
 if (argc < 2)
@@ -189,9 +189,10 @@ indexer.init(param_block);
 ANT_compression_text_factory *factory_text;
 factory_text = indexer.get_compression_text_factory();
 
-#ifdef PARALLEL_INDEXING
+// #ifdef PARALLEL_INDEXING
+if (param_block.parallel_indexing)
 	parallel_disk = new ANT_directory_iterator_multiple;
-#endif
+// #endif
 
 /*
 	The first parameter that is not a command line switch is the start of the list of files to index
@@ -200,13 +201,16 @@ bytes_indexed = 0;
 
 for (param = first_param; param < argc; param++)
 	{
-#ifdef PARALLEL_INDEXING
-#else
-	delete disk;
-	delete file_stream;
-	delete decompressor;
-	delete instream_buffer;
-#endif
+// #ifdef PARALLEL_INDEXING
+// #else
+	if (!param_block.parallel_indexing)
+		{
+		delete disk;
+		delete file_stream;
+		delete decompressor;
+		delete instream_buffer;
+		}
+// #endif
 
 	now = stats.start_timer();
 	if (param_block.recursive == ANT_indexer_param_block::DIRECTORIES)
@@ -379,10 +383,13 @@ for (param = first_param; param < argc; param++)
 
 	stats.add_disk_input_time(stats.stop_timer(now));
 
-
-#ifdef PARALLEL_INDEXING
-	parallel_disk->add_iterator(source);
+// #ifdef PARALLEL_INDEXING
+	if (param_block.parallel_indexing)
+		parallel_disk->add_iterator(source);
 	}
+
+if (param_block.parallel_indexing)
+	{
 	disk = parallel_disk;
 	if (factory_text != NULL)
 		disk = new ANT_directory_iterator_compressor(disk, 8, factory_text, ANT_directory_iterator::READ_FILE);
@@ -396,15 +403,20 @@ for (param = first_param; param < argc; param++)
 	now = stats.start_timer();
 	current_file = disk->first(&file_object);
 	stats.add_disk_input_time(stats.stop_timer(now));
-	{
-#else
-	disk = source;
-	files_that_match = 0;
+	}
 
-	now = stats.start_timer();
-	current_file = disk->first(&file_object);
-	stats.add_disk_input_time(stats.stop_timer(now));
-#endif
+	{
+// #else
+	if (!param_block.parallel_indexing)
+		{
+		disk = source;
+		files_that_match = 0;
+
+		now = stats.start_timer();
+		current_file = disk->first(&file_object);
+		stats.add_disk_input_time(stats.stop_timer(now));
+		}
+// #endif
 
 	while (current_file != NULL)
 		{

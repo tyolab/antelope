@@ -9,7 +9,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/build/debug/antelope",
-            "args": ["-findex:10226720", "/data/tyolab/data/obb/obb/au.com.tyo.wiki.offline.full.zh/main.2.au.com.tyo.wiki.offline.full.zh.obb"],
+            "args": ["-findex:v3:10226720", "/data/tyolab/data/obb/obb/au.com.tyo.wiki.offline.full.zh/main.2.au.com.tyo.wiki.offline.full.zh.obb"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}/",
             "environment": [{"name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}, {"name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}],
