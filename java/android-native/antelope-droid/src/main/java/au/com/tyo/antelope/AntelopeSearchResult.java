@@ -28,6 +28,11 @@ public class AntelopeSearchResult {
      */
     List<AntelopeDoc> list;
 
+
+    public AntelopeSearchResult() {
+        total = 0;
+    }
+
     public AntelopeSearchResult(long total, long time, long page, long size) {
         this.total = total;
         this.time = time;

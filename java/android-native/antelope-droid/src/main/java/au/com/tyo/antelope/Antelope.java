@@ -1,7 +1,6 @@
 package au.com.tyo.antelope;
 
 import java.util.ArrayList;
-import java.util.List;
 
 import au.com.tyo.antelope.jni.ATIRE_API_result;
 import au.com.tyo.antelope.jni.ATIRE_API_server;
@@ -49,11 +48,11 @@ public class Antelope extends AntelopeClient {
         server.finish();
     }
 
-    public List<AntelopeDoc> search(String query, boolean loadContent) throws Exception {
+    public AntelopeSearchResult search(String query, boolean loadContent) throws Exception {
         return search(query, 1, 20, loadContent);
     }
 
-    public List<AntelopeDoc> search(String query, int page, int size, boolean needdata) throws Exception {
+    public AntelopeSearchResult search(String query, int page, int size, boolean needdata) throws Exception {
         if (page < 1) page = 1;
         int index = (page - 1) * size;
 
@@ -64,10 +63,10 @@ public class Antelope extends AntelopeClient {
 
         // server.result_to_outchannel();
         AntelopeSearchResult searchResult = new AntelopeSearchResult(hits, page, size, server.get_search_time());
-        List<AntelopeDoc> results = search(query, page, size);
+        AntelopeSearchResult results = search(query, page, size);
 
         if (results != null && needdata)
-            for (AntelopeDoc antelopeDoc : results)
+            for (AntelopeDoc antelopeDoc : results.list)
                 antelopeDoc.doc = loadDocument((int) antelopeDoc.docid);
 
         //logger.info({query: query, index: index, page_size: size, hits: hits, size: results.list.length});
@@ -88,7 +87,6 @@ public class Antelope extends AntelopeClient {
 
     @Override
     public AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception {
-        List list = null;
 
         int hits = server.search(query);
 
@@ -100,7 +98,6 @@ public class Antelope extends AntelopeClient {
         int ret = server.next_result();
         int count = 0;
         if (ret > 0) {
-            list = new ArrayList();
             while (ret > 0 && count < pageSize) {
 
                 // String hit = server.result_to_json();
@@ -136,7 +133,7 @@ public class Antelope extends AntelopeClient {
             }
         }
 
-        return list;
+        return searchResult;
     }
 
     @Override
