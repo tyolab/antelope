@@ -9,6 +9,7 @@
 package au.com.tyo.antelope.jni;
 
 public class AntelopeJNI {
+  public final static native int FILENAME_INDEX_get();
   public final static native int NULL_get();
   public final static native long new_ATIRE_API_remote();
   public final static native void delete_ATIRE_API_remote(long jarg1);
@@ -83,8 +84,6 @@ public class AntelopeJNI {
   public final static native String ATIRE_API_result_snippet_get(long jarg1, ATIRE_API_result jarg1_);
   public final static native void ATIRE_API_result_document_name_set(long jarg1, ATIRE_API_result jarg1_, String jarg2);
   public final static native String ATIRE_API_result_document_name_get(long jarg1, ATIRE_API_result jarg1_);
-  public final static native void ATIRE_API_result_answer_list_set(long jarg1, ATIRE_API_result jarg1_, long jarg2);
-  public final static native long ATIRE_API_result_answer_list_get(long jarg1, ATIRE_API_result jarg1_);
   public final static native long new_ATIRE_API_result();
   public final static native void delete_ATIRE_API_result(long jarg1);
   public final static native void ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(String jarg1);

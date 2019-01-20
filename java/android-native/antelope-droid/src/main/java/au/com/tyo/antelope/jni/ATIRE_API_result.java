@@ -91,15 +91,6 @@ public class ATIRE_API_result {
     return AntelopeJNI.ATIRE_API_result_document_name_get(swigCPtr, this);
   }
 
-  public void setAnswer_list(SWIGTYPE_p_p_char value) {
-    AntelopeJNI.ATIRE_API_result_answer_list_set(swigCPtr, this, SWIGTYPE_p_p_char.getCPtr(value));
-  }
-
-  public SWIGTYPE_p_p_char getAnswer_list() {
-    long cPtr = AntelopeJNI.ATIRE_API_result_answer_list_get(swigCPtr, this);
-    return (cPtr == 0) ? null : new SWIGTYPE_p_p_char(cPtr, false);
-  }
-
   public ATIRE_API_result() {
     this(AntelopeJNI.new_ATIRE_API_result(), true);
   }

@@ -76,7 +76,7 @@ public class AntelopeClientRemote extends AntelopeClient {
 	}
 
 	@Override
-    public List<AntelopeDoc> search(String query, int pageIndex, int pageSize) throws Exception {
+    public AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception {
         List<AntelopeDoc> list = new ArrayList<>();
 
         results.clear();

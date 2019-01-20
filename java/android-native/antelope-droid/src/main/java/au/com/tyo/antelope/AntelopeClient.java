@@ -154,7 +154,7 @@ public abstract class AntelopeClient {
 
         if (list.size() == 0)
             try {
-                return search(query);
+                return search(query).list;
             } catch (Exception e) {
                 return list;
             }
@@ -163,11 +163,11 @@ public abstract class AntelopeClient {
         return list;
     }
 
-    public List<AntelopeDoc> search(String query) throws Exception {
-        return search(query, 1, 10);
+    public AntelopeSearchResult search(String query) throws Exception {
+        return search(query, 0, 10);
     }
 
-    public abstract List<AntelopeDoc> search(String query, int pageIndex, int pageSize) throws Exception;
+    public abstract AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception;
 
     protected String buildSearchQueries(String query) {
         StringBuffer buffer = new StringBuffer();
@@ -236,68 +236,6 @@ public abstract class AntelopeClient {
             }
         }
         return abs;
-    }
-
-    public static void main(String[] args) {
-        AntelopeClientRemote.dylibName = "antelope_jni";
-        System.loadLibrary(dylibName);
-
-        AntelopeClientRemote atire = new AntelopeClientRemote();
-
-        List<AntelopeDoc> results = null;
-
-        if (args.length == 0) {
-            BufferedReader stdIn =
-                    new BufferedReader(new InputStreamReader(System.in));
-            String fromUser;
-
-            try {
-                while ((fromUser = stdIn.readLine()) != null) {
-                    System.out.println("Search: " + fromUser);
-                    int pos = -1;
-                    if (fromUser.equalsIgnoreCase("Bye"))
-                        break;
-                    else if ((pos = fromUser.indexOf("cmd ")) > -1) {
-                        String cmd = fromUser.substring(pos + 4);
-                        atire.sendCommand(cmd);
-                    }
-                    else {
-                        try {
-                            results = atire.search(fromUser);
-                        }
-                        catch (Exception connEx) {
-                            System.err.println(connEx.getMessage());
-
-                            atire.initializeSocket();
-
-                            try {
-                                results = atire.search(fromUser);
-                            }
-                            catch (Exception connEx2) {
-                                System.err.println("re-attempt connection failed");
-                                System.exit(-1);
-                            }
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        } else
-            try {
-                results = atire.search(args[0]);
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        atire.close();
-//		atire.destroy();
-
-        if (results != null) {
-            System.out.println("Results: ");
-            for (int i = 0; i < results.size(); ++i)
-                System.out.println(results.get(i));
-            System.out.println("");
-        }
     }
 
     public void clearResults() {

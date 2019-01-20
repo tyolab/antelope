@@ -19,6 +19,7 @@ fi
 
 \rm -rf $java_src/*
 mv -v ../*.java $java_src/
+mv -v ../*.cxx ./
 
 for i in `ls *.cxx`
 do

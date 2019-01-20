@@ -9,5 +9,6 @@
 package au.com.tyo.antelope.jni;
 
 public interface AntelopeConstants {
+  public final static int FILENAME_INDEX = AntelopeJNI.FILENAME_INDEX_get();
   public final static int NULL = AntelopeJNI.NULL_get();
 }

@@ -25,9 +25,8 @@ public:
     char *title;
     char *snippet;
 
-    char *document_name;
 	#ifdef FILENAME_INDEX
-		//char *document_name;
+		char *document_name;
 	#else
 		char **answer_list;
 	#endif

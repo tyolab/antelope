@@ -87,7 +87,7 @@ public class Antelope extends AntelopeClient {
     }
 
     @Override
-    public List search(String query, int pageIndex, int pageSize) throws Exception {
+    public AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception {
         List list = null;
 
         int hits = server.search(query);
@@ -103,7 +103,7 @@ public class Antelope extends AntelopeClient {
             list = new ArrayList();
             while (ret > 0 && count < pageSize) {
 
-                String hit = server.result_to_json();
+                // String hit = server.result_to_json();
 
                 AntelopeDoc obj = new AntelopeDoc();
                 ATIRE_API_result result = server.get_result();
@@ -124,11 +124,11 @@ public class Antelope extends AntelopeClient {
 
                 if (searchResult.list == null)
                     searchResult.list = new ArrayList();
-                if (null != obj) {
+//                if (null != obj) {
                     searchResult.list.add(obj);
-                }
-                else
-                    searchResult.list.add(hit);
+//                }
+//                else
+//                    searchResult.list.add(hit);
 
                 ret = server.next_result();
 

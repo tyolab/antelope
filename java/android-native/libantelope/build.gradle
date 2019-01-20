@@ -40,6 +40,9 @@ android {
             path "../jni/Android.mk"
         }
     }
+//    packagingOptions {
+//        pickFirst 'lib/x86/libc++_shared.so'
+//    }
 }
 
 dependencies {
