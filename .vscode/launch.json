@@ -4,6 +4,16 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        { 
+            "name": "(lldb) Launch Antelope on Android",
+            "type": "cppdbg",
+            "request": "launch",
+            "preLaunchTask": "Forward debug port",
+            "program": "${workspaceFolder}/java/libs/x86/antelope",
+            "additionalSOLibSearchPath": "${workspaceFolder}/java/libs/x86/",
+            "MIMode": "lldb",
+            "miDebuggerServerAddress": "localhost:5039"
+        },
         {
             "name": "(lldb) Launch Antelope on Mac",
             "type": "cppdbg",

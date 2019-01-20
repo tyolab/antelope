@@ -1,7 +1,7 @@
 #!/bin/bash
 
 
-swig -java -c++ -package au.com.tyo.antelope.jni antelope.swig
+swig -java -c++ -package au.com.tyo.antelope.jni ../antelope.swig
 
 java_path='../android-native/antelope-droid/src/main/java'
 
@@ -18,7 +18,7 @@ then
 fi
 
 \rm -rf $java_src/*
-mv -v *.java $java_src/
+mv -v ../*.java $java_src/
 
 for i in `ls *.cxx`
 do

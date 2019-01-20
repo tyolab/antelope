@@ -106,13 +106,17 @@ public abstract class AntelopeClient {
     protected abstract String sendCommand(String command);
 
     public List<AntelopeDoc> listTitle(String query) {
+        return listTerm("tf:" + query);
+    }
+
+    public List<AntelopeDoc> listTerm(String query) {
         List<AntelopeDoc> list = new ArrayList<>();
 
         String newQuery = query;
 
         results.clear();
 
-            String result = sendCommand(".listterm " + "tf:" + newQuery);
+            String result = sendCommand(".listterm " + newQuery);
 
             if (result != null && result.length() > 0) {
                 InputStream is = new ByteArrayInputStream(result.getBytes());

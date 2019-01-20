@@ -29,7 +29,7 @@ int ret = 0;
 /*
    Test the channel memory
  */
-server.set_outchannel(ATIRE_API_server::CHANNEL_MEMORY);
+// server.set_outchannel(ATIRE_API_server::CHANNEL_MEMORY);
 server.initialize();
 
 server.start_stats();

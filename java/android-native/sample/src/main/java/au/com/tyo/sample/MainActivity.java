@@ -1,5 +1,6 @@
 package au.com.tyo.sample;
 
+import android.app.Activity;
 import android.os.Bundle;
 import android.util.Log;
 
@@ -9,14 +10,16 @@ import java.util.List;
 
 import au.com.tyo.android.CommonCache;
 import au.com.tyo.antelope.Antelope;
-import au.com.tyo.app.CommonActivity;
+import au.com.tyo.antelope.AntelopeDoc;
 import au.com.tyo.io.FileUtils;
 
 
-public class MainActivity extends CommonActivity {
+public class MainActivity extends Activity {
 
     private static final String INDEX_FILE = "index.db";
     private static final String TAG = "MainActivity";
+
+    private Antelope antelope = null;
 
     static  {
         Antelope.loadNativeLibrary();
@@ -40,11 +43,32 @@ public class MainActivity extends CommonActivity {
                     }
                 }
 
-                Antelope antelope = new Antelope("-findex " + commonCache.getCacheFilePathName(INDEX_FILE));
+                antelope = new Antelope("-findex " + commonCache.getCacheFilePathName(INDEX_FILE));
                 antelope.start();
-                List list = antelope.listTitle("moby");
+                List<AntelopeDoc> list = antelope.listTerm("moby");
                 Log.i(TAG, "List term (moby) and get hits: " + list.size());
+                for (AntelopeDoc doc : list)
+                    Log.i(TAG, doc.toString());
+
+                try {
+                    list = antelope.search("moby");
+
+                    Log.i(TAG, "\nSearching term (moby) and get hits: " + list.size());
+                    for (AntelopeDoc doc : list)
+                        Log.i(TAG, doc.toString());
+                } catch (Exception e) {
+                    Log.e(TAG, "failed to search", e);
+                }
+
             }
         }).start();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+
+        if (null != antelope)
+            antelope.stop();
     }
 }

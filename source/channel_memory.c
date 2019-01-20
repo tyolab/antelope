@@ -54,8 +54,6 @@ char *ANT_channel_memory::getsz(char terminator)
 {
 long length = position + 1;
 memory[length] = terminator;
-// char *buffer = new char[lenght];
-// memcpy();
 position = 0;
 return memory;
 }

@@ -165,9 +165,9 @@ public class ATIRE_API_server {
     return AntelopeJNI.ATIRE_API_server_result_to_json(swigCPtr, this);
   }
 
-  public SWIGTYPE_p_ATIRE_API_result get_result() {
+  public ATIRE_API_result get_result() {
     long cPtr = AntelopeJNI.ATIRE_API_server_get_result(swigCPtr, this);
-    return (cPtr == 0) ? null : new SWIGTYPE_p_ATIRE_API_result(cPtr, false);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
   }
 
   public int next_result() {

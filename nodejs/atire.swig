@@ -1,1 +1,0 @@
-../java/jni/atire.swig

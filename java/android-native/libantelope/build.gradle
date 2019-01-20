@@ -9,13 +9,23 @@ android {
 
         externalNativeBuild {
             ndkBuild {
-                targets "libantelope"
+                targets "antelope_jni"
                 // abiFilters "armeabi-v7a"
                 abiFilters "x86"
             }
             //        cmake {
             //            cppFlags "-frtti -fexceptions"
             //        }
+            cmake {
+                version "3.10.2"
+            }
+            sourceSets {
+                main {
+                    jniLibs {
+                        srcDirs '../../../atire', '../../../source'
+                    }
+                }
+            }
         }
     }
     buildTypes {
