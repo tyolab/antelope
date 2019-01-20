@@ -642,7 +642,7 @@ void ATIRE_API_server::insert_command(const char *cmd)
 long len = strlen(cmd);
 long max_len = MAX_COMMAND_LENGTH < len ? MAX_COMMAND_LENGTH : len;
 memcpy(command_buffer, cmd, max_len);
-command_buffer[len] = '\0';
+command_buffer[max_len] = '\0';
 command = command_buffer;
 }
 

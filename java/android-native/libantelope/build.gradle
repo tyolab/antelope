@@ -10,7 +10,8 @@ android {
         externalNativeBuild {
             ndkBuild {
                 targets "libantelope"
-                abiFilters "armeabi-v7a"
+                // abiFilters "armeabi-v7a"
+                abiFilters "x86"
             }
             //        cmake {
             //            cppFlags "-frtti -fexceptions"

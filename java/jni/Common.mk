@@ -4,8 +4,12 @@ APP_CPPFLAGS += -frtti -fexceptions
 ##
 ## Options:
 ## * stlport_static
-## * c++_shared
+## * c++_shared / c++_static
 ## * system
+##
+## Note: the latest NDKs introduce lots of new functions which were not
+## included in the system libraries of old Androids. In that case, using
+## c++_static would be a better idea
 ## 
 APP_STL := c++_shared
 
