@@ -5,15 +5,18 @@ public class AntelopeDoc {
     public long docid;
     public int rank;
 
-    float rsv;
+    public float rsv;
 
     public String title;
 
-    String snippet;
+    public String snippet;
 
     public String document_name;
 
-    String doc;
+    /**
+     * The content of the retrieved document
+     */
+    public String doc;
 
     public String toString() {
         return "rank: " + rank + ", " + "name: " + document_name + ", " + "id: " + docid + ", " + "rsv: " + rsv;
@@ -45,5 +48,13 @@ public class AntelopeDoc {
 
     public String getDoc() {
         return doc;
+    }
+
+    /**
+     *
+     * @param doc
+     */
+    public void setDoc(String doc) {
+        this.doc = doc;
     }
 }

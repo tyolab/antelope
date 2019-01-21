@@ -2,7 +2,7 @@ package au.com.tyo.antelope;
 
 import java.util.List;
 
-public class AntelopeSearchResult {
+public class AntelopeSearchResult<DocumentType extends AntelopeDoc> {
 
     /**
      * Total hits
@@ -26,7 +26,7 @@ public class AntelopeSearchResult {
 
     /**
      */
-    List<AntelopeDoc> list;
+    List<DocumentType> list;
 
 
     public AntelopeSearchResult() {

@@ -25,11 +25,11 @@ public:
     char *title;
     char *snippet;
 
-	#ifdef FILENAME_INDEX
+	//#ifdef FILENAME_INDEX
 		char *document_name;
-	#else
-		char **answer_list;
-	#endif
+	//#else
+		// char **answer_list;
+	//#endif
 
     ATIRE_API_result();
     ~ATIRE_API_result();

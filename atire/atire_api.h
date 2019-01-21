@@ -259,6 +259,10 @@ public:
 	char *get_document_filename(char *filename, long long internal_document_id);
 // #else
 	/*
+		Given an ATIRE document ID, return the esternal ID (the ATIRE "filename") from the document list (doclist)
+	 */
+	char *get_document_filename_from_doclist(long long internal_document_id);
+	/*
 		Turn the numeric internal IDs into a list of external string IDs (post search)
 	*/
 	char **generate_results_list(void);

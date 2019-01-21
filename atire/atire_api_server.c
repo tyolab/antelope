@@ -639,10 +639,15 @@ if (params_ptr->queries_filename == NULL && params_ptr->port == 0)		// coming fr
 */
 void ATIRE_API_server::insert_command(const char *cmd)
 {
-long len = strlen(cmd);
-long max_len = MAX_COMMAND_LENGTH < len ? MAX_COMMAND_LENGTH : len;
-memcpy(command_buffer, cmd, max_len);
-command_buffer[max_len] = '\0';
+long len = 0;
+
+if (cmd)
+	{
+	len = strlen(cmd);
+	len = MAX_COMMAND_LENGTH < len ? MAX_COMMAND_LENGTH : len;
+	memcpy(command_buffer, cmd, len);
+	}
+command_buffer[len] = '\0';
 command = command_buffer;
 }
 
@@ -654,7 +659,7 @@ void ATIRE_API_server::result_to_outchannel(long last_to)
 {
 	
 if (last_to <= 0) 
-	last_to_list = first_to_list + params_ptr->results_list_length;	
+	last_to_list = first_to_list + page_size;	
 else
 	last_to_list = last_to;		
 
@@ -924,7 +929,7 @@ if (custom_ranking)
 	}
 
 first_to_list = 0;
-last_to_list = first_to_list + params->results_list_length;
+last_to_list = first_to_list + page_size;
 
 line++;
 /*
@@ -1163,9 +1168,37 @@ else
 		// delete [] command;
 		return; // continue;
 		}
-	else if (strncmp(command, ".listterm ", 10) == 0)
+	else if (strncmp(command, ".listterm", 9) == 0)
 		{
-		char *start = command + 10;
+		long page_index = 0;
+		long this_page_size = page_size;
+		char *start = command + 9;
+		if (*start == ':') 
+			{
+			++start;
+			this_page_size = atol(start);
+			}
+
+		while (*start != ' ' &&  *start != ':')
+			++start;
+		
+		if (*start == ':')
+			{
+			++start;
+			page_index = atol(start);
+			}
+
+		while (*start == ' ')
+			++start;
+
+		if (*start == '\0')
+			return;
+
+		if (page_index < 0)
+			page_index = 0;
+		first_to_list = page_index * this_page_size;
+		last_to_list = first_to_list + this_page_size;
+
 		size_t buffer_length = strlen(start) * 2 + 1;
 		char *buffer = new char[buffer_length];
 		size_t normalized_string_length = 0;
@@ -1174,7 +1207,7 @@ else
 		long limits = 100;
 		static ANT_compression_factory factory;
 //			static char metaphone_buffer[1024];
-		long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,
+		static long long postings_list_size = 5* 1024 * 1024;  // for the use of mobile,
 		static long long raw_list_size = 5 * 1024 * 1024; // same as above
 		char *term, *first_term, *last_term = NULL;
 		long long global_trim;
@@ -1183,14 +1216,12 @@ else
 //			ANT_stem *meta = NULL;
 		long long docid = -1, max;
 		ANT_compressable_integer *current;
-		int count ;
+		long count;
 		long long tf = 0;
 		ANT_search_engine *search_engine = atire->get_search_engine();
 		count = 0;
-//			first_term = command + 10;
 		if (result)
 			{
-			// delete [] command;
 			first_term = command = buffer;
 			}
 		else
@@ -1227,6 +1258,7 @@ else
 		*outchannel << "<ATIREresult>" << ANT_channel::endl;
 		for (term = iterator.first(first_term); term != NULL && count < limits; term = iterator.next())
 			{
+			
 			docid = -1;
 
 			iterator.get_postings_details(&leaf);
@@ -1272,30 +1304,44 @@ else
 							current = raw;
 							end = raw + *doc_count_ptr;
 
-							while (current < end && count < limits)
+							while (current < end_record_cache)
 								{
 								docid += *current++;
 
 								if (docid < 0)
-									return; // continue;
+									continue;
+									// why return?
+									// return; // continue;
 
 								++count;
-								if (ant_version == ANT_V5) 
+								if (count > first_to_list) 
 									{
+									*outchannel << docid << ":";
+									if (ant_version == ANT_V5) 
+										{
 // #ifdef FILENAME_INDEX
-									static char filename[1024*1024];
-									*outchannel << atire->get_document_filename(filename, docid) << ":";
+										static char filename[1024*1024];
+										*outchannel << atire->get_document_filename(filename, docid);
 // #endif
-									}
-								*outchannel << docid << ANT_channel::endl;
+										}
+									else 
+										{
+										// #else
+										*outchannel << atire->get_document_filename_from_doclist(docid);
+										// #endif
+										}
+									*outchannel << ANT_channel::endl;
 //									if (verbose)
 //										if (one_postings_per_line)
 //											printf("\n<%lld,%lld>", docid, (long long)*impact_value_ptr);
 //										else
 //											printf("<%lld,%lld>", docid, (long long)*impact_value_ptr);
-
+									}
 								if (docid > max_docid)
 									max_docid = docid;
+
+								if (count >= last_to_list)
+									break;
 								}
 
 							sum += *doc_count_ptr;
@@ -1322,25 +1368,44 @@ else
 							end += 2;
 							docid = -1;
 							tf = *current++;
-							while (*current != 0 && count < limits)
+							while (*current != 0) // get the doc ids of documents that contain the same term
 								{
 								docid += *current++;
-								if (ant_version == ANT_V5) 
+
+								++count;
+								if (count > first_to_list) 
 									{
+									*outchannel << docid << ":";
+
+									if (ant_version == ANT_V5) 
+										{
 // #ifdef FILENAME_INDEX
-									static char filename[1024*1024];
-									*outchannel << atire->get_document_filename(filename, docid) << ":";
+										static char filename[1024*1024];
+										*outchannel << atire->get_document_filename(filename, docid);
 // #endif
+										}
+									else 
+										{
+										// #else
+										*outchannel << atire->get_document_filename_from_doclist(docid);
+										// #endif
+										}
+									*outchannel << ANT_channel::endl;
 									}
-								*outchannel << docid << ANT_channel::endl;
 //									if (verbose)
 //										if (one_postings_per_line)
 //											printf("\n<%lld,%lld>", docid, (long long)tf);
 //										else
 //											printf("<%lld,%lld>", docid, (long long)tf);
+								
+								if (docid > max)
+									max = docid;
+
+								if (count >= last_to_list)
+									break;
 								}
-							if (docid > max)
-								max = docid;
+							if (count >= last_to_list)
+								break;
 							current++;						// zero
 							}
 #endif
@@ -1373,6 +1438,9 @@ else
 //						*outchannel << docid << ANT_channel::endl;
 //						}
 				}
+
+			if (count >= last_to_list)
+				break;
 			}
 
 		*outchannel << "</ATIREresult>" << ANT_channel::endl;
@@ -1421,7 +1489,7 @@ else
 		if ((pos = strstr(command, "<n>")) != NULL)
 			last_to_list = first_to_list + atol(pos + 3);
 		else
-			last_to_list = first_to_list + params->results_list_length;
+			last_to_list = first_to_list + page_size;
 
 		if ((ranker = between(command, "<ranking>", "</ranking>")) != NULL)
 			{
@@ -1697,6 +1765,7 @@ else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
 if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_ATIRE)
 	stop_word_list->addstop((const char **)new_stop_words);
 
+page_size = params.results_list_length;
 }
 
 char* ATIRE_API_server::version()

@@ -76,12 +76,10 @@ public class AntelopeClientRemote extends AntelopeClient {
 	}
 
 	@Override
-    public AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception {
+    public AntelopeSearchResult search(String query, int pageIndex, int pageSize) {
 
 		AntelopeSearchResult antelopeSearchResult = new AntelopeSearchResult();
 		antelopeSearchResult.list = new ArrayList<>();
-
-        results.clear();
 
 //			out.writeBytes(query + "\n");
         String queryTerms = buildSearchQueries(query);
@@ -109,7 +107,7 @@ public class AntelopeClientRemote extends AntelopeClient {
             result.docid = Long.parseLong(between("<id>", "</id>", index));
 //            result.rsv = Double.parseDouble(between("<rsv>", "</rsv>", index));
 
-            results.put(result.title, result);
+            //results.put(result.title, result);
             antelopeSearchResult.list.add(result);
         }
 

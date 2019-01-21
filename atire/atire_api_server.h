@@ -50,7 +50,7 @@ private:
 	char *query, *ranker;
 	long topic_id, number_of_queries, number_of_queries_evaluated, evaluation;
 	long long line;
-	long long hits, result, last_to_list, first_to_list, search_time;;
+	long long hits, result, last_to_list, first_to_list, search_time, page_size;
 
 	int custom_ranking;
 	double *average_precision, *sum_of_average_precisions, *mean_average_precision;
@@ -173,6 +173,8 @@ public:
 	const char *load_document();
 	const char *get_document(long docid);
 	const char *get_current_document() { return document_buffer; }
+
+	void set_page_size(const long page_size) { this->page_size = page_size; }
 
 	/*
 		List terms

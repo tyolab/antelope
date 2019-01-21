@@ -1782,25 +1782,34 @@ return in_memory_index;
 }
 
 // #ifdef FILENAME_INDEX
-	/*
-		ATIRE_API::GET_DOCUMENT_FILENAME()
-		----------------------------------
-	*/
-	char *ATIRE_API::get_document_filename(char *filename, long long internal_document_id)
-	{
-	return search_engine->get_document_filename(filename, internal_document_id);
-	}
-
+/*
+	ATIRE_API::GET_DOCUMENT_FILENAME()
+	----------------------------------
+*/
+char *ATIRE_API::get_document_filename(char *filename, long long internal_document_id)
+{
+return search_engine->get_document_filename(filename, internal_document_id);
+}
 // #else
-	/*
-		ATIRE_API::GENERATE_RESULTS_LIST()
-		----------------------------------
-	*/
-	char **ATIRE_API::generate_results_list(void)
-	{
-	search_engine->generate_results_list(filename_list, answer_list, hits);
-	return answer_list;
-	}
+/*
+	ATIRE_API::GET_DOCUMENT_FILENAME_FROM_DOCLIST()
+	----------------------------------------------
+*/
+char *ATIRE_API::get_document_filename_from_doclist(long long internal_document_id)
+{
+if (NULL == document_list || internal_document_id < 0 || internal_document_id >= documents_in_id_list)
+	return NULL;
+return document_list[internal_document_id];
+}
+/*
+	ATIRE_API::GENERATE_RESULTS_LIST()
+	----------------------------------
+*/
+char **ATIRE_API::generate_results_list(void)
+{
+search_engine->generate_results_list(filename_list, answer_list, hits);
+return answer_list;
+}
 // #endif
 
 /*

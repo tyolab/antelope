@@ -8,16 +8,15 @@ import java.io.InputStreamReader;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 
-public abstract class AntelopeClient {
+public abstract class AntelopeClient<DocumentType extends AntelopeDoc> {
 
     public static final int DEFAULT_PAGE_SIZE = 10;
 
-    private int pageSize;
+    public static final String COMMAND_LIST_TERM = ".listterm";
 
-    protected HashMap<String, AntelopeDoc> results;
+    private int pageSize;
 
     protected long hits;
 
@@ -39,8 +38,6 @@ public abstract class AntelopeClient {
 
         kmpSearch = new ByteArrayKMP();
         pageSize = DEFAULT_PAGE_SIZE;
-
-        results = new HashMap<String, AntelopeDoc>();
 
         init();
     }
@@ -105,52 +102,90 @@ public abstract class AntelopeClient {
 
     protected abstract String sendCommand(String command);
 
-    public List<AntelopeDoc> listTitle(String query) {
+    public List<DocumentType> listTitle(String query) {
         return listTerm("tf:" + query);
     }
 
-    public List<AntelopeDoc> listTerm(String query) {
-        List<AntelopeDoc> list = new ArrayList<>();
+    /**
+     * Listing term only return:
+     *
+     * <ATIREresult>
+     *     docid#1
+     *     docid#2
+     *     docid#3
+     *     ...
+     * </ATIREresult>
+     *
+     * @param query
+     * @return
+     */
+    public List<DocumentType> listTerm(String query) {
+        return listTerm(query, -1, 0);
+    }
+
+    public List<DocumentType> listTerm(String query, int pageSize, int pageIndex) {
+        List<DocumentType> list = new ArrayList<>();
 
         String newQuery = query;
+        String command;
+        if (pageSize > 0) {
+            command = COMMAND_LIST_TERM + ':' + pageSize;
 
-        results.clear();
+            if (pageIndex > 0)
+                command += ':' + pageIndex;
+        }
+        else
+            command = COMMAND_LIST_TERM;
 
-            String result = sendCommand(".listterm " + newQuery);
+        String result = sendCommand(command + ' ' + newQuery);
 
-            if (result != null && result.length() > 0) {
-                InputStream is = new ByteArrayInputStream(result.getBytes());
+        if (result != null && result.length() > 0) {
+            InputStream is = new ByteArrayInputStream(result.getBytes());
 
-                BufferedReader br = new BufferedReader(new InputStreamReader(is));
+            BufferedReader br = new BufferedReader(new InputStreamReader(is));
 
-                String line;
-                int count = 0;
-                try {
-                    while ((line = br.readLine()) != null && line.length() > 3) {
-                        String[] tokens = line.substring(3).split(":");
+            String line;
+            int count = 0;
+            try {
+                while ((line = br.readLine()) != null) {
+
+                    if (count > 0 && line.length() > 0 && line.charAt(0) != '<') {
+
+                        String[] tokens = line.split(":");
+                        long docid;
+                        String title;
                         if (tokens != null && tokens.length > 1) {
-                            // list.add(tokens[0]);
-
-                            AntelopeDoc search = new AntelopeDoc();
-                            search.title = tokens[0];
+                            title = tokens[1];
                             try {
-                                search.docid = Long.parseLong(tokens[tokens.length - 1]);
+                                docid = Long.parseLong(tokens[0]);
+                            } catch (Exception ex) {
+                                docid = -1;
                             }
-                            catch (Exception ex) {
-                                search.docid = -1;
-                            }
-                            search.rank = ++count;
 
-                            list.add(search);
-                            results.put(tokens[0], search);
+                            DocumentType documentType = createNewSearchResult(docid, title, list.size());
+                            list.add(documentType);
                         }
+//                        try {
+//                            long docid = Long.parseLong(line);
+//                            search = new AntelopeDoc();
+//                            search.docid = docid;
+//                        }
+//                        catch (Exception ex) {}
+//
+//
+//                        if (null != search) {
+//                            search.rank = list.size();
+//                            list.add(search);
+//                        }
                     }
-
-                    br.close();
-                } catch (IOException e) {
-                    e.printStackTrace();
+                    ++count;
                 }
+
+                br.close();
+            } catch (IOException e) {
+                e.printStackTrace();
             }
+        }
 
         if (list.size() == 0)
             try {
@@ -163,11 +198,21 @@ public abstract class AntelopeClient {
         return list;
     }
 
-    public AntelopeSearchResult search(String query) throws Exception {
+    protected DocumentType createNewSearchResult(long docId, String fileName, int rank) {
+        AntelopeDoc search = new AntelopeDoc();
+
+        search.docid = docId;
+        search.title = fileName;
+        search.rank = rank;
+
+        return (DocumentType) search;
+    }
+
+    public AntelopeSearchResult<DocumentType> search(String query) throws Exception {
         return search(query, 0, 10);
     }
 
-    public abstract AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception;
+    public abstract AntelopeSearchResult<DocumentType> search(String query, int pageIndex, int pageSize);
 
     protected String buildSearchQueries(String query) {
         StringBuffer buffer = new StringBuffer();
@@ -191,19 +236,19 @@ public abstract class AntelopeClient {
         return buffer.toString();
     }
 
-    public long getDocumentId(String name) {
-        AntelopeDoc search = results.get(name);
-        if (search != null && search.docid > -1)
-            return search.docid;
-        return -1;
-    }
-
-    public String getDocumentAbstract(String name) {
-        AntelopeDoc search = results.get(name);
-        if (search != null && search.docid > -1)
-            return getDocumentAbstractById(search.docid);
-        return "";
-    }
+//    public long getDocumentId(String name) {
+//        AntelopeDoc search = results.get(name);
+//        if (search != null && search.docid > -1)
+//            return search.docid;
+//        return -1;
+//    }
+//
+//    public String getDocumentAbstract(String name) {
+//        AntelopeDoc search = results.get(name);
+//        if (search != null && search.docid > -1)
+//            return getDocumentAbstractById(search.docid);
+//        return "";
+//    }
 
     public String getDocument(long id) {
         return getDocumentInternal(id);
@@ -236,10 +281,6 @@ public abstract class AntelopeClient {
             }
         }
         return abs;
-    }
-
-    public void clearResults() {
-        results.clear();
     }
 
     public int getErrorCode() {

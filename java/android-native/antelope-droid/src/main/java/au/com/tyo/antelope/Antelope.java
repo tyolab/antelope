@@ -5,7 +5,7 @@ import java.util.ArrayList;
 import au.com.tyo.antelope.jni.ATIRE_API_result;
 import au.com.tyo.antelope.jni.ATIRE_API_server;
 
-public class Antelope extends AntelopeClient {
+public abstract class Antelope<DocumentType extends AntelopeDoc> extends AntelopeClient<DocumentType> {
 
     private String opts;
 
@@ -56,20 +56,14 @@ public class Antelope extends AntelopeClient {
         if (page < 1) page = 1;
         int index = (page - 1) * size;
 
-        long hits = server.search(query);
-
         if (index > 0)
             server.goto_result(index);
 
-        // server.result_to_outchannel();
-        AntelopeSearchResult searchResult = new AntelopeSearchResult(hits, page, size, server.get_search_time());
-        AntelopeSearchResult results = search(query, page, size);
+        AntelopeSearchResult<DocumentType> results = search(query, page, size);
 
         if (results != null && needdata)
             for (AntelopeDoc antelopeDoc : results.list)
                 antelopeDoc.doc = loadDocument((int) antelopeDoc.docid);
-
-        //logger.info({query: query, index: index, page_size: size, hits: hits, size: results.list.length});
 
         return results;
     }
@@ -86,46 +80,33 @@ public class Antelope extends AntelopeClient {
     }
 
     @Override
-    public AntelopeSearchResult search(String query, int pageIndex, int pageSize) throws Exception {
+    public AntelopeSearchResult<DocumentType> search(String query, int pageIndex, int pageSize) {
 
         int hits = server.search(query);
 
         if (pageIndex > 0)
             server.goto_result(pageIndex);
 
-        AntelopeSearchResult searchResult = new AntelopeSearchResult(hits, pageIndex, pageSize, server.get_search_time());
+        AntelopeSearchResult<DocumentType> searchResult = new AntelopeSearchResult<DocumentType>(hits, pageIndex, pageSize, server.get_search_time());
 
         int ret = server.next_result();
         int count = 0;
         if (ret > 0) {
             while (ret > 0 && count < pageSize) {
 
-                // String hit = server.result_to_json();
-
-                AntelopeDoc obj = new AntelopeDoc();
                 ATIRE_API_result result = server.get_result();
-                obj.rank = result.getRank();
-                obj.rsv = result.getRsv();
-                obj.docid = result.getDocid();
-                obj.document_name = result.getDocument_name();
-                obj.title = result.getTitle();
-                obj.snippet = result.getSnippet();
+                DocumentType searchDoc = createNewSearchResult(result.getDocid(),
+                        result.getTitle(),
+                        result.getRank(),
+                        result.getDocument_name(),
+                        result.getSnippet(),
+                        result.getRsv());
 
-//                if (null != parser) {
-//                    try {
-//                        obj = parser.parse(hit);
-//                    } catch (Exception err) {
-//                        obj = null;
-//                    }
-//                }
 
                 if (searchResult.list == null)
                     searchResult.list = new ArrayList();
-//                if (null != obj) {
-                    searchResult.list.add(obj);
-//                }
-//                else
-//                    searchResult.list.add(hit);
+
+                searchResult.list.add(searchDoc);
 
                 ret = server.next_result();
 
@@ -139,5 +120,18 @@ public class Antelope extends AntelopeClient {
     @Override
     protected String getDocumentInternal(long id) {
         return server.get_document((int) id);
+    }
+
+    protected DocumentType createNewSearchResult(long docId, String fileName, int rank, String documentName, String snippet, float rsv) {
+        AntelopeDoc obj = new AntelopeDoc();
+
+        obj.rank = rank;
+        obj.rsv = rsv;
+        obj.docid = docId;
+        obj.document_name = documentName;
+        obj.title = fileName;
+        obj.snippet = snippet;
+
+        return (DocumentType) obj;
     }
 }

@@ -18,8 +18,36 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
+
+        debug {
+            externalNativeBuild {
+                ndkBuild {
+                    targets "antelope_jni"
+                    // abiFilters "armeabi-v7a"
+                    abiFilters "x86"
+
+                }
+                sourceSets {
+                    main {
+                        jniLibs {
+                            srcDirs '../../../atire', '../../../source'
+                        }
+                    }
+                }
+            }
+        }
     }
 
+    externalNativeBuild {
+        ndkBuild {
+            path "/data/tyolab/code/antelope/java/jni/Android.mk"
+        }
+    }
+    packagingOptions {
+        pickFirst 'lib/x86/libc++_shared.so'
+        pickFirst 'lib/x86/libantelope_jni.so'
+        pickFirst 'lib/x86/libantelope_core.so'
+    }
 }
 
 dependencies {

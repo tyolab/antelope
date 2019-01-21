@@ -38,12 +38,14 @@ server.start();
 
 server.prompt();
 server.poll();
-for (; server.has_new_command() && !server.is_interrupted(); server.prompt(), server.poll())
+for (; server.has_new_command() && !server.is_interrupted(); server.poll())
 	{
 	server.process_command();
 
 	// if the outchannel is in memory we need to output to stdout
 	puts(server.get_outchannel_content());
+	
+	server.prompt();
 
 	if (server.is_interrupted())
 		break;

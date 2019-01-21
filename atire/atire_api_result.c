@@ -12,11 +12,11 @@
 const char *ATIRE_API_result::EMPTY_STRING  = "";
 
 ATIRE_API_result::ATIRE_API_result() {
-#ifdef FILENAME_INDEX
+//#ifdef FILENAME_INDEX
 	document_name = new char [MAX_TITLE_LENGTH];
-#else
-	answer_list = NULL;
-#endif
+//#else
+	// answer_list = NULL;
+//#endif
 
     title = NULL;
     snippet = NULL;
