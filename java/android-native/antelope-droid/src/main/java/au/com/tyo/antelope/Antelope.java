@@ -13,16 +13,6 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
 
     private AntelopeParser parser;
 
-    public Antelope(String opts) {
-        this.opts = opts;
-
-        server = new ATIRE_API_server();
-
-        server.set_params(opts);
-        server.set_outchannel(3);
-        server.initialize();
-    }
-
     private static boolean nativeLibraryLoaded = false;
 
     public static void loadNativeLibrary() {
@@ -30,6 +20,22 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
             System.loadLibrary(dylibName);
             nativeLibraryLoaded = true;
         }
+    }
+
+    public Antelope(String opts) {
+        this.opts = opts;
+    }
+
+    public void initializeServer() {
+        server = new ATIRE_API_server();
+
+        server.set_params(opts);
+        server.set_outchannel(3);
+        server.initialize();
+    }
+
+    public boolean isServerOnline() {
+        return null != server;
     }
 
     public AntelopeParser getParser() {
@@ -46,6 +52,7 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
 
     public void stop() {
         server.finish();
+        server = null;
     }
 
     public AntelopeSearchResult search(String query, boolean loadContent) throws Exception {

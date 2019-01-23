@@ -1,14 +1,18 @@
 /*
-	ATIRE_API_REMOTE.H
+	ATIRE_API_SERVER.H
 	------------------
 	Created on: 30 Nov 2015
     Author: Eric Tang (eric.tang@tyo.com.au)
+
+	This server class is not thread safe, and it can only serve one request a time. 
+	For parallel querying, should consider using multiple instances
 */
 
 #ifndef ATIRE_API_SERVER_H_
 #define ATIRE_API_SERVER_H_
 
 #include "atire_api_result.h"
+#include "compress.h"
 
 class ATIRE_API;
 class ANT_stop_word;
@@ -18,6 +22,8 @@ class ANT_stem;
 class ANT_stats_time;
 class ANT_stats;
 class ANT_ANT_param_block;
+class ANT_btree_iterator;
+class ANT_search_engine_btree_leaf;
 
 class ATIRE_API_server
 {
@@ -63,7 +69,24 @@ private:
 		for ANT index version 3
 	*/
 	char **answer_list;
-	
+
+	/*
+		for term listing
+	*/
+	ANT_btree_iterator *iterator;
+	ANT_search_engine_btree_leaf *leaf;
+	char *term;
+	char *first_term;
+	char **last_term;
+	ANT_compressable_integer *current, *end;
+	ANT_compressable_integer *impact_offset_start;
+	ANT_compressable_integer *doc_count_ptr;
+	long term_position;
+	unsigned char *postings_list_mem, *postings_list;
+	ANT_compressable_integer *raw, *raw_mem;
+	long long global_trim;
+	char *lookup_term_buffer;
+
 	char *document_buffer;
 	ANT_channel *inchannel, *outchannel;
 
@@ -163,7 +186,21 @@ public:
 	long search(const char *query);
 	long search();
 
+	/*
+		Go to next search result
+	*/
 	void goto_result(long index);
+
+	/*
+		List Term(s)
+	*/
+	ATIRE_API_result *list_term(char *term, long position = 0);
+
+	/*
+		Terms list relating positioning
+	*/
+	ATIRE_API_result *next_term(long to_position = 0);
+	ATIRE_API_result *goto_term(long index);
 
 	const char *result_to_json();
 	ATIRE_API_result *get_result();

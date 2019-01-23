@@ -2,7 +2,8 @@ package au.com.tyo.antelope;
 
 public class AntelopeDoc {
 
-    public long docid;
+    public long docid = -1;
+
     public int rank;
 
     public float rsv;
@@ -42,7 +43,7 @@ public class AntelopeDoc {
         return snippet;
     }
 
-    public String getDocument_name() {
+    public String getDocumentName() {
         return document_name;
     }
 

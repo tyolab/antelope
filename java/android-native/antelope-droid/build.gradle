@@ -30,7 +30,7 @@ android {
                 sourceSets {
                     main {
                         jniLibs {
-                            srcDirs '../../../atire', '../../../source'
+                            srcDirs '/data/tyolab/code/antelope/atire', '/data/tyolab/code/antelope/source'
                         }
                     }
                 }
