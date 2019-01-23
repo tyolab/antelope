@@ -262,8 +262,8 @@ if (leaf)
 if (postings_list_mem)	
 	free(postings_list_mem);
 
-if (raw)	
-	free(raw);
+if (raw_mem)	
+	free(raw_mem);
 
 if (lookup_term_buffer)
 	delete [] lookup_term_buffer;
@@ -402,8 +402,8 @@ else
 	#endif
 
 	global_trim = search_engine->get_global_trim_postings_k();
-	postings_list_mem = postings_list = (unsigned char *)malloc((size_t)postings_list_size);
-	raw = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
+	postings_list_mem = (unsigned char *)malloc((size_t)postings_list_size);
+	raw_mem = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
 	}
 return atire;
 }
@@ -805,16 +805,16 @@ if (params->stats & ANT_ANT_param_block::SHORT)
 */
 ATIRE_API_result *ATIRE_API_server::list_term(char *lookup_term, long position)
 {
-if (postings_list_mem)	
-	free(postings_list_mem);
+// if (postings_list_mem)	
+// 	free(postings_list_mem);
 
-if (raw)	
-	free(raw);
+// if (raw)	
+// 	free(raw);
 
-#ifdef IMPACT_HEADER
-if (impact_header_buffer)
-	free(impact_header_buffer);
-#endif	
+// #ifdef IMPACT_HEADER
+// if (impact_header_buffer)
+// 	free(impact_header_buffer);
+// #endif	
 
 result_document.rsv = 0;
 result_document.rank = -1;
@@ -877,24 +877,19 @@ return next_term(position);
 */
 ATIRE_API_result *ATIRE_API_server::goto_term(long position)
 {
+return next_term(position);
 }
 /*
 	NEXT_TERM()
 	-----------
 */
-ATIRE_API_result *ATIRE_API_server::next_term(long to_position)
+ATIRE_API_result *ATIRE_API_server::next_term(long start_position)
 {
 long long docid = -1, max;
-ANT_compressable_integer *current;
-long count;
-long should_break = 0;
 long long tf = 0;
-long next_position = term_position + to_position;
-NT_search_engine *search_engine = atire->get_search_engine();
-long limits = 100;
+ANT_search_engine *search_engine = atire->get_search_engine();
 static ANT_compression_factory factory;
 
-iterator.get_postings_details(leaf);
 if (first_term != NULL && strncmp(first_term, term, strlen(first_term)) != 0)
 	return NULL;
 else
@@ -905,9 +900,12 @@ else
 		{
 		if (*term != '~')		// ~length and others aren't encoded in the usual way
 			{
-			postings_list = search_engine->get_postings(leaf, postings_list_mem);
-
-			long long document_frequency = ANT_min(leaf->local_document_frequency, global_trim);
+			if (!postings_list)
+				{
+				iterator->get_postings_details(leaf);
+				postings_list = search_engine->get_postings(leaf, postings_list_mem);
+				document_frequency = ANT_min(leaf->local_document_frequency, global_trim);
+				}
 
 #ifdef IMPACT_HEADER
 			// decompress the header
@@ -933,11 +931,13 @@ else
 
 			while (doc_count_ptr < impact_offset_start)
 				{
-				if (!raw) {
+				if (!raw) 
+					{
+					raw = raw_mem;
 					factory.decompress(raw, postings_list + *impact_offset_ptr, *doc_count_ptr);
 					current = raw;
 					end = raw + *doc_count_ptr;
-				}
+					}
 				docid = -1;
 				
 				while (current < end_record_cache)
@@ -969,14 +969,9 @@ else
 						if (docid > max_docid)
 							max_docid = docid;
 
-						should_break = 1;
-						break;
 						// if (count >= last_to_list)
 						// 	break;
 						}
-
-					if (should_break)
-						break;
 
 					sum += *doc_count_ptr;
 					if (sum >= document_frequency)
@@ -985,12 +980,12 @@ else
 					impact_value_ptr++;
 					impact_offset_ptr++;
 					doc_count_ptr++;
-					raw = NULL;
 					}
 
 #else
 				if (!raw)
 					{
+					raw = raw_mem;
 					factory.decompress(raw, postings_list, leaf->impacted_length);
 					max = 0;
 					current = raw;
@@ -999,7 +994,7 @@ else
 
 				while (current < end)
 					{
-					end += 2;
+					end += 2; // why?
 					docid = -1;
 					tf = *current++;
 					while (*current != 0) // get the doc ids of documents that contain the same term
@@ -1007,7 +1002,7 @@ else
 						docid += *current++;
 
 						++term_position;
-						if (term_position >= to_position) 
+						if (term_position >= start_position) 
 							{
 							result_document.docid = docid;
 							if (ant_version == ANT_V5) 
@@ -1028,19 +1023,21 @@ else
 						if (docid > max)
 							max = docid;
 
-						should_break = 1;
+						return get_result();
 						}
-					if (should_break)
-						break;
+
 					current++;				// zero
 					}
-					raw = NULL;
 #endif
-				}
+			raw = NULL;
 			}
 		}
 	}
-	term = iterator.next();
+	term = iterator->next();
+	postings_list = NULL;
+	if (term)
+		return next_term();
+	return NULL;
 }
 
 /*
@@ -1505,22 +1502,22 @@ else
 		if (page_index < 0)
 			page_index = 0;
 
-		long found = list_term(start, this_page_size * page_index);
+		ATIRE_API_result *term_result = list_term(start, this_page_size * page_index);
 		long count = 0;
-		if (found)
+		if (term_result)
 			{
 			*outchannel << "<ATIREresult>" << ANT_channel::endl;
-			ATIRE_API_result *term_result;
-			while ((term_result = next_term())
+			while (term_result)
 				{
 				++count;
-				*outchannel << docid << ":";
-				if (term_result->document_name)
-					*outchannel << term_result->document_name;
-				*outchannel <<  << ANT_channel::endl;
+				*outchannel << term_result.docid << ":";
+				if (term_result->title)
+					*outchannel << term_result->title;
+				*outchannel << ANT_channel::endl;
 
 				if (count >= this_page_size)
 					break;
+				term_result = next_term();
 				}
 
 			*outchannel << "</ATIREresult>" << ANT_channel::endl;
@@ -1670,7 +1667,7 @@ strip_space_inplace(query);
 
 for (ch = strtok(query, SEPERATORS); ch != NULL; ch = strtok(NULL, SEPERATORS))
 	{
-	if ((stop_type & ANT_ANT_param_block::STOPWORDS_NCBI | ANT_ANT_param_block::STOPWORDS_PUURULA) && stop_word_list->isstop(ch))
+	if (((stop_type & ANT_ANT_param_block::STOPWORDS_NCBI) | ANT_ANT_param_block::STOPWORDS_PUURULA) && stop_word_list->isstop(ch))
 		continue;
 
 	if ((stop_type & ANT_ANT_param_block::STOPWORDS_NUMBERS) && isdigit(*ch))

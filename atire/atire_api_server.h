@@ -77,14 +77,19 @@ private:
 	ANT_search_engine_btree_leaf *leaf;
 	char *term;
 	char *first_term;
-	char **last_term;
+	char *last_term;
 	ANT_compressable_integer *current, *end;
+
+	#ifdef IMPACT_HEADER
 	ANT_compressable_integer *impact_offset_start;
 	ANT_compressable_integer *doc_count_ptr;
+	#endif
+
 	long term_position;
 	unsigned char *postings_list_mem, *postings_list;
 	ANT_compressable_integer *raw, *raw_mem;
 	long long global_trim;
+	long long document_frequency;
 	char *lookup_term_buffer;
 
 	char *document_buffer;
