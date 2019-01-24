@@ -36,6 +36,11 @@
 #include "unicode.h"
 #include "atire_api_server.h"
 
+#ifdef DEBUG
+#include <iostream>
+using namespace std;
+#endif
+
 const char *ATIRE_API_server::PROMPT  = "]";
 
 const char *ATIRE_API_server::new_stop_words[] =
@@ -822,6 +827,9 @@ result_document.title = NULL;
 result_document.docid = -1;
 result_document.snippet = NULL;
 
+lookup_term_docid = -1;
+lookup_term_max_id = -1;
+
 // if (page_size <= 0)
 // 	page_size = 100; // change to the params' setting
 
@@ -885,7 +893,6 @@ return next_term(position);
 */
 ATIRE_API_result *ATIRE_API_server::next_term(long start_position)
 {
-long long docid = -1, max;
 long long tf = 0;
 ANT_search_engine *search_engine = atire->get_search_engine();
 static ANT_compression_factory factory;
@@ -908,8 +915,12 @@ else
 				}
 
 #ifdef IMPACT_HEADER
+			/*
+			FIXME
+			the implement for IMPACT_HEADER
+			*/
 			// decompress the header
-			long long docid, max_docid, sum;
+			long long max_docid, sum;
 			//ANT_compressable_integer *current;
 			ANT_compressable_integer *end;
 			//ANT_compressable_integer *doc_count_ptr;
@@ -937,14 +948,14 @@ else
 					factory.decompress(raw, postings_list + *impact_offset_ptr, *doc_count_ptr);
 					current = raw;
 					end = raw + *doc_count_ptr;
+					lookup_term_docid == -1;
 					}
-				docid = -1;
 				
 				while (current < end_record_cache)
 					{
-					docid += *current++;
+					lookup_term_docid += *current++;
 
-					if (docid < 0)
+					if (lookup_term_docid < 0)
 						continue;
 						// why return?
 						// return; // continue;
@@ -987,46 +998,56 @@ else
 					{
 					raw = raw_mem;
 					factory.decompress(raw, postings_list, leaf->impacted_length);
-					max = 0;
+					lookup_term_max_id = 0;
 					current = raw;
 					end = raw + document_frequency;
 					}
 
 				while (current < end)
 					{
-					end += 2; // why?
-					docid = -1;
-					tf = *current++;
+					if (lookup_term_docid == -1)
+						{
+// #ifdef	DEBUG
+// 						std::cerr << "start current: " << static_cast<void*>(current) << ", end: " << static_cast<void*>(end) << ANT_channel::endl;
+// #endif			
+						end += 2; // why?
+						// docid = -1;
+						tf = *current++;
+						}
 					while (*current != 0) // get the doc ids of documents that contain the same term
 						{
-						docid += *current++;
+						lookup_term_docid += *current++;
 
 						++term_position;
 						if (term_position >= start_position) 
 							{
-							result_document.docid = docid;
+							result_document.docid = lookup_term_docid;
 							if (ant_version == ANT_V5) 
 								{
 		// #ifdef FILENAME_INDEX
 								static char filename[1024*1024];
-								result_document.title = atire->get_document_filename(filename, docid);
+								result_document.title = atire->get_document_filename(filename, lookup_term_docid);
 		// #endif
 								}
 							else 
 								{
 								// #else
-								result_document.title = atire->get_document_filename_from_doclist(docid);
+								result_document.title = atire->get_document_filename_from_doclist(lookup_term_docid);
 								// #endif
 								}
 							}
 						
-						if (docid > max)
-							max = docid;
+						if (lookup_term_docid > lookup_term_max_id)
+							lookup_term_max_id = docid;
 
 						return get_result();
 						}
 
-					current++;				// zero
+					lookup_term_docid = -1;
+					current++;
+// #ifdef	DEBUG
+// 					std::cerr << "end current: " << static_cast<void*>(current) << ", end: " << static_cast<void*>(end) << ANT_channel::endl;
+// #endif					// zero
 					}
 #endif
 			raw = NULL;
@@ -1510,7 +1531,7 @@ else
 			while (term_result)
 				{
 				++count;
-				*outchannel << term_result.docid << ":";
+				*outchannel << term_result->docid << ":";
 				if (term_result->title)
 					*outchannel << term_result->title;
 				*outchannel << ANT_channel::endl;

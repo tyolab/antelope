@@ -79,6 +79,7 @@ private:
 	char *first_term;
 	char *last_term;
 	ANT_compressable_integer *current, *end;
+	long long lookup_term_docid, lookup_term_max_id;
 
 	#ifdef IMPACT_HEADER
 	ANT_compressable_integer *impact_offset_start;
