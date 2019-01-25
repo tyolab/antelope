@@ -161,6 +161,31 @@ public class ATIRE_API_server {
     AntelopeJNI.ATIRE_API_server_goto_result(swigCPtr, this, index);
   }
 
+  public ATIRE_API_result list_term(String term, int position) {
+    long cPtr = AntelopeJNI.ATIRE_API_server_list_term__SWIG_0(swigCPtr, this, term, position);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
+  }
+
+  public ATIRE_API_result list_term(String term) {
+    long cPtr = AntelopeJNI.ATIRE_API_server_list_term__SWIG_1(swigCPtr, this, term);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
+  }
+
+  public ATIRE_API_result next_term(int to_position) {
+    long cPtr = AntelopeJNI.ATIRE_API_server_next_term__SWIG_0(swigCPtr, this, to_position);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
+  }
+
+  public ATIRE_API_result next_term() {
+    long cPtr = AntelopeJNI.ATIRE_API_server_next_term__SWIG_1(swigCPtr, this);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
+  }
+
+  public ATIRE_API_result goto_term(int index) {
+    long cPtr = AntelopeJNI.ATIRE_API_server_goto_term(swigCPtr, this, index);
+    return (cPtr == 0) ? null : new ATIRE_API_result(cPtr, false);
+  }
+
   public String result_to_json() {
     return AntelopeJNI.ATIRE_API_server_result_to_json(swigCPtr, this);
   }
@@ -192,6 +217,10 @@ public class ATIRE_API_server {
 
   public String get_current_document() {
     return AntelopeJNI.ATIRE_API_server_get_current_document(swigCPtr, this);
+  }
+
+  public void set_page_size(int page_size) {
+    AntelopeJNI.ATIRE_API_server_set_page_size(swigCPtr, this, page_size);
   }
 
   public void set_output_format(int format) {

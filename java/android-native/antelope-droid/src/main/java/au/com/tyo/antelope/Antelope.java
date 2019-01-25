@@ -1,6 +1,7 @@
 package au.com.tyo.antelope;
 
 import java.util.ArrayList;
+import java.util.List;
 
 import au.com.tyo.antelope.jni.ATIRE_API_result;
 import au.com.tyo.antelope.jni.ATIRE_API_server;
@@ -129,6 +130,10 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         return server.get_document((int) id);
     }
 
+    protected DocumentType createNewSearchResult(long docId, String title, int rank) {
+        return createNewSearchResult(docId, title, rank, null, null, 0);
+    }
+
     protected DocumentType createNewSearchResult(long docId, String fileName, int rank, String documentName, String snippet, float rsv) {
         AntelopeDoc obj = new AntelopeDoc();
 
@@ -140,5 +145,22 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         obj.snippet = snippet;
 
         return (DocumentType) obj;
+    }
+
+    @Override
+    public List<DocumentType> listTerm(String query, int pageSize, int pageIndex) {
+        List<DocumentType> list = null;
+
+        ATIRE_API_result termResult = server.list_term(query, pageSize * pageIndex);
+
+        if (null != termResult) {
+            int count = 0;
+            list = new ArrayList<>();
+            list.add(createNewSearchResult(termResult.getDocid(), termResult.getTitle(), count));
+
+            while ((termResult = server.next_term()) != null)
+                list.add(createNewSearchResult(termResult.getDocid(), termResult.getTitle(), ++count));
+        }
+        return list;
     }
 }

@@ -120,10 +120,14 @@ public abstract class AntelopeClient<DocumentType extends AntelopeDoc> {
      * @return
      */
     public List<DocumentType> listTerm(String query) {
-        return listTerm(query, -1, 0);
+        return listTerm(query, 100, 0);
     }
 
     public List<DocumentType> listTerm(String query, int pageSize, int pageIndex) {
+        return listTermByCommand(query, pageSize, pageIndex);
+    }
+
+    public List<DocumentType> listTermByCommand(String query, int pageSize, int pageIndex) {
         List<DocumentType> list = new ArrayList<>();
 
         String newQuery = query;

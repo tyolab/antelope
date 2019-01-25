@@ -11,8 +11,10 @@
 #ifndef ATIRE_API_SERVER_H_
 #define ATIRE_API_SERVER_H_
 
+#include <stdint.h>
 #include "atire_api_result.h"
-#include "compress.h"
+
+typedef uint32_t ANT_compressable_integer;
 
 class ATIRE_API;
 class ANT_stop_word;
