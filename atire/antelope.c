@@ -28,8 +28,10 @@ int ret = 0;
  */
 /*
    Test the channel memory
+   server.set_outchannel(ATIRE_API_server::CHANNEL_MEMORY);
+   mainly for the api usage
  */
-// server.set_outchannel(ATIRE_API_server::CHANNEL_MEMORY);
+// 
 server.initialize();
 
 server.start_stats();
@@ -43,7 +45,7 @@ for (; server.has_new_command() && !server.is_interrupted(); server.poll())
 	server.process_command();
 
 	// if the outchannel is in memory we need to output to stdout
-	puts(server.get_outchannel_content());
+	// puts(server.get_outchannel_content());
 	
 	server.prompt();
 

@@ -156,7 +156,6 @@ first_term = NULL;
 last_term = NULL;
 lookup_term_buffer = NULL;
 
-iterator = NULL;
 #ifdef IMPACT_HEADER
 impact_header_buffer = NULL;
 #endif
@@ -259,19 +258,34 @@ if (command_buffer)
 	}
 	
 if (iterator)
+	{
 	delete iterator;
+	iterator = NULL;
+	}
 
 if (leaf)
+	{
 	delete leaf;
+	leaf = NULL;
+	}
 
-if (postings_list_mem)	
+if (postings_list_mem)
+	{
 	free(postings_list_mem);
+	postings_list_mem = NULL;
+	}
 
 if (raw_mem)	
+	{
 	free(raw_mem);
+	raw_mem = NULL;
+	}
 
 if (lookup_term_buffer)
+	{
 	delete [] lookup_term_buffer;
+	lookup_term_buffer = NULL;
+	}
 
 #ifdef IMPACT_HEADER
 if (impact_header_buffer)
@@ -305,7 +319,7 @@ return strnnew(start, finish - start);
 ATIRE_API *ATIRE_API_server::init()
 {
 if (atire)
-	return atire;
+	cleanup();
 
 ANT_ANT_param_block& params = *params_ptr;
 ant_version = params.ant_version;

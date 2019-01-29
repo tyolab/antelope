@@ -65,7 +65,8 @@ AM_CFLAGS = -fPIC -g -Wall -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS \
 
 CC = g++
 
-#AM_CFLAGS += -std=c++0x -pedantic 
+## -pedantic 
+AM_CFLAGS += -std=c++11 
 
 AM_CFLAGS += -I $(srcdir)/$(SRC_DIR)
 
