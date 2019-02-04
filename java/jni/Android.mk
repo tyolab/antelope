@@ -34,6 +34,9 @@ MINUS_D += -DNOMINMAX
 # NO DOCLIST
 MINUS_D += -DFILENAME_INDEX
 
+# USE IT AS LIBRARY WITH API INTERFACE
+MINUS_D += -DATIRE_API
+
 CORE_SOURCES =  \
 	$(SRC_DIR)/arithmetic_model_bigram.c \
 	$(SRC_DIR)/arithmetic_model_tables.c \
@@ -97,6 +100,7 @@ CORE_SOURCES =  \
 	$(SRC_DIR)/directory_iterator_warc.c \
 	$(SRC_DIR)/directory_iterator_warc_gz_recursive.c \
 	$(SRC_DIR)/disk.c \
+	$(SRC_DIR)/error.c \
 	$(SRC_DIR)/evaluation_binary_preference.c \
 	$(SRC_DIR)/evaluation.c \
 	$(SRC_DIR)/evaluation_discounted_cumulative_gain.c \

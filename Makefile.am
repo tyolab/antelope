@@ -158,6 +158,7 @@ core_sources =  \
 	$(SRC_DIR)/evaluation_success_at_n.c \
 	$(SRC_DIR)/evaluator.c \
 	$(SRC_DIR)/event.c \
+	$(SRC_DIR)/error.c \
 	$(SRC_DIR)/file.c \
 	$(SRC_DIR)/file_internals.c \
 	$(SRC_DIR)/file_memory.c \

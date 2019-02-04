@@ -109,6 +109,7 @@ public:
 	virtual ~ANT_search_engine();
 
 	void set_ant_version(long version);
+	long get_ant_version() { return ant_version; }
 
 	virtual int open(const char *filename = INDEX_FILENAME, unsigned long header_offset = 0);
 	void set_accumulator_width(long long width);
