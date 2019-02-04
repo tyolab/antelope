@@ -30,7 +30,7 @@ android {
                 sourceSets {
                     main {
                         jniLibs {
-                            srcDirs '/data/tyolab/code/antelope/atire', '/data/tyolab/code/antelope/source'
+                            srcDirs '../../../atire', '../../../ssource'
                         }
                     }
                 }
@@ -38,11 +38,20 @@ android {
         }
     }
 
-    externalNativeBuild {
-        ndkBuild {
-            path "/data/tyolab/code/antelope/java/jni/Android.mk"
-        }
-    }
+    /**
+     * ANTELOPE JNI CODE
+     * $System.env.ANTELOPE_JNI
+     * or
+     * System.getenv('ANTELOPE_JNI')
+     *
+     * for debugging
+     * if so, the jniLibs needs to be renamed or removed before uncommented
+     */
+//    externalNativeBuild {
+//        ndkBuild {
+//            path "/data/tyolab/code/antelope/java/jni/Android.mk"
+//        }
+//    }
     packagingOptions {
         pickFirst 'lib/x86/libc++_shared.so'
         pickFirst 'lib/x86/libantelope_jni.so'
