@@ -130,26 +130,26 @@ index->read(&eight_byte);
 // read collection id
 index->read(&eight_byte);
 if (eight_byte != ANT_file_signature_index)
-	on_error(("ERROR: file type mismatch\n"), ANT_ERROR_FILE_TYPE_MISMATCH);
+	ANT_on_error(("ERROR: file type mismatch\n"), ANT_ERROR_FILE_TYPE_MISMATCH);
 
 // read version number
 index->read(&four_byte);
 if (ant_version != -1)
 	{
 	if (four_byte != ant_version)
-		on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
+		ANT_on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
 	}
 else
 	{
 	ant_version = four_byte;
 	if (ant_version != ANT_V5 || ant_version != ANT_V3)
-		on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
+		ANT_on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
 	}
 
 // read file signature
 index->read(&four_byte);
 if (four_byte != ANT_file_signature)
-	on_error(("ERROR: file signature mismatch\n"), ANT_ERROR_SIGNATURE_MISMATCH);
+	ANT_on_error(("ERROR: file signature mismatch\n"), ANT_ERROR_SIGNATURE_MISMATCH);
 
 /*
 	Load the B-tree header
@@ -586,7 +586,7 @@ unsigned char *ANT_search_engine::get_one_quantum(ANT_search_engine_btree_leaf *
 #endif // end of #ifdef SPECIAL_COMPRESSION
 
 if (!destination)
-	on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
+	ANT_on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
 
 return destination;
 }
@@ -651,7 +651,7 @@ unsigned char *ANT_search_engine::get_impact_header(ANT_search_engine_btree_leaf
 #endif // end of #ifdef SPECIAL_COMPRESSION
 
 if (!destination)
-	on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
+	ANT_on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
 
 return destination;
 }
@@ -765,7 +765,7 @@ unsigned char *ANT_search_engine::get_postings(ANT_search_engine_btree_leaf *ter
 #endif
 
 if (!destination)
-	on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
+	ANT_on_error(("Error reading from index\n"), ANT_ERROR_INDEX_READING);
 
 return destination;
 }

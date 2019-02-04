@@ -306,6 +306,7 @@ core_sources =  \
 #	$(SRC_DIR)/search_engine_forum_INEX_focus.h 
 #	$(SRC_DIR)/search_engine_forum_INEX.h 
 #	$(SRC_DIR)/search_engine_forum_TREC.h 
+
 core_noinst_headers = \
 	$(SRC_DIR)/arithmetic_coding_decoder.h \
 	$(SRC_DIR)/arithmetic_coding_encoder.h \
@@ -396,6 +397,7 @@ core_noinst_headers = \
 	$(SRC_DIR)/encode_char_base40.h \
 	$(SRC_DIR)/encode_char.h \
 	$(SRC_DIR)/encode_char_printable_ascii.h \
+	$(SRC_DIR)/error.h \
 	$(SRC_DIR)/evaluation_binary_preference.h \
 	$(SRC_DIR)/evaluation_discounted_cumulative_gain.h \
 	$(SRC_DIR)/evaluation_expected_reciprocal_rank.h \

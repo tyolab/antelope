@@ -17,6 +17,6 @@ enum {ANT_ERROR_NONE,
 
 extern long ANT_error_code;
 
-void on_error(const char *error_info, long error_code = ANT_ERROR_UNKNOWN);
+extern void ANT_on_error(const char *error_info, long error_code = ANT_ERROR_UNKNOWN);
 
 #endif  /* ERROR_H_ */
