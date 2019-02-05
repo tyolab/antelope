@@ -35,7 +35,8 @@ MINUS_D += -DNOMINMAX
 MINUS_D += -DFILENAME_INDEX
 
 # USE IT AS LIBRARY WITH API INTERFACE
-MINUS_D += -DATIRE_API
+# NOT TO USE ATIRE_API which is conflict with the ATIRE_API class
+MINUS_D += -DANTELOPE_API
 
 CORE_SOURCES =  \
 	$(SRC_DIR)/arithmetic_model_bigram.c \
@@ -322,54 +323,49 @@ LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
 LOCAL_C_INCLUDES += $(SRC_DIR)  $(ATIRE_DIR)
 
 include $(BUILD_SHARED_LIBRARY)
-# include $(CLEAR_VARS)
+include $(CLEAR_VARS)
 
-# LOCAL_PATH := $(call my-dir)
-# ATIRE_DIR := $(LOCAL_PATH)/../../atire
-# SRC_DIR := $(LOCAL_PATH)/../../source
-# INCLUDE := include
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += 
+LOCAL_CPP_EXTENSION := .c
 
-# LOCAL_CFLAGS := -g -fPIC
-# LOCAL_LDFLAGS += 
-# LOCAL_CPP_EXTENSION := .c
+LOCAL_MODULE := antelope
+LOCAL_SRC_FILES := $(JNI_SOURCES) $(ATIRE_DIR)/antelope.c
+LOCAL_CPPFLAGS := -std=c++11 -Wall         
+LOCAL_LDLIBS := -llog -lz -ldl
+LOCAL_STATIC_LIBRARIES := antelope_jni
+LOCAL_CFLAGS := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
+		-D_CRT_SECURE_NO_WARNINGS -DATIRE_MOBILE -DATIRE_JNI \
+		$(MINUS_D)  \
+		-I $(SRC_DIR) -I ./include -I $(ATIRE_DIR)
 
-# LOCAL_MODULE := antelope
-# LOCAL_SRC_FILES := $(JNI_SOURCES) $(ATIRE_DIR)/antelope.c
-# LOCAL_CPPFLAGS := -std=c++11 -Wall         
-# LOCAL_LDLIBS := -llog -lz -ldl
-# LOCAL_STATIC_LIBRARIES := antelope_jni
-# LOCAL_CFLAGS := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
-# 		-D_CRT_SECURE_NO_WARNINGS -DATIRE_MOBILE -DATIRE_JNI \
-# 		$(MINUS_D)  \
-# 		-I $(SRC_DIR) -I ./include -I $(ATIRE_DIR)
+include $(BUILD_EXECUTABLE) 
+include $(CLEAR_VARS)
 
-# include $(BUILD_EXECUTABLE) 
-# include $(CLEAR_VARS)
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += 
+LOCAL_CPP_EXTENSION := .c
 
-# LOCAL_CFLAGS := -g -fPIC
-# LOCAL_LDFLAGS += 
-# #LOCAL_CPP_EXTENSION := .c
+LOCAL_MODULE := antelope-dict
+LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
+LOCAL_CPPFLAGS := -std=c++11 -Wall         
+LOCAL_LDLIBS += -llog -lz -ldl
+LOCAL_SHARED_LIBRARIES += antelope_jni
+LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
 
-# LOCAL_MODULE := antelope-dict
-# LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
-# #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
-# LOCAL_LDLIBS += -llog -lz -ldl
-# LOCAL_SHARED_LIBRARIES += antelope_jni
-# LOCAL_CFLAGS += -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
+include $(BUILD_EXECUTABLE)  
 
-# include $(BUILD_EXECUTABLE)  
+include $(CLEAR_VARS)
+LOCAL_CFLAGS := -g -fPIC
+LOCAL_LDFLAGS += 
+LOCAL_CPP_EXTENSION := .c
 
-# include $(CLEAR_VARS)
-# LOCAL_CFLAGS := -g -fPIC
-# LOCAL_LDFLAGS += 
-# #LOCAL_CPP_EXTENSION := .c
+LOCAL_MODULE := index
+LOCAL_SRC_FILES := $(ATIRE_DIR)/index.c
+LOCAL_CPPFLAGS := -std=c++11 -Wall             
+LOCAL_LDLIBS += -llog -lz -ldl
+LOCAL_STATIC_LIBRARIES := antelope_core
+LOCAL_SHARED_LIBRARIES += antelope_jni
+LOCAL_CFLAGS += $(MINUS_D) -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
 
-# LOCAL_MODULE := index
-# LOCAL_SRC_FILES := $(ATIRE_DIR)/index.c
-# #LOCAL_CPPFLAGS := -std=gnu++0x -Wall         
-# LOCAL_LDLIBS += -llog -lz -ldl
-# LOCAL_STATIC_LIBRARIES := antelope_core
-# LOCAL_SHARED_LIBRARIES += antelope_jni
-# LOCAL_CFLAGS += $(MINUS_D) -I ./include -I $(ATIRE_DIR) -I $(SRC_DIR)
-
-# include $(BUILD_EXECUTABLE)  
+include $(BUILD_EXECUTABLE)  
