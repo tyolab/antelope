@@ -275,7 +275,7 @@ LOCAL_CFLAGS    += -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DANT_WITHOUT_STL \
 		-DATIRE_MOBILE -DATIRE_JNI $(MINUS_D) \
 		-I ./include
 		
-#LOCAL_C_INCLUDES := ./include $(SRC_DIR)
+LOCAL_C_INCLUDES := ./include $(SRC_DIR)
 
 	
 include $(BUILD_STATIC_LIBRARY)
@@ -319,7 +319,7 @@ LOCAL_CFLAGS    := -g -Wno-write-strings  -DATIRE_LIBRARY -DONE_PARSER \
 		$(MINUS_D)  \
 		-I $(SRC_DIR) -I ./include -I $(ATIRE_DIR)
 		
-LOCAL_C_INCLUDES += $(SRC_DIR)
+LOCAL_C_INCLUDES += $(SRC_DIR)  $(ATIRE_DIR)
 
 include $(BUILD_SHARED_LIBRARY)
 # include $(CLEAR_VARS)
