@@ -1,1 +1,1 @@
-include ':libantelope', ':antelope-droid', ':sample'
+include ':libantelope', ':antelope_droid', ':sample'

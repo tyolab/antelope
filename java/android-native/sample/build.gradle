@@ -45,8 +45,9 @@ dependencies {
     androidTestImplementation 'com.android.support.test:runner:1.0.2'
     androidTestImplementation 'com.android.support.test.espresso:espresso-core:3.0.2'
 
-    // implementation project(path: ':libantelope')
-    implementation project(path: ':antelope-droid')
+    // for debugging
+    implementation project(path: ':libantelope')
+    // implementation project(path: ':antelope_droid')
 
 //    implementation(name:'CommonAndroid-release.aar', ext:'aar')
 //    implementation(name:'CommonAppLib-release.aar', ext:'aar')
