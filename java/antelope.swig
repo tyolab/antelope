@@ -26,6 +26,7 @@
 #endif
 
 %{
+#include "../atire/atire_api.h"
 #include "../atire/atire_api_remote.h"
 #include "../atire/atire_api_server.h"
 #include "../atire/atire_api_result.h"

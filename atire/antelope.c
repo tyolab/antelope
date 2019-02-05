@@ -1,6 +1,6 @@
 /*
-	ATIRE.C
-	-------
+	ANTELOPE.CPP
+	------------
 */
 #include <stdio.h>
 

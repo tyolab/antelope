@@ -24,5 +24,5 @@ mv -v ../*.cxx ./
 for i in `ls *.cxx`
 do
 	name=`echo $i | cut -f 1 -d "."`
-	ln -sf $i $name.c
+	ln -sf $i $name.cpp
 done
