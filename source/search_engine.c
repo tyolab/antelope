@@ -134,7 +134,7 @@ if (eight_byte != ANT_file_signature_index)
 
 // read version number
 index->read(&four_byte);
-if (ant_version != -1)
+if (ant_version != ANT_VX)
 	{
 	if (four_byte != ant_version)
 		ANT_on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
@@ -142,7 +142,7 @@ if (ant_version != -1)
 else
 	{
 	ant_version = four_byte;
-	if (ant_version != ANT_V5 || ant_version != ANT_V3)
+	if (ant_version != ANT_V5 && ant_version != ANT_V3)
 		ANT_on_error(("ERROR: version mismatch\n"), ANT_ERROR_VERSION_MISMATH);
 	}
 

@@ -14,6 +14,17 @@
             "MIMode": "lldb",
             "miDebuggerServerAddress": "localhost:5039"
         },
+        { 
+            "name": "(lldb) Launch Antelope on Linux",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/build/debug/antelope",
+            "MIMode": "gdb",
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/build/debug",
+            "mode": "debug",
+            "externalConsole": true
+        },
         {
             "name": "(lldb) Launch Antelope on Mac",
             "type": "cppdbg",

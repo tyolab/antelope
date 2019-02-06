@@ -7,7 +7,8 @@
 
 #include "fundamental_types.h"
 
-enum {ANT_V3 = 0x0003, ANT_V4 = 0x0004, ANT_V5 = 0x0005};
+// ANT_VX unknown version until getting version from index file
+enum {ANT_VX = -1, ANT_V3 = 0x0003, ANT_V4 = 0x0004, ANT_V5 = 0x0005};
 
 extern long ANT_version;		// version number in BCD
 extern char *ANT_version_string;

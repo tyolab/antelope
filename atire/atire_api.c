@@ -270,16 +270,7 @@ ANT_search_engine_readability *readable_search_engine;
 if (document_list != NULL)
 	return 1;		//we're already open;
 
-if (ant_version != ANT_V5) 
-	{
-	// #ifndef FILENAME_INDEX
-	document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
-	if (document_list == NULL)
-		return 1;		//document list could not be read
-	answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
-	// #endif
-	}
-
+// Read index file first
 if (type & READABILITY_SEARCH_ENGINE)
 	{
 	search_engine = readable_search_engine = new ANT_search_engine_readability(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
@@ -295,7 +286,7 @@ if (type & READABILITY_SEARCH_ENGINE)
 else
 	{
 	search_engine = new ANT_search_engine(memory, type & INDEX_IN_MEMORY ? INDEX_IN_MEMORY : INDEX_IN_FILE);
-	// set the ant index version
+	// set the ant index version if it is provided to check if matching the intended
 	search_engine->set_ant_version(ant_version);
 
 	if (search_engine->open(index_filename, header_offset) == 0)
@@ -310,6 +301,20 @@ else
 		ranking_function = new ANT_ranking_function_impact(search_engine, false, -1);
 	else
 		ranking_function = new ANT_ranking_function_divergence(search_engine, quantize, quantization_bits);
+	}
+
+// Then doclist
+// the ant_version defined in this class is the version specified by user
+// if no specific version is given, it will be loaded in the index file
+set_ant_version(search_engine->get_ant_version());
+if (ant_version != ANT_V5) 
+	{
+	// #ifndef FILENAME_INDEX
+	document_list = read_docid_list(doclist_filename, &documents_in_id_list, &filename_list, &mem1, &mem2);
+	if (document_list == NULL)
+		return 1;		//document list could not be read
+	answer_list = (char **)memory->malloc(sizeof(*answer_list) * documents_in_id_list);
+	// #endif
 	}
 
 return 0;		// success

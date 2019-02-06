@@ -353,6 +353,7 @@ if (fail)
 else
 	{
 	ANT_search_engine *search_engine = atire->get_search_engine();
+	set_ant_version(search_engine->get_ant_version());
 
 	/* Load in all the pregens */
 	for (int i = 0 ; i < params.pregen_count; i++)
