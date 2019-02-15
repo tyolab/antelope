@@ -1,5 +1,7 @@
 package au.com.tyo.antelope;
 
+import android.util.Log;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -7,6 +9,8 @@ import au.com.tyo.antelope.jni.ATIRE_API_result;
 import au.com.tyo.antelope.jni.ATIRE_API_server;
 
 public abstract class Antelope<DocumentType extends AntelopeDoc> extends AntelopeClient<DocumentType> {
+
+    private static final String TAG = "Antelope";
 
     private String opts;
 
@@ -33,6 +37,12 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         server.set_params(opts);
         server.set_outchannel(3);
         server.initialize();
+
+        int errorCode = au.com.tyo.antelope.jni.Antelope.getANT_error_code();
+        if (errorCode != 0) {
+            Log.e(TAG, "Antelope search engine failed to start, with error code: " + errorCode);
+            stop();
+        }
     }
 
     public boolean isServerOnline() {
@@ -52,8 +62,10 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
     }
 
     public void stop() {
-        server.finish();
-        server = null;
+        if (null != server) {
+            server.finish();
+            server = null;
+        }
     }
 
     public AntelopeSearchResult search(String query, boolean loadContent) throws Exception {

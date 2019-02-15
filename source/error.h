@@ -7,12 +7,13 @@
 
 #include "fundamental_types.h"
 
-enum {ANT_ERROR_NONE, 
-        ANT_ERROR_SIGNATURE_MISMATCH,
-        ANT_ERROR_VERSION_MISMATH, 
-        ANT_ERROR_FILE_TYPE_MISMATCH,
-        ANT_ERROR_INDEX_READING,
-        ANT_ERROR_UNKNOWN
+enum {
+        ANT_ERROR_UNKNOWN = -1,
+        ANT_ERROR_NONE = 0, 
+        ANT_ERROR_SIGNATURE_MISMATCH = 1,
+        ANT_ERROR_VERSION_MISMATH = 2, 
+        ANT_ERROR_FILE_TYPE_MISMATCH = 3,
+        ANT_ERROR_INDEX_READING = 4
         };
 
 extern long ANT_error_code;
