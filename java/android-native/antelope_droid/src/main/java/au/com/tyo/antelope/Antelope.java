@@ -19,6 +19,7 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
     private AntelopeParser parser;
 
     private static boolean nativeLibraryLoaded = false;
+    private int statusCode;
 
     public static void loadNativeLibrary() {
         if (!nativeLibraryLoaded) {
@@ -31,6 +32,10 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         this.opts = opts;
     }
 
+    public int getStatusCode() {
+        return statusCode;
+    }
+
     public void initializeServer() {
         server = new ATIRE_API_server();
 
@@ -38,11 +43,15 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         server.set_outchannel(3);
         server.initialize();
 
-        int errorCode = au.com.tyo.antelope.jni.Antelope.getANT_error_code();
-        if (errorCode != 0) {
-            Log.e(TAG, "Antelope search engine failed to start, with error code: " + errorCode);
-            stop();
-        }
+        statusCode = au.com.tyo.antelope.jni.Antelope.getANT_error_code();
+
+        /**
+         * @TODO
+         * Use a general logger for cross-platform compatible with object injection method or
+         * a specific logger implementation for different platforms
+         *
+         * check status code
+         */
     }
 
     public boolean isServerOnline() {
@@ -58,7 +67,8 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
     }
 
     public void start() {
-        server.start();
+        if (null != server)
+            server.start();
     }
 
     public void stop() {
