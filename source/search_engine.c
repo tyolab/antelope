@@ -109,6 +109,11 @@ end = index->file_length() - header_offset;
 
 index->read(&eight_byte);
 term_header = eight_byte;
+if (term_header >= end) 
+	{
+	ANT_on_error(("ERROR: unrecognized index, probably the index file was created with indexer\n"), ANT_ERROR_BAD_INDEX);
+	return -1;
+	}
 
 index->read(&four_byte);
 string_length_of_longest_term = four_byte;

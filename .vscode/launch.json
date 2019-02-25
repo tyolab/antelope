@@ -21,6 +21,7 @@
             "program": "${workspaceFolder}/build/debug/antelope",
             "MIMode": "gdb",
             "stopAtEntry": false,
+            "args": ["-findex","/data/tyolab/data/index/au.com.tyo.wiki.offline.full.es.idx"],
             "cwd": "${workspaceFolder}/build/debug",
             "mode": "debug",
             "externalConsole": true
