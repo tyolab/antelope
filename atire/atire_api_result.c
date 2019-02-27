@@ -29,8 +29,14 @@ ATIRE_API_result::ATIRE_API_result() {
 ATIRE_API_result::~ATIRE_API_result() {
     if (document_name)
         delete [] document_name;
+    
+    /*
+    No need to free title's memory
+    for ANT_V5, title is stored in a static variable
+    for ANT_V3, title is from a document title list (array)
     if (title)
         delete [] title;
+    */
     if (snippet)
         delete [] snippet;                
 }
