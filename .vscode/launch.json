@@ -33,7 +33,7 @@
             "program": "${workspaceFolder}/build/debug/index",
             "MIMode": "gdb",
             "stopAtEntry": false,
-            "args": ["-rtrec:tag:page:title", "-Rt", "-N300", "-sa", "/data/tyolab/data/wikipedia/zh_classicalwiki/zh_classicalwiki-20140618-pages-articles.pile"],
+            "args": ["-rtrec:tag:page:title", "-Rt", "-N300", "-sa", "-parallel", "/data/tyolab/data/wikipedia/zh_classicalwiki/zh_classicalwiki-20140618-pages-articles.pile"],
             //"args": ["-rtrec", "-Rt", "-N300", "-sa", "/data/tyolab/data/wikipedia/zh_classicalwiki/zh_classicalwiki-20140618-pages-articles.pile"],
             "cwd": "${workspaceFolder}/build/debug",
             "mode": "debug",

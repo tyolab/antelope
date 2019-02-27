@@ -69,6 +69,8 @@ public:
 	ANT_compression_text_factory *get_compression_text_factory() { return factory_text; }
 	ANT_index_document *get_document_indexer() { return document_indexer; }
 
+	void enable_parallel_indexing() { parallel_indexing = 1; }
+
 	static bool initialize();
 
 private:

@@ -191,7 +191,10 @@ factory_text = indexer.get_compression_text_factory();
 
 // #ifdef PARALLEL_INDEXING
 if (param_block.parallel_indexing)
+	{
 	parallel_disk = new ANT_directory_iterator_multiple;
+	indexer.enable_parallel_indexing();
+	}
 // #endif
 
 /*

@@ -41,9 +41,11 @@ ATIRE_indexer::ATIRE_indexer()
 {
 pregen = NULL;
 
-#ifndef PARALLEL_INDEXING_DOCUMENTS
+//#ifndef PARALLEL_INDEXING_DOCUMENTS
 stemmer = NULL;
-#endif
+//#endif
+
+parallel_indexing = 0;
 }
 
 ATIRE_indexer::~ATIRE_indexer()
@@ -304,18 +306,21 @@ if (!skip_document)
 		   if parallel indexing macro is set and "-C" option is set too, text will be compressed when being retrieved
 		   so we don't need to compress it again, and the following code is for the situation where parallel indexing is not set
 		 */
-#ifndef PARALLEL_INDEXING
-		unsigned long compressed_size;
+		if (!parallel_indexing)
+			{
+//#ifndef PARALLEL_INDEXING
+			unsigned long compressed_size;
 
-		/*
-		 * the following code is copied from from the directory_iterator_compressor
-		 * it may be better to have it refactored to include a compressor in the base class (i.e. ANT_directory_iterator)
-		 */
-		current_file->compressed = new (std::nothrow) char [(size_t)(compressed_size = factory_text->space_needed_to_compress((unsigned long)length + 1))];		// +1 to include the '\0'
-		if (factory_text->compress(current_file->compressed, &compressed_size, file, (unsigned long)(length + 1)) == NULL)
-			exit(printf("Cannot compress document (name:%s)\n", filename));
-		current_file->compressed_length = compressed_size;
-#endif
+			/*
+			* the following code is copied from from the directory_iterator_compressor
+			* it may be better to have it refactored to include a compressor in the base class (i.e. ANT_directory_iterator)
+			*/
+			current_file->compressed = new (std::nothrow) char [(size_t)(compressed_size = factory_text->space_needed_to_compress((unsigned long)length + 1))];		// +1 to include the '\0'
+			if (factory_text->compress(current_file->compressed, &compressed_size, file, (unsigned long)(length + 1)) == NULL)
+				exit(printf("Cannot compress document (name:%s)\n", filename));
+			current_file->compressed_length = compressed_size;
+			}
+//#endif
 		index->add_to_document_repository(strip_space_inplace(filename), current_file->compressed, (long)current_file->compressed_length, (long)length);
 		if (current_file->compressed)
 			delete [] current_file->compressed;
