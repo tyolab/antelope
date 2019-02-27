@@ -51,7 +51,7 @@ private:
 	long segmentation;
 	long document_compression_scheme;
 
-	long pararell_indexing;
+	long parallel_indexing;
 
 public:
 	ATIRE_indexer();

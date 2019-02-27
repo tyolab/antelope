@@ -111,7 +111,7 @@ index->read(&eight_byte);
 term_header = eight_byte;
 if (term_header >= end) 
 	{
-	ANT_on_error(("ERROR: unrecognized index, probably the index file was created with indexer\n"), ANT_ERROR_BAD_INDEX);
+	ANT_on_error(("ERROR: unrecognized index, probably the index file was created with a different version of indexer\n"), ANT_ERROR_BAD_INDEX);
 	return -1;
 	}
 

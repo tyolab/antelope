@@ -160,7 +160,7 @@ puts("");
 
 puts("SEGMENTATION");
 puts("------------");
-puts("-pararell      Enable pararell indexing");
+puts("-parallel      Enable parallel indexing");
 puts("");
 
 puts("SEGMENTATION");
@@ -599,7 +599,7 @@ for (param = 1; param < argc; param++)
 			}
 		else if (*command == 't')
 			term_expansion(command + 1, FALSE);
-		else if (strcmp(command, "pararell") == 0)
+		else if (strcmp(command, "parallel") == 0)
 			parallel_indexing = TRUE;
 		else if (strcmp(command, "nologo") == 0)
 			logo = FALSE;

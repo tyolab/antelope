@@ -487,21 +487,26 @@ if (doc == 0)
 else
 	{
 	now = stats.start_timer();
-	indexer.finish();
 	stats.add_disk_output_time(stats.stop_timer(now));
 	indexer.get_index()->text_render(param_block.statistics);
 	}
-
-delete disk;
-delete file_stream;
-delete decompressor;
-delete instream_buffer;
 
 if (param_block.statistics & ANT_indexer_param_block::STAT_TIME)
 	{
 	printf("\nTIMINGS\n-------\n");
 	stats.text_render();
 	}
+
+/**
+ * Wail until stats gets all the information first then do the memory clean-up
+ */
+if (doc > 0)
+	indexer.finish();
+
+delete disk;
+delete file_stream;
+delete decompressor;
+delete instream_buffer;
 
 return 0;
 }
