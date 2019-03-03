@@ -11,9 +11,12 @@ APP_CPPFLAGS += -frtti -fexceptions
 ## included in the system libraries of old Androids. In that case, using
 ## c++_static would be a better idea
 ## 
-APP_STL := c++_shared
+APP_STL := c++_static
 
-APP_PLATFORM := android-27
+##
+## After android-21, new functions are used and they don't exist on old Android platforms
+## 
+APP_PLATFORM := android-20
 
 #LOCAL_ARM_MODE := thumb
 ifeq ($(TARGET_ARCH),arm)
