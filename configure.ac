@@ -86,7 +86,7 @@ AC_SUBST([MYSQL_LIBS])
 # Checks for libraries.
 AC_CHECK_LIB([dl], [dlopen])
 AC_CHECK_LIB([z], [inflateReset], [LIBS="$LIBS -lz"; CXXFLAGS="$CXXFLAGS -DANT_HAS_ZLIB"; CFLAGS="$CXXFLAGS"])
-AC_CHECK_LIB([bz2], [BZ2_bzDecompressInit], [LIBS="$LIBS -lbz2"; CXXFLAGS="$CXXFLAGS -DANT_HAS_BZLIB"; CFLAGS="$CXXFLAGS"])
+AC_CHECK_LIB([bz2], [BZ2_bzBuffToBuffCompress], [LIBS="$LIBS -lbz2"; CXXFLAGS="$CXXFLAGS -DANT_HAS_BZLIB"; CFLAGS="$CXXFLAGS"])
 AC_CHECK_LIB([lzo], [], [LIBS="$LIBS -llzo"; CXXFLAGS="$CXXFLAGS -DANT_HAS_LZO"; CFLAGS="$CXXFLAGS"])
 #AC_CHECK_LIB([mysqlclient], [mysql_init], [LIBS="$LIBS $MYSQL_LIBS";])
 
