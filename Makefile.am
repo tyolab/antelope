@@ -735,7 +735,7 @@ libantelope_ant_param_la_LDFLAGS =
 libantelope_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
 libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 
-#ATIRE_API_LIB = -L. -latire_core -ldl -lpthread
+#ATIRE_API_LIB = -L. -lantelope_core -ldl -lpthread
 
 # this lists the binaries to produce, the (non-PHONY, binary) targets in
 # the previous manual Makefile

@@ -28,31 +28,31 @@ libantelope_jni_la_SOURCES = antelope_wrap.c \
 	$(top_srcdir)/atire/index.c
 libantelope_jni_la_CFLAGS = -DATIRE_LIBRARY  -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
 		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR $(MINUS_D) -I$(top_srcdir)/source
-libantelope_jni_la_LDFLAGS = -fPIC -export-dynamic -shared -latire_core -latire_api 		
+libantelope_jni_la_LDFLAGS = -fPIC -export-dynamic -shared -lantelope_core -lantelope_api 		
 # -Bsymbolic -export-dynamic
 libantelope_jni_la_DEPENDENCIES = ../../libatire_core.la ../../libatire_api.la  ../../libatire_ant_param.la ../../libatire_index_param.la
 
 # other possible libraries
-#  -L../../ -latire_index_param -L../../ -latire_index 
+#  -L../../ -lantelope_index_param -L../../ -lantelope_index 
 libantelope_jni_la_LIBADD =  ../../libatire_core.la  ../../libatire_api.la ../../libatire_ant_param.la ../../libatire_index_param.la 
 
 noinst_PROGRAMS = index_test antelope_test antelope_command
 
 index_test_SOURCES = test/index_test.c
 index_test_CFLAGS = -I$(srcdir)/include
-index_test_LDADD = -L. -lantelope_jni -latire_core -latire_api 
+index_test_LDADD = -L. -lantelope_jni -lantelope_core -lantelope_api 
 index_test_LDFLAGS = -static -export-dynamic
 index_test_DEPENDENCIES = libantelope_jni.la ../../libatire_core.la ../../libatire_api.la
 
 antelope_test_SOURCES = test/antelope_test.c
 antelope_test_CFLAGS = -I$(srcdir)/include
-antelope_test_LDADD = -L. -lantelope_jni -latire_core  -latire_api
+antelope_test_LDADD = -L. -lantelope_jni -lantelope_core  -lantelope_api
 antelope_test_LDFLAGS = -static -export-dynamic
 antelope_test_DEPENDENCIES = libantelope_jni.la ../../libatire_core.la ../../libatire_api.la
 
 antelope_command_SOURCES = test/antelope_command.c \
 						$(top_srcdir)/atire/atire_api_remote.c
 antelope_command_CFLAGS = -I$(srcdir)/include -DATIRE_JNI -I$(top_srcdir)/source
-antelope_command_LDADD = -L. -lantelope_jni -latire_core -latire_api
+antelope_command_LDADD = -L. -lantelope_jni -lantelope_core -lantelope_api
 antelope_command_LDFLAGS = -static -export-dynamic
 antelope_command_DEPENDENCIES = libantelope_jni.la ../../libatire_core.la ../../libatire_api.la
