@@ -34,7 +34,15 @@ const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT)
 #if (defined(ANDROID) || defined(__ANDROID__))
 	// NOTHING
 #else
-	static bool indexer_static_initialzed = ATIRE_indexer::initialize();
+	// See the issue #6 on github
+	// This might cause a program that includes the "-lantelope" library to crash
+
+	// Only use the following code for indexer intialisation in where such as "index.c" 
+	// after an indexer instance is actually created
+	// static bool indexer_static_initialzed = ATIRE_indexer::initialize();
+
+	// this part of code will be run implicitly even this is no indexer instance created
+	// subsequently a crash could happen with empty pointer used for an instance initialisation 
 #endif
 
 ATIRE_indexer::ATIRE_indexer()

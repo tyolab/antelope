@@ -1,15 +1,10 @@
-// var atire = require('./build/Release/antelope_api.node');
-var atire = require('./build/Debug/antelope_api');
-//console.log(atire.version()); // 'world'
+var antelope = require('./build/Release/antelope_api.node');
 
 
-//var client = atire.ATIRE_API_remote();
 
-//var indexer = new atire.ATIRE_indexer();
+// var antelope = require('./build/Debug/antelope_api');
 
-var server = new atire.ATIRE_API_server();
-
-//console.log(server.version());
+var server = new antelope.ATIRE_API_server();
 
 // don't have to set it when we don't have one
 server.set_params("-nologo");
@@ -18,8 +13,6 @@ server.initialize();
 
 server.start();
 
-/* no embeded loop */
-//server.loop();
 
 /**
  * Print out Reach Console version 

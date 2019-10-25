@@ -743,8 +743,6 @@ bin_PROGRAMS = index antelope antelope_client antelope_broker antelope_dictionar
 
 antelope_SOURCES = \
 	$(ATIRE_DIR)/antelope.c 
-#	$(ATIRE_DIR)/indexer_param_block_rank.c \
-#	$(ATIRE_DIR)/ant_param_block.c
 antelope_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
 #antelope_LDFLAGS = -rdynamic
 antelope_LDFLAGS = -static -export-dynamic
