@@ -1,10 +1,10 @@
 {
   "targets": [
     {
-      "target_name": "atire_api",
+      "target_name": "antelope_api",
       "sources": [ "antelope_wrap.cxx" ],
-      "cflags!": [ '-DSWIG_V8_VERSION=0x045103' ],
-      "cflags_cc!": [ '-DSWIG_V8_VERSION=0x045103' ],
+      "cflags!": [ '-DSWIG_V8_VERSION=0x062414' ],
+      "cflags_cc!": [ '-DSWIG_V8_VERSION=0x062414' ],
       "include_dirs": ["../atire", "../source"],
 	  "libraries": ["-L../build/debug", "-lantelope_api", 
             "-lantelope_core", 

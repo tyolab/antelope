@@ -1,5 +1,5 @@
-var atire = require('./build/Release/atire_api');
-// var atire = require('./build/Debug/atire_api');
+// var atire = require('./build/Release/antelope_api.node');
+var atire = require('./build/Debug/antelope_api');
 //console.log(atire.version()); // 'world'
 
 
