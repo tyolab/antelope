@@ -45,6 +45,10 @@ const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT)
 	// subsequently a crash could happen with empty pointer used for an instance initialisation 
 #endif
 
+/*
+	ATIRE_INDEXER::ATIRE_INDEXER()
+	------------------------------
+*/
 ATIRE_indexer::ATIRE_indexer()
 {
 pregen = NULL;
@@ -54,6 +58,7 @@ stemmer = NULL;
 //#endif
 
 parallel_indexing = 0;
+docno = -1;
 }
 
 ATIRE_indexer::~ATIRE_indexer()
@@ -106,6 +111,9 @@ bool ATIRE_indexer::initialize()
 //	strcpy(EMPTY_DOCUMENT_FILENAME, "EMPTY DOCUMEN TTITLE");
 }
 
+/*
+
+ */
 void ATIRE_indexer::init(char *options)
 {
 static char *seperators = "+";
@@ -355,7 +363,10 @@ index_document(&current_file, doc_to_store);
 }
 
 long ATIRE_indexer::finish()
-{
+{	
+if (docno <= 0)
+	return 0;
+
 #ifndef FILENAME_INDEX
 	id_list.close();
 #endif
@@ -367,7 +378,7 @@ long ATIRE_indexer::finish()
 		pregen->close();
 		}
 
-	// write the index information into file, and store the seialisation status
+	// write the index information into file, and store the serialisation status
 	long ret = index->serialise();
 
 	// clean up, release resources
