@@ -18,7 +18,6 @@
   "dependencies": {
     "bunyan": "^1.8.5",
     "death": "^1.0.0",
-    "node-programmer": "0.0.7",
     "restify": "^4.3.0",
     "restify-plugins": "^1.4.0"
   }
