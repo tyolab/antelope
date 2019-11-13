@@ -56,6 +56,9 @@ public:
 
 	long parallel_indexing; 			// whether parallel indexing documents
 
+private:
+	void init();
+
 protected:
 	void document_compression(char *scheme);
 	void compression(char *schemes);
@@ -66,6 +69,7 @@ protected:
 	void scrub(char *scrub_what);
 
 public:
+	ANT_indexer_param_block();
 	ANT_indexer_param_block(int argc, char *argv[]);
 	virtual ~ANT_indexer_param_block() {}
 	virtual void usage(void);

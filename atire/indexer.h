@@ -57,6 +57,8 @@ public:
 	ATIRE_indexer();
 	virtual ~ATIRE_indexer();
 
+	void usage();
+
 	void init(char *options);
 	void init(int argc, char *argv[]);
 	void init(ANT_indexer_param_block& param_block);

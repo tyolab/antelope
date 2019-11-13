@@ -216,9 +216,13 @@ public:
 	long next_result();
 	void result_to_outchannel(long last_to = -1);
 
+	/*
+		Document related
+	*/
 	const char *load_document();
 	const char *get_document(long docid);
 	const char *get_current_document() { return document_buffer; }
+	long long get_document_count();
 
 	void set_page_size(const long page_size) { this->page_size = page_size; }
 

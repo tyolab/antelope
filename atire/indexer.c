@@ -66,6 +66,14 @@ ATIRE_indexer::~ATIRE_indexer()
 	cleanup();
 }
 
+/*
+	ATIRE_INDEXER::usage()
+ */
+void ATIRE_indexer::usage() {
+	ANT_indexer_param_block param_block;
+	param_block.usage();
+}
+
 void ATIRE_indexer::cleanup() {
 	if (index) {
 		delete index;
@@ -105,6 +113,10 @@ void ATIRE_indexer::cleanup() {
 	}
 }
 
+/*
+	ATIRE_INDEXER::INITIALIZE()
+	---------------------------
+*/
 bool ATIRE_indexer::initialize()
 {
 //	strcpy(EMPTY_DOCUMENT_CONTENT, "<ERROR>EMPTYDOCUMENT</ERROR>");

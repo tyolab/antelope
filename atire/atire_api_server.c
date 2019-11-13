@@ -1237,8 +1237,8 @@ return FALSE;
 }
 
 /*
-	LOAd_DOCUMENT()
-	---------------
+	ATIRE_API_SERVER::LOAd_DOCUMENT()
+	---------------------------------
 */
 const char *ATIRE_API_server::load_document()
 {
@@ -1246,8 +1246,21 @@ return get_document(result_document.docid);
 }
 
 /*
-	GET_DOCUMENT()
-	---------------
+	ATIRE_API_SERVER::GET_DOCUMENT_COUNT()
+	--------------------------------------
+*/
+long long ATIRE_API_server::get_document_count() 
+{
+if (!atire)
+	return -1;
+if (!atire->get_search_engine())
+	return -1;	
+return atire->get_search_engine()->document_count();
+}
+
+/*
+	ATIRE_API_SERVER::GET_DOCUMENT()
+	--------------------------------
 */
 const char *ATIRE_API_server::get_document(long docid)
 {
@@ -1256,8 +1269,8 @@ return document_buffer;
 }
 
 /*
-	PROCESS_COMMAND()
-	-----------------
+	ATIRE_API_SERVER::PROCESS_COMMAND()
+	-----------------------------------
 */
 void ATIRE_API_server::process_command()
 {
