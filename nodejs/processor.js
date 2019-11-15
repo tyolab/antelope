@@ -38,6 +38,12 @@ Processor.prototype.process_folder = function (indexer, folder, callback) {
 Processor.prototype.process_file = function (indexer, file) {
     var name = path.basename(file).split(".")[0];
     var data = fs.readFileSync(file);
+
+    var save_content = this.opts ? this.opts["save-content"] : false;
+    this.index_document(indexer, name, data, save_content  ? data : null);
+}
+
+Processor.prototype.index_document = function (indexer, name, data, content) {
     var xml_text = `
         <DOC>
             <TITLE>${name}</TITLE>
@@ -46,9 +52,8 @@ Processor.prototype.process_file = function (indexer, file) {
             </TEXT>
         </DOC>
     `;
-    var save_content = this.opts ? this.opts["save-content"] : false;
-    if (save_content)
-        indexer.index_document(name, xml_text, data);
+    if (content)
+        indexer.index_document(name, xml_text, content);
     else
         indexer.index_document(name, xml_text);
 }
@@ -70,8 +75,7 @@ Processor.prototype.process = function (indexer, inputs) {
         }
     },
     (err) => {
-        // indexer.finish();
-        console.debug("done");
+        indexer.finish();
     }
     );
 }
