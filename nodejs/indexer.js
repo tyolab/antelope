@@ -62,5 +62,4 @@ if (null == processor)
     indexer.index();
 else {
     processor.process(indexer, inputs);
-    indexer.finish();
 }

@@ -51,6 +51,25 @@
             "environment": [{"name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}, {"name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}],
             "externalConsole": true,
             "MIMode": "lldb"
-        }
+        },
+        {
+            "name": "(gdb) Launch NodeJs Script",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/local/bin/node",
+            "args": ["${workspaceFolder}/nodejs/indexer.js", "-rtrec", "-N5", "--processorjs", "/data/tyolab/code/antelope/nodejs/processor.js", "/home/tyolab/Documents/books/classic/books/"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/nodejs",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
     ]
 }
