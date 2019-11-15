@@ -114,7 +114,7 @@ ATIRE_indexer::~ATIRE_indexer()
 }
 
 /*
-	ATIRE_INDEXER::usage()
+	ATIRE_INDEXER::USAGE()
  */
 void ATIRE_indexer::usage() {
 	ANT_indexer_param_block param_block;

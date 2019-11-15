@@ -8,6 +8,7 @@ var indexer = new antelope.ATIRE_indexer();
 var Params = require('node-programmer/params');
 
 var optsAvailable = {
+    "processorjs": null
 };
 
 var params = new Params(optsAvailable, false);
@@ -21,6 +22,16 @@ if (optCount <= 0) {
 }
 
 var optionsStr = "";
+
+/**
+ * The processor for handling the document(s)
+ */
+var processor = null;
+if (opts.processorjs) {
+    const Processor = require(opts.processorjs);
+    processor = new Processor();
+    delete opts.processorjs;
+}
 
 for (var key in opts) {
     if (key[0] !== '-')
@@ -36,13 +47,20 @@ else {
     inputs = [];
 }
 
-var inputsStr = inputs.join("+");
+// if (!processor) {
+    var inputsStr = inputs.join("+");
 
-if (inputsStr.length > 0)
-    optionsStr += "+" + inputsStr; 
+    if (inputsStr.length > 0)
+        optionsStr += "+" + inputsStr; 
+// }
 
-console.debug("Options: " + optionsStr);
+// console.debug("Options: " + optionsStr);
 
 indexer.init(optionsStr);
-indexer.index();
-// indexer.finish();
+
+if (null == processor)
+    indexer.index();
+else {
+    processor.process(indexer, inputs);
+    indexer.finish();
+}

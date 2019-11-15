@@ -627,8 +627,11 @@ for (param = 1; param < argc; param++)
 			ANT_credits();
 			exit(0);
 			}
-		else
+		else 
+			{
+			fprintf(stderr, "Unknown option: %s\n\n", command);
 			usage();
+			}
 		}
 	else
 		break;
