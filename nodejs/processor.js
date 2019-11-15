@@ -10,11 +10,22 @@ const fs = require('fs');
 
 const path = require('path');
 
+/**
+ * Processor class
+ * 
+ * @param {*} opts 
+ */
+
 function Processor(opts) {
     this.opts = opts || {
-        "save-content": false
+        "save-content": false,
+        "encoding": "utf8"
     };
 }
+
+/**
+ * 
+ */
 
 Processor.prototype.process_folder = function (indexer, folder, callback) {
     var self = this;
@@ -35,13 +46,21 @@ Processor.prototype.process_folder = function (indexer, folder, callback) {
 
 }
 
+/**
+ * 
+ */
+
 Processor.prototype.process_file = function (indexer, file) {
-    var name = path.basename(file).split(".")[0];
-    var data = fs.readFileSync(file);
+    var filename = path.basename(file);
+    var data = fs.readFileSync(file, this.opts.encoding);
 
     var save_content = this.opts ? this.opts["save-content"] : false;
-    this.index_document(indexer, name, data, save_content  ? data : null);
+    this.index_document(indexer, filename, data, save_content  ? data : null);
 }
+
+/**
+ * 
+ */
 
 Processor.prototype.index_document = function (indexer, name, data, content) {
     var xml_text = `
