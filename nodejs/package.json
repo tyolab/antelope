@@ -4,7 +4,8 @@
   "description": "atire_node",
   "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1"
+    "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1",
+    "postinstall": "cp -rv ./bin/*.so /usr/local/lib/"
   },
   "repository": "",
   "keywords": [
