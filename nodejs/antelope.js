@@ -1,4 +1,4 @@
-var antelope = require('./build/Release/antelope_api.node');
+var antelope = require('./index');
 
 // if you want to use a debug copy of the library
 // var antelope = require('./build/Debug/antelope_api');

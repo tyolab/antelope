@@ -1,7 +1,8 @@
 /**
  * @file myprocessor.js
  * 
- * For this processor, we only want to use antelope as a database
+ * For this processor, we only want to use antelope as a database,
+ * The target files are stored, and encoded with base64
  */
 
 'use strict'
@@ -23,14 +24,15 @@ function MyProcessor (opts) {
 util.inherits(MyProcessor, Processor);
 
 /**
- * 
+ * To convert back to binary data
+ * let buff = new Buffer(data, 'base64');
  */
 
 MyProcessor.prototype.index_document = function (indexer, filename, data, content) {
     var name = filename.split(".")[0];
     var contentJson = {
         "title": name,
-        "content": ""
+        "content": data.toString('base64')
     };
     Processor.prototype.index_document(indexer, filename, filename, JSON.stringify(contentJson));
 }

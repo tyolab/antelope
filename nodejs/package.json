@@ -1,5 +1,5 @@
 {
-  "name": "atire_node",
+  "name": "antelope-search",
   "version": "0.1.",
   "description": "atire_node",
   "main": "server.js",
@@ -9,7 +9,8 @@
   "repository": "",
   "keywords": [
     "node.js",
-    "atire",
+    "antelope",
+    "search engine",
     "restify"
   ],
   "author": "Eric Tang",

@@ -2,7 +2,7 @@
  * The indexer for creating file(s) index used by Antelope Search Engine
  */
 
-var antelope = require('./build/Release/antelope_api.node');
+var antelope = require('./index');
 var indexer = new antelope.ATIRE_indexer();
 
 var Params = require('node-programmer/params');

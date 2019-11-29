@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.63])
-AC_INIT([antelope], [0.5-alpha], [dev@tyo.com.au], [https://github.com/tyolab/antelope])
+AC_INIT([antelope], [2.0], [dev@tyo.com.au], [antelope-dist], [https://github.com/tyolab/antelope])
 
 AC_CONFIG_SRCDIR([atire/atire.c])
 #AC_CONFIG_HEADERS([config.h])
