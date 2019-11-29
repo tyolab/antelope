@@ -21,7 +21,7 @@ TESTS_DIR = tests
 # so add linking options as follows
 #  -Wl,--gc-sections 
 ###############################################################################
-AM_LDFLAGS =-fPIC -shared -lstdc++ @LIBS@
+AM_LDFLAGS =-fPIC -lstdc++ @LIBS@
 
 # using HEADER HASH FUNCTION
 MINUS_D = -DHASHER=1 -DHEADER_NUM=1 
@@ -694,7 +694,7 @@ includedir = $(prefix)/include
 include_HEADERS = $(library_headers)
 		
 noinst_LTLIBRARIES = libantelope_index.la 
-lib_LTLIBRARIES = $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_API_LIB) $(ATIRE_CORE_LIB) /r
+lib_LTLIBRARIES = $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_API_LIB) $(ATIRE_CORE_LIB)
 
 libantelope_core_la_SOURCES = $(core_sources)
 libantelope_core_la_LIBADD = -ldl -lpthread

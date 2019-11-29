@@ -40,7 +40,7 @@
 %include "../atire/atire_api_server.h"
 %include "../atire/atire_api_result.h"
 %include "../atire/indexer.h"
-%include "../source/error.h"
+//%include "../source/error.h"
 
 /*
 %include "../java/jni/include/index.h"
