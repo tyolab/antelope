@@ -30,8 +30,12 @@ var processor = null;
 if (opts.processorjs) {
     const Processor = require(opts.processorjs);
     processor = new Processor();
-    delete opts.processorjs;
 }
+
+/**
+ * Need to delete it from the actual parameters that will be passed to antelope
+ */
+delete opts.processorjs;
 
 for (var key in opts) {
     if (key[0] !== '-')
