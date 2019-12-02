@@ -1,19 +1,21 @@
 
 
-# antelope_node
+# antelope-search
 
-## SWIG
+## For Developer
 
-Only node version 5.x is supported.
+### SWIG
+
+New node versions are supported.
 
 
 ## Usage
 
 ## Prebuilt Library
-In the "lib" folder, there is a prebuilt library for linux with libc.
+In the "bin" folder, there are prebuilt libraries for linux with libc.
 
 
-## Developing
+### Developing
 
 
 

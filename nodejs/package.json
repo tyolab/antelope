@@ -1,11 +1,16 @@
 {
   "name": "antelope-search",
-  "version": "0.1.",
+  "version": "2.0",
   "description": "atire_node",
-  "main": "server.js",
+  "main": "index.js",
+  "bin": {
+    "antelope-index": "./indexer.js",
+    "antelope-search": "./antelope.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1",
-    "postinstall": "cp -rv ./bin/*.so /usr/local/lib/"
+    "postinstall": "cp -rv ./bin/*.so /usr/local/lib/",
+    "install": "cp -rv ./bin/*.so /usr/local/lib/"
   },
   "repository": "",
   "keywords": [
