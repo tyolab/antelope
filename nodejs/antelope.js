@@ -3,14 +3,14 @@ var antelope = require('./index');
 // if you want to use a debug copy of the library
 // var antelope = require('./build/Debug/antelope_api');
 
-var server = new antelope.ATIRE_API_server();
+var engine = new antelope.ATIRE_API_server();
 
 // don't have to set it when we don't have one
-server.set_params("-nologo");
+engine.set_params("-nologo");
 
-server.initialize();
+engine.initialize();
 
-server.start();
+engine.start();
 
 
 /**
@@ -18,7 +18,7 @@ server.start();
  */
 
 function version () {
-	console.log(server.version());
+	console.log(engine.version());
 }
 
 /**
@@ -39,17 +39,17 @@ function onExit() {
 	process.exit(0);
 }
 
-server.prompt();
-server.poll();
+engine.prompt();
+engine.poll();
 
-for (; server.has_new_command() && !server.is_interrupted(); server.prompt(), server.poll())
+for (; engine.has_new_command() && !engine.is_interrupted(); engine.prompt(), engine.poll())
 	{
-	server.process_command();
+	engine.process_command();
 
-	if (server.is_interrupted())
+	if (engine.is_interrupted())
 		break;
 	}
 
-server.finish();
+engine.finish();
 
 

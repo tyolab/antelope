@@ -26,4 +26,56 @@ if (!loaded) {
         throw new Error("No antelope binary can be found");
 }
 
+if (!antelope)
+    throw new Error("Failed to load antelope module");
+
+function createOptionsString(opts, inputs) {
+    var optionsStr = "";
+
+    for (var key in opts) {
+        if (key[0] !== '-')
+            optionsStr += "+-" + key + (opts[key] !== null ? "+" + opts[key] : "");
+    }
+
+    // Inputs
+    if (inputs) {
+        var inputsStr = null;
+        
+        if (Array.isArray(inputs))
+            inputsStr = inputs.join("+");
+        else if (typeof inputs === 'string')
+            inputsStr = inputs;
+
+        if (inputsStr.length > 0)
+            optionsStr += "+" + inputsStr; 
+    }
+
+    return optionsStr;
+}
+
+// antelope.ATIRE_API_server.prototype.name = "engine";
+// antelope.ATIRE_indexer.prototype.name = "indexer";
+
+antelope.initialize_engine = function(engine, optionsStr) {
+    engine.set_params(optionsStr);
+    engine.initialize();
+}   
+
+antelope.initialize_indexer = function(instance, optionsStr) {
+    instance.init(optionsStr);
+}
+
+antelope.initialize = function(instance, opts, inputs) {
+    var optionsStr;
+    if (typeof opts === 'string')
+        optionsStr = opts;
+    else
+        optionsStr = createOptionsString(opts, inputs);
+
+    if (instance.constructor.name === "ATIRE_indexer")
+        antelope.initialize_indexer(instance, optionsStr);
+    else if (instance.constructor.name === "ATIRE_API_server")
+        antelope.initialize_engine(instance, optionsStr);
+}
+
 module.exports = antelope;

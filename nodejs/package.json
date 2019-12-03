@@ -1,6 +1,6 @@
 {
   "name": "antelope-search",
-  "version": "2.0",
+  "version": "2.0.1",
   "description": "atire_node",
   "main": "index.js",
   "bin": {
@@ -9,8 +9,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1",
-    "postinstall": "cp -rv ./bin/*.so /usr/local/lib/",
-    "install": "cp -rv ./bin/*.so /usr/local/lib/"
+    "postinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/",
+    "install": "cp -rv ./bin/linux/*.so /usr/local/lib/"
   },
   "repository": "",
   "keywords": [
@@ -27,6 +27,7 @@
     "bunyan": "^1.8.5",
     "death": "^1.0.0",
     "restify": "^4.3.0",
-    "restify-plugins": "^1.4.0"
+    "restify-plugins": "^1.4.0",
+    "node-programmer": "0.0.11"
   }
 }

@@ -5,12 +5,12 @@ var logger = require('bunyan').createLogger({name: "api.tyo.com.au"});
 
 var onExit = require('death'); //this is intentionally ugly
 
-var atire = require('./build/Release/atire_api');
+var antelope = require('./index');
 
 // RESTIFY Server
 var server = restify.createServer({
-        name: 'api.tyo.com.au',
-        version: '1.0.0'    
+        name: 'Antelope Search Server',
+        version: '2.0.0'    
     }
 );
 
@@ -19,7 +19,7 @@ server.use(plugins.queryParser());
 server.use(plugins.bodyParser());
 
 // ATIRE Server
-var engine = new atire.ATIRE_API_server();
+var engine = new antelope.ATIRE_API_server();
 
 /**
  * 
