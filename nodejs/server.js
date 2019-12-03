@@ -179,18 +179,6 @@ engine.initialize();
 
 engine.start();
 
-// server.prompt();
-// server.poll();
-
-// for (; server.has_new_command() && !server.is_interrupted(); server.prompt(), server.poll())
-// 	{
-// 	server.process_command();
-
-// 	if (server.is_interrupted())
-// 		break;
-// 	}
-
-// finalize();
 
 
 

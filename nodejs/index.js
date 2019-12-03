@@ -33,8 +33,12 @@ function createOptionsString(opts, inputs) {
     var optionsStr = "";
 
     for (var key in opts) {
-        if (key[0] !== '-')
-            optionsStr += "+-" + key + (opts[key] !== null ? "+" + opts[key] : "");
+        if (key[0] !== '-') {
+            if (optionsStr.length > 0)
+                optionsStr += "+";
+
+            optionsStr += "-" + key + (opts[key] !== null ? "+" + opts[key] : "");
+        }
     }
 
     // Inputs

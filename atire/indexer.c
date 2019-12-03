@@ -217,6 +217,7 @@ for (; token != NULL; token = strtok(NULL, seperators))
 	fprintf(stderr, "\n");
 #endif
 *argv = NULL;
+input_files = NULL;
 
 init(argc, file_list);
 
@@ -229,10 +230,20 @@ void ATIRE_indexer::init(int argc, char *argv[])
 this->param_block = new ANT_indexer_param_block(argc, argv);
 long first_param = this->param_block->parse();
 
-if (first_param >= argc)
-	exit(0);	// no files to index so terminate
-input_files = argv + first_param;
-input_files_count = argc - first_param;
+
+if (first_param < argc)
+	{
+	input_files = argv + first_param;
+	input_files_count = argc - first_param;
+	}
+// Nah, we are not checking the input files here
+// if there are no input files, exit and show a warning at where a
+// Also, if exit here, the memory has gotten clean up
+// else
+// 	{
+// 	exit(0);	// no files to index so terminate	
+// 	}
+
 
 init(*param_block);
 }

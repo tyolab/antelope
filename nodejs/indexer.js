@@ -37,10 +37,16 @@ delete opts.processorjs;
 
 var inputs = opts["---"];
 
-antelope.initialize(indexer, opts, !processor ? inputs : null);
+antelope.initialize(indexer, opts, processor === null? inputs : null);
 
-if (null == processor)
+if (null == processor) {
+    console.info("indexing...");
     indexer.index();
+}
 else {
+    console.info("Using processor to index file");
     processor.process(indexer, inputs);
 }
+
+delete indexer;
+delete antelope;

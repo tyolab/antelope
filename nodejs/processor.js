@@ -84,6 +84,9 @@ Processor.prototype.index_document = function (indexer, name, data, content) {
  */
 
 Processor.prototype.process = function (indexer, inputs) {
+    if (!Array.isArray(inputs))
+        inputs = [inputs];
+        
     var self = this;
     async.eachSeries(inputs, (inputFile, done) => {
         if (fs.lstatSync(inputFile).isDirectory())
