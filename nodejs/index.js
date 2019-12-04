@@ -3,25 +3,23 @@ const fs = require('fs');
 
 var loaded;
 try {
-    if(process.platform.startsWith("win")) {
-        antelope = require('./bin/win/antelope_api.node');  
-    } else if(process.platform == "darwin") {
-        antelope = require('./bin/darwin/antelope_api.node');  
-    } 
-    else if(process.platform == "linux") {
-        antelope = require('./bin/linux/antelope_api.node');  
+    if (process.platform.startsWith("win")) {
+        antelope = require('./bin/win/antelope_api.node');
+    } else if (process.platform == "darwin") {
+        antelope = require('./bin/darwin/antelope_api.node');
+    } else if (process.platform == "linux") {
+        antelope = require('./bin/linux/antelope_api.node');
     }
     loaded = true;
-}
-catch (err) {
+} catch (err) {
     loaded = false;
 }
 
 if (!loaded) {
     // Load the new built binary for other platforms.
-    var target = './build/' + (process.env.ANTELOPE_BUILD || 'Release')  + '/antelope_api.node';
+    var target = __dirname + '/build/' + (process.env.ANTELOPE_BUILD || 'Release') + '/antelope_api.node';
     if (fs.existsSync(target))
-        antelope = require(target); 
+        antelope = require(target);
     else
         throw new Error("No antelope binary can be found");
 }
@@ -44,14 +42,14 @@ function createOptionsString(opts, inputs) {
     // Inputs
     if (inputs) {
         var inputsStr = null;
-        
+
         if (Array.isArray(inputs))
             inputsStr = inputs.join("+");
         else if (typeof inputs === 'string')
             inputsStr = inputs;
 
         if (inputsStr.length > 0)
-            optionsStr += "+" + inputsStr; 
+            optionsStr += "+" + inputsStr;
     }
 
     return optionsStr;
@@ -60,16 +58,16 @@ function createOptionsString(opts, inputs) {
 // antelope.ATIRE_API_server.prototype.name = "engine";
 // antelope.ATIRE_indexer.prototype.name = "indexer";
 
-antelope.initialize_engine = function(engine, optionsStr) {
+antelope.initialize_engine = function (engine, optionsStr) {
     engine.set_params(optionsStr);
     engine.initialize();
-}   
+}
 
-antelope.initialize_indexer = function(instance, optionsStr) {
+antelope.initialize_indexer = function (instance, optionsStr) {
     instance.init(optionsStr);
 }
 
-antelope.initialize = function(instance, opts, inputs) {
+antelope.initialize = function (instance, opts, inputs) {
     var optionsStr;
     if (typeof opts === 'string')
         optionsStr = opts;
@@ -82,13 +80,13 @@ antelope.initialize = function(instance, opts, inputs) {
         antelope.initialize_engine(instance, optionsStr);
 }
 
-antelope.create_engine = function(opts) {
+antelope.create_engine = function (opts) {
     var instance = new antelope.ATIRE_API_server();
     antelope.initialize(instance, opts);
     return instance;
 }
 
-antelope.create_indexer = function(opts, inputs) {
+antelope.create_indexer = function (opts, inputs) {
     var instance = new antelope.ATIRE_API_server();
     antelope.initialize(instance, opts, inputs);
     return instance;

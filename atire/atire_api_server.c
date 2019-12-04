@@ -1265,6 +1265,7 @@ return atire->get_search_engine()->document_count();
 */
 const char *ATIRE_API_server::get_document(long docid)
 {
+current_document_length = length_of_longest_document;
 atire->get_document(document_buffer, &current_document_length, docid);
 return document_buffer;
 }

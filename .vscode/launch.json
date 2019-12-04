@@ -62,7 +62,7 @@
             // "args": ["${workspaceFolder}/nodejs/antelope.js", "-findex", "/data/tyolab/code/antelope/nodejs/index.aspt"],
             "args": ["/data/tyolab/clients/Andy/api.auxtrek.com/packages/server/index.js"],
             "stopAtEntry": false,
-            //"cwd": "${workspaceFolder}/nodejs",
+            // "cwd": "${workspaceFolder}/nodejs",
             "cwd": "/data/tyolab/clients/Andy/api.auxtrek.com",
             "environment": [],
             "externalConsole": false,
