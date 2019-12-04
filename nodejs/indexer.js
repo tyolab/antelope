@@ -42,11 +42,9 @@ antelope.initialize(indexer, opts, processor === null? inputs : null);
 if (null == processor) {
     console.info("indexing...");
     indexer.index();
+    indexer.finish();
 }
 else {
     console.info("Using processor to index file");
     processor.process(indexer, inputs);
 }
-
-delete indexer;
-delete antelope;

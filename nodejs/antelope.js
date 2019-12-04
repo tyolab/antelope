@@ -3,15 +3,9 @@ var antelope = require('./index');
 // if you want to use a debug copy of the library
 // var antelope = require('./build/Debug/antelope_api');
 
-var engine = new antelope.ATIRE_API_server();
-
 // don't have to set it when we don't have one
-engine.set_params("-nologo");
-
-engine.initialize();
-
+var engine = antelope.create_engine("-nologo");
 engine.start();
-
 
 /**
  * Print out Reach Console version 

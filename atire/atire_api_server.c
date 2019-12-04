@@ -1261,6 +1261,7 @@ return atire->get_search_engine()->document_count();
 /*
 	ATIRE_API_SERVER::GET_DOCUMENT()
 	--------------------------------
+	
 */
 const char *ATIRE_API_server::get_document(long docid)
 {

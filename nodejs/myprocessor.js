@@ -17,8 +17,9 @@ const util = require("util");
 
 function MyProcessor (opts) {
     Processor.call(this, opts);
-
-    this.opts.encoding = "binary";
+    // if it is binary file, set encoding to null, not "binary"
+    // readFileSync / readFile won't recognize this encoding
+    this.opts.encoding = null; // "binary";
 }
 
 util.inherits(MyProcessor, Processor);
@@ -30,9 +31,11 @@ util.inherits(MyProcessor, Processor);
 
 MyProcessor.prototype.index_document = function (indexer, filename, data, content) {
     var name = filename.split(".")[0];
+    var contentBase64 = data.toString('base64');
     var contentJson = {
+        "file": filename,
         "title": name,
-        "content": data.toString('base64')
+        "content": contentBase64
     };
     Processor.prototype.index_document(indexer, filename, filename, JSON.stringify(contentJson));
 }

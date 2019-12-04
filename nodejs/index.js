@@ -82,4 +82,16 @@ antelope.initialize = function(instance, opts, inputs) {
         antelope.initialize_engine(instance, optionsStr);
 }
 
+antelope.create_engine = function(opts) {
+    var instance = new antelope.ATIRE_API_server();
+    antelope.initialize(instance, opts);
+    return instance;
+}
+
+antelope.create_indexer = function(opts, inputs) {
+    var instance = new antelope.ATIRE_API_server();
+    antelope.initialize(instance, opts, inputs);
+    return instance;
+}
+
 module.exports = antelope;
