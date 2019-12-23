@@ -89,6 +89,7 @@ const char *ATIRE_API_server::new_stop_words[] =
 ATIRE_API_server::ATIRE_API_server()
 {
 atire = NULL;
+param = 0;
 
 formatted_result = new char [MAX_RESULT_LENGTH];
 
@@ -1831,19 +1832,34 @@ if (params->evaluator)
 return NULL;
 }
 
+/*
+	PERFORM_QUERY()
+	---------------
+*/
 void ATIRE_API_server::set_params(char *options)
 {
 static char *seperators = "+ ";
 char **argv/*, **arg_list*/;
 char *token;
-size_t total_length = (options ? strlen(options) : 0) + 7;
+size_t total_length = !options ? 0 : strlen(options); // (options ? strlen(options) : 0) + 10;
+
+if (total_length == 0)
+	return;
+
 char *copy/*, *copy_start*/;
 
 copy = options_copy = new char[total_length];
 memset(copy, 0, sizeof(*copy) * total_length);
 
-memcpy(copy, "atire+", 6);
-copy += 6;
+/*
+ For native command line program
+ argc = 1 + number of options
+
+ For node script
+ argc = 2 (node + script) + number of options
+ */
+// memcpy(copy, "antelope+", 9);
+// copy += 9;
 if (options)
 	{
 	memcpy(copy, options, strlen(options));
@@ -1874,12 +1890,25 @@ for (; token != NULL; token = strtok(NULL, seperators))
 set_params(argc, arg_list);
 }
 
+/*
+	SET_PARMS()
+	-----------
+*/
+void ATIRE_API_server::set_param(int param) 
+{
+this->param = param;
+}
+
+/*
+	SET_PARMS()
+	-----------
+*/
 void ATIRE_API_server::set_params(int argc, char* argv[])
 {
 params_ptr = new ANT_ANT_param_block(argc, argv);
 ANT_ANT_param_block& params = *params_ptr;
 
-params.parse();
+params.parse(param);
 if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_NCBI)
 	stop_word_list = new ANT_stop_word(ANT_stop_word::NCBI);
 else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)

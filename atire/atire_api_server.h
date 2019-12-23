@@ -44,6 +44,8 @@ private:
 	ATIRE_API *atire;
 	ANT_ANT_param_block *params_ptr;
 	ANT_ANT_param_block *params_rank_ptr;
+	// where the actual parameter starts
+	int param;
 
 	int interrupted;
 
@@ -135,6 +137,7 @@ public:
 
 	void set_params(int argc, char *argv[]);
 	void set_params(char *args);
+	void set_param(int param);
 
 	void set_ant_version(long version);
 

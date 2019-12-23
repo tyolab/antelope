@@ -52,6 +52,26 @@
             "externalConsole": true,
             "MIMode": "lldb"
         },
+        ,
+        {
+            "name": "(gdb) Launch Antelope Node",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/local/bin/node",
+            "args": ["${workspaceFolder}/nodejs/antelope"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/nodejs",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
         {
             "name": "(gdb) Launch NodeJs Script",
             "type": "cppdbg",

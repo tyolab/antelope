@@ -1,1 +1,1 @@
-./binding-static.gyp
+./binding-release.gyp

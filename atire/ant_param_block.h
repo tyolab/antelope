@@ -119,7 +119,7 @@ public:
 	using ANT_indexer_param_block_stem::help;
 	virtual void help(void);
 	using ANT_indexer_param_block_rank::help;
-	virtual long parse(void);
+	virtual long parse(int param = 1);
 } ;
 
 #endif  /* ANT_PARAM_BLOCK_H_ */

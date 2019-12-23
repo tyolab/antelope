@@ -636,12 +636,11 @@ switch (*which)
 	ANT_ANT_PARAM_BLOCK::PARSE()
 	----------------------------
 */
-long ANT_ANT_param_block::parse(void)
+long ANT_ANT_param_block::parse(int param)
 {
-long param;
 char *command;
 
-for (param = 1; param < argc; param++)
+for (; param < argc; param++)
 	{
 	if (*argv[param] == '-' || *argv[param] == '/')		// command line switch
 		{
