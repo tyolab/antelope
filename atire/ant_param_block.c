@@ -786,7 +786,14 @@ for (; param < argc; param++)
 				}
 
 			delete [] index_filename;
-			index_filename = strnew(argv[++param]);
+			const char* file_ptr = argv[++param];
+			if (NULL == file_ptr) 
+				{
+				fputs("The index file must not be null", stderr);
+				usage();
+				}
+
+			index_filename = strnew(file_ptr);
 			}
 		else if (strcmp(command, "fdoclist") == 0)
 			{
