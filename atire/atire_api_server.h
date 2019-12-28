@@ -46,6 +46,10 @@ private:
 	ANT_ANT_param_block *params_rank_ptr;
 	// where the actual parameter starts
 	int param;
+	// for keeping the list of arguments not the same as argv in term of memory
+	char *options_copy;
+	char **arg_list;
+	int	argc;
 
 	int interrupted;
 
@@ -113,11 +117,6 @@ private:
 	char *formatted_result;
 
 	ANT_stats *stats;
-
-	// for keeping the list of arguments not the same as argv in term of memory
-	char *options_copy;
-	char **arg_list;
-	int	argc;
 
 	int output_format;
 

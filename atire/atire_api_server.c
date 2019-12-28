@@ -1848,7 +1848,7 @@ if (total_length == 0)
 
 char *copy/*, *copy_start*/;
 
-copy = options_copy = new char[total_length];
+copy = options_copy = new char[total_length + 1];
 memset(copy, 0, sizeof(*copy) * total_length);
 
 /*
