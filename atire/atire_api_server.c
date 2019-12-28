@@ -770,7 +770,6 @@ if (params->stats & ANT_ANT_param_block::SHORT)
 if (params->stats & ANT_ANT_param_block::SHORT)
 	*outchannel << "<query>" << query << "</query>" << "<numhits>" << hits << "</numhits>" << "<time>" << search_time << "</time>" << ANT_channel::endl;
 	
-
 /*
 	Report the average precision for the query
 */
@@ -789,33 +788,34 @@ if ((params->assessments_filename != NULL) && ((params->stats & ANT_ANT_param_bl
 if (first_to_list < last_to_list)
 	outchannel->puts("<hits>");	
 
-	while (next_result())
+while (next_result())
+	{
+	*outchannel << "<hit>";
+	*outchannel << "<rank>" << result_document.rank << "</rank>";
+	*outchannel << "<id>" << result_document.docid << "</id>";
+	// #ifdef FILENAME_INDEX
+	if (ant_version == ANT_V5) 
 		{
-		*outchannel << "<hit>";
-		*outchannel << "<rank>" << result_document.rank << "</rank>";
-		*outchannel << "<id>" << result_document.docid << "</id>";
-		// #ifdef FILENAME_INDEX
-		if (ant_version == ANT_V5) 
-			{
-			*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
-			}
-		else 
-			{
-			// #else
-			*outchannel << "<name>" << answer_list[result] << "</name>";
-			// #endif
-			}
-		sprintf(print_buffer, "%0.2f", result_document.rsv);
-		*outchannel << "<rsv>" << print_buffer << "</rsv>";
-		if (result_document.title != NULL && *result_document.title != '\0')
-			*outchannel << "<title>" << result_document.title << "</title>";
-		if (result_document.snippet != NULL && *result_document.snippet != '\0')
-			*outchannel << "<snippet>" << result_document.snippet << "</snippet>";
-		*outchannel << "</hit>" << ANT_channel::endl;
+		*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
 		}
+	else 
+		{
+		// #else
+		*outchannel << "<name>" << answer_list[result] << "</name>";
+		// #endif
+		}
+	sprintf(print_buffer, "%0.2f", result_document.rsv);
+	*outchannel << "<rsv>" << print_buffer << "</rsv>";
+	if (result_document.title != NULL && *result_document.title != '\0')
+		*outchannel << "<title>" << result_document.title << "</title>";
+	if (result_document.snippet != NULL && *result_document.snippet != '\0')
+		*outchannel << "<snippet>" << result_document.snippet << "</snippet>";
+	*outchannel << "</hit>" << ANT_channel::endl;
+	}
 
-	if (first_to_list < last_to_list)
-		outchannel->puts("</hits>");
+if (first_to_list < last_to_list)
+	outchannel->puts("</hits>");
+
 if (params->stats & ANT_ANT_param_block::SHORT)
 	outchannel->puts("</ATIREsearch>");
 }
