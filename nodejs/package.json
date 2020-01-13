@@ -1,6 +1,6 @@
 {
   "name": "antelope-search",
-  "version": "2.0.3",
+  "version": "2.0.5",
   "description": "atire_node",
   "main": "index.js",
   "bin": {
@@ -28,6 +28,7 @@
     "death": "^1.0.0",
     "node-programmer": "0.0.11",
     "restify": "^4.3.0",
-    "restify-plugins": "^1.4.0"
+    "restify-plugins": "^1.4.0",
+    "tyo-utils": "0.0.3"
   }
 }

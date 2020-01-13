@@ -10,6 +10,10 @@
 const Processor = require("./processor");
 const util = require("util");
 
+const crypto = require('crypto');
+
+const md5sum = crypto.createHash('md5');
+
 /**
  * 
  * @param {*} opts 
@@ -27,6 +31,11 @@ util.inherits(MyProcessor, Processor);
 /**
  * To convert back to binary data
  * let buff = new Buffer(data, 'base64');
+ * 
+ * @param indexer
+ * @param filename
+ * @param data The binary data of the index file
+ * @param content The extra content can be appended to the original doc
  */
 
 MyProcessor.prototype.index_document = function (indexer, filename, data, content) {
@@ -35,7 +44,9 @@ MyProcessor.prototype.index_document = function (indexer, filename, data, conten
     var contentJson = {
         "file": filename,
         "title": name,
-        "content": contentBase64
+        "content": contentBase64,
+        size: data.length,
+        "hash-md5": crypto.createHash('md5').update(data).digest('hex')
     };
     Processor.prototype.index_document(indexer, filename, filename, JSON.stringify(contentJson));
 }

@@ -4,11 +4,13 @@
 
 var antelope = require('./index');
 var indexer = new antelope.ATIRE_indexer();
+const utils = require('tyo-utils').utils;
 
 var Params = require('node-programmer/params');
 
 var optsAvailable = {
-    "processorjs": null
+    "processorjs": null,
+    "processor-opt": []
 };
 
 var params = new Params(optsAvailable, false);
@@ -27,13 +29,25 @@ if (optCount <= 0) {
 var processor = null;
 if (opts.processorjs) {
     const Processor = require(opts.processorjs);
-    processor = new Processor();
+    const processorOptsArray = utils.assign([], opts["processor-opt"]);
+    var processorOpts = {};
+    if (processorOptsArray && processorOptsArray.length) {
+        for (var i = 0; i < processorOptsArray.length; i++) {
+            var optString = processorOptsArray[i];
+            var optsObj = optString.split(":");
+            if (optsObj && optsObj.length > 1) {
+                processorOpts[optsObj[0]] = utils.assign(processorOpts[optsObj[0]], optsObj[1]);
+            }
+        }
+    }
+    processor = new Processor(processorOpts);
 }
 
 /**
  * Need to delete it from the actual parameters that will be passed to antelope
  */
 delete opts.processorjs;
+delete opts["processor-opt"];
 
 var inputs = opts["---"];
 

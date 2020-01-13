@@ -17,10 +17,24 @@ const path = require('path');
  */
 
 function Processor(opts) {
-    this.opts = opts || {
+    this.opts = opts || 
+
+    // The default should be
+    {
         "save-content": false,
-        "encoding": "utf8"
+        "encoding": "utf8",
+        "includes": null, // []
+        "excludes": []
     };
+
+    if (this.opts["save-content"] === undefined)
+        this.opts["save-content"] = false;
+    
+    this.opts.encoding = this.opts.encoding || "utf8";
+
+    if (this.opts.includes) {
+        this.includesRegExp = new RegExp(this.opts.includes, "i");
+    }
 }
 
 /**
@@ -29,13 +43,13 @@ function Processor(opts) {
 
 Processor.prototype.process_folder = function (indexer, folder, callback) {
     var self = this;
+
     fs.readdir(folder, (err, files) => {
         if (err)
             return;
 
         async.eachSeries(files, (file, done) => {
-            self.process_file(indexer, folder + "/" + file);
-            done();
+            self.process_file(indexer, folder + "/" + file, done);
         },
         (err) => {
             if (err)
@@ -50,12 +64,26 @@ Processor.prototype.process_folder = function (indexer, folder, callback) {
  * 
  */
 
-Processor.prototype.process_file = function (indexer, file) {
-    var filename = path.basename(file);
-    var data = fs.readFileSync(file, this.opts.encoding);
+Processor.prototype.process_file = function (indexer, file, done) {
 
-    var save_content = this.opts ? this.opts["save-content"] : false;
-    this.index_document(indexer, filename, data, save_content  ? data : null);
+    var self = this;
+
+    if (fs.lstatSync(file).isDirectory()) {
+        self.process_folder(indexer, file, done);
+        return;
+    }
+
+    if (this.includesRegExp && file.match(this.includesRegExp)) {
+
+        var filename = path.basename(file);
+        var data = fs.readFileSync(file, this.opts.encoding);
+
+        var save_content = this.opts ? this.opts["save-content"] : false;
+        this.index_document(indexer, filename, data, save_content  ? data : null);
+    }
+
+    if (done)
+        done();
 }
 
 /**
@@ -92,8 +120,7 @@ Processor.prototype.process = function (indexer, inputs) {
         if (fs.lstatSync(inputFile).isDirectory())
             self.process_folder(indexer, inputFile, done);
         else {
-            self.process_file(indexer, inputFile);
-            done();
+            self.process_file(indexer, inputFile, done);
         }
     },
     (err) => {
