@@ -46,7 +46,7 @@ while ((token = readability->get_next_token()) != NULL)
 	{
 	//	printf("%*.*s\n", token->string_length, token->string_length, token->start);
 	/*
-	 * a bit redudant, the code below.
+	 * a bit redundant, the code below.
 	 * I think the original code from revision 656 should be fine, except the chinese handling part
 	 */
 	/*

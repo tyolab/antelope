@@ -52,6 +52,49 @@
             "environment": [{"name": "DYLD_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}, {"name": "DYLD_FALLBACK_LIBRARY_PATH", "value": "${workspaceFolder}/build/debug/.libs"}],
             "externalConsole": true,
             "MIMode": "lldb"
-        }
+        },
+        ,
+        {
+            "name": "(gdb) Launch Antelope Node",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/local/bin/node",
+            "args": ["${workspaceFolder}/nodejs/antelope"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}/nodejs",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
+        {
+            "name": "(gdb) Launch NodeJs Script",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "/usr/local/bin/node",
+            // "args": ["${workspaceFolder}/nodejs/indexer.js", "-rtrec", "-N5", "--processorjs", "/data/tyolab/code/antelope/nodejs/processor.js", "/home/tyolab/Documents/books/classic/books/"],
+            // "args": ["${workspaceFolder}/nodejs/indexer.js", "-?"],
+            // "args": ["${workspaceFolder}/nodejs/antelope.js", "-findex", "/data/tyolab/code/antelope/nodejs/index.aspt"],
+            "args": ["/data/tyolab/clients/Andy/api.auxtrek.com/packages/server/index.js"],
+            "stopAtEntry": false,
+            // "cwd": "${workspaceFolder}/nodejs",
+            "cwd": "/data/tyolab/clients/Andy/api.auxtrek.com",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ]
+        },
     ]
 }

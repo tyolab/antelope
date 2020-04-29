@@ -44,6 +44,12 @@ private:
 	ATIRE_API *atire;
 	ANT_ANT_param_block *params_ptr;
 	ANT_ANT_param_block *params_rank_ptr;
+	// where the actual parameter starts
+	int param;
+	// for keeping the list of arguments not the same as argv in term of memory
+	char *options_copy;
+	char **arg_list;
+	int	argc;
 
 	int interrupted;
 
@@ -112,11 +118,6 @@ private:
 
 	ANT_stats *stats;
 
-	// for keeping the list of arguments not the same as argv in term of memory
-	char *options_copy;
-	char **arg_list;
-	int	argc;
-
 	int output_format;
 
 	long ant_version;
@@ -135,6 +136,7 @@ public:
 
 	void set_params(int argc, char *argv[]);
 	void set_params(char *args);
+	void set_param(int param);
 
 	void set_ant_version(long version);
 
@@ -216,9 +218,13 @@ public:
 	long next_result();
 	void result_to_outchannel(long last_to = -1);
 
+	/*
+		Document related
+	*/
 	const char *load_document();
 	const char *get_document(long docid);
 	const char *get_current_document() { return document_buffer; }
+	long long get_document_count();
 
 	void set_page_size(const long page_size) { this->page_size = page_size; }
 

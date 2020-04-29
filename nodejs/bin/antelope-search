@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+export ANTELOPE_JS_HOME=`dirname $0`/../
+
+echo "ANTELOPE_JS_HOME: " ${ANTELOPE_JS_HOME}
+
+node ${ANTELOPE_JS_HOME}/antelope.js  "$@"

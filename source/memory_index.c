@@ -1699,7 +1699,7 @@ index_file->write((unsigned char *)&length_of_longest_term, sizeof(length_of_lon
 index_file->write((unsigned char *)&longest_postings_size, sizeof(longest_postings_size));	// 4 byte
 
 /*
-	and the maximum number of postings in a postings list (that is, the largest document frequencty (DF))
+	and the maximum number of postings in a postings list (that is, the largest document frequency (DF))
 */
 index_file->write((unsigned char *)&highest_df, sizeof(highest_df));		// 8 bytes
 

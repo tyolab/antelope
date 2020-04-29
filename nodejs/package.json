@@ -1,24 +1,34 @@
 {
-  "name": "atire_node",
-  "version": "0.1.0",
+  "name": "antelope-search",
+  "version": "2.0.5",
   "description": "atire_node",
-  "main": "server.js",
+  "main": "index.js",
+  "bin": {
+    "antelope-index": "./indexer.js",
+    "antelope-search": "./antelope.js"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1"
+    "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1",
+    "postinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null || echo 0",
+    "reinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/"
   },
   "repository": "",
   "keywords": [
     "node.js",
-    "atire",
+    "antelope",
+    "search engine",
     "restify"
   ],
   "author": "Eric Tang",
   "license": "BSD",
   "readmeFilename": "README.md",
   "dependencies": {
+    "async": "^3.1.0",
     "bunyan": "^1.8.5",
     "death": "^1.0.0",
+    "node-programmer": "0.0.11",
     "restify": "^4.3.0",
-    "restify-plugins": "^1.4.0"
+    "restify-plugins": "^1.4.0",
+    "tyo-utils": "0.0.3"
   }
 }

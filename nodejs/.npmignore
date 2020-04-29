@@ -1,0 +1,9 @@
+index.aspt
+doclist.aspt
+.project
+.cproject
+.vscode/**
+*.idx
+*.sh
+*.gyp
+build/**

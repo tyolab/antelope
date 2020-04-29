@@ -35,6 +35,25 @@ ANT_indexer_param_block::ANT_indexer_param_block(int argc, char *argv[])
 this->argc = argc;
 this->argv = argv;
 
+init();
+}
+/*
+	ANT_INDEXER_PARAM_BLOCK::ANT_INDEXER_PARAM_BLOCK()
+	--------------------------------------------------
+*/
+ANT_indexer_param_block::ANT_indexer_param_block()
+{
+this->argc = 0;
+this->argv = NULL;
+init();
+}
+
+/*
+	ANT_INDEXER_PARAM_BLOCK::INIT()
+	--------------------------------------------------
+*/
+void ANT_indexer_param_block::init()
+{
 segmentation = ANT_parser::SHOULD_SEGMENT;
 recursive = NONE;
 compression_validation = FALSE;
@@ -71,7 +90,7 @@ parallel_indexing = FALSE;
 */
 void ANT_indexer_param_block::usage(void)
 {
-printf("Usage:%s [option...] filename <... filename>\n", argv[0]);
+printf("Usage:%s [option...] filename <... filename>\n", argc > 0 ? argv[0] : "index");
 printf("     : -? for help\n");
 exit(0);
 }
@@ -610,8 +629,11 @@ for (param = 1; param < argc; param++)
 			ANT_credits();
 			exit(0);
 			}
-		else
+		else 
+			{
+			fprintf(stderr, "Unknown option: %s\n\n", command);
 			usage();
+			}
 		}
 	else
 		break;

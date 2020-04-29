@@ -89,6 +89,7 @@ const char *ATIRE_API_server::new_stop_words[] =
 ATIRE_API_server::ATIRE_API_server()
 {
 atire = NULL;
+param = 0;
 
 formatted_result = new char [MAX_RESULT_LENGTH];
 
@@ -769,7 +770,6 @@ if (params->stats & ANT_ANT_param_block::SHORT)
 if (params->stats & ANT_ANT_param_block::SHORT)
 	*outchannel << "<query>" << query << "</query>" << "<numhits>" << hits << "</numhits>" << "<time>" << search_time << "</time>" << ANT_channel::endl;
 	
-
 /*
 	Report the average precision for the query
 */
@@ -788,33 +788,34 @@ if ((params->assessments_filename != NULL) && ((params->stats & ANT_ANT_param_bl
 if (first_to_list < last_to_list)
 	outchannel->puts("<hits>");	
 
-	while (next_result())
+while (next_result())
+	{
+	*outchannel << "<hit>";
+	*outchannel << "<rank>" << result_document.rank << "</rank>";
+	*outchannel << "<id>" << result_document.docid << "</id>";
+	// #ifdef FILENAME_INDEX
+	if (ant_version == ANT_V5) 
 		{
-		*outchannel << "<hit>";
-		*outchannel << "<rank>" << result_document.rank << "</rank>";
-		*outchannel << "<id>" << result_document.docid << "</id>";
-		// #ifdef FILENAME_INDEX
-		if (ant_version == ANT_V5) 
-			{
-			*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
-			}
-		else 
-			{
-			// #else
-			*outchannel << "<name>" << answer_list[result] << "</name>";
-			// #endif
-			}
-		sprintf(print_buffer, "%0.2f", result_document.rsv);
-		*outchannel << "<rsv>" << print_buffer << "</rsv>";
-		if (result_document.title != NULL && *result_document.title != '\0')
-			*outchannel << "<title>" << result_document.title << "</title>";
-		if (result_document.snippet != NULL && *result_document.snippet != '\0')
-			*outchannel << "<snippet>" << result_document.snippet << "</snippet>";
-		*outchannel << "</hit>" << ANT_channel::endl;
+		*outchannel << "<name>" << atire->get_document_filename(result_document.document_name, result_document.docid) << "</name>";
 		}
+	else 
+		{
+		// #else
+		*outchannel << "<name>" << answer_list[result] << "</name>";
+		// #endif
+		}
+	sprintf(print_buffer, "%0.2f", result_document.rsv);
+	*outchannel << "<rsv>" << print_buffer << "</rsv>";
+	if (result_document.title != NULL && *result_document.title != '\0')
+		*outchannel << "<title>" << result_document.title << "</title>";
+	if (result_document.snippet != NULL && *result_document.snippet != '\0')
+		*outchannel << "<snippet>" << result_document.snippet << "</snippet>";
+	*outchannel << "</hit>" << ANT_channel::endl;
+	}
 
-	if (first_to_list < last_to_list)
-		outchannel->puts("</hits>");
+if (first_to_list < last_to_list)
+	outchannel->puts("</hits>");
+
 if (params->stats & ANT_ANT_param_block::SHORT)
 	outchannel->puts("</ATIREsearch>");
 }
@@ -1237,8 +1238,8 @@ return FALSE;
 }
 
 /*
-	LOAd_DOCUMENT()
-	---------------
+	ATIRE_API_SERVER::LOAd_DOCUMENT()
+	---------------------------------
 */
 const char *ATIRE_API_server::load_document()
 {
@@ -1246,18 +1247,33 @@ return get_document(result_document.docid);
 }
 
 /*
-	GET_DOCUMENT()
-	---------------
+	ATIRE_API_SERVER::GET_DOCUMENT_COUNT()
+	--------------------------------------
+*/
+long long ATIRE_API_server::get_document_count() 
+{
+if (!atire)
+	return -1;
+if (!atire->get_search_engine())
+	return -1;	
+return atire->get_search_engine()->document_count();
+}
+
+/*
+	ATIRE_API_SERVER::GET_DOCUMENT()
+	--------------------------------
+	
 */
 const char *ATIRE_API_server::get_document(long docid)
 {
+current_document_length = length_of_longest_document;
 atire->get_document(document_buffer, &current_document_length, docid);
 return document_buffer;
 }
 
 /*
-	PROCESS_COMMAND()
-	-----------------
+	ATIRE_API_SERVER::PROCESS_COMMAND()
+	-----------------------------------
 */
 void ATIRE_API_server::process_command()
 {
@@ -1816,19 +1832,34 @@ if (params->evaluator)
 return NULL;
 }
 
+/*
+	PERFORM_QUERY()
+	---------------
+*/
 void ATIRE_API_server::set_params(char *options)
 {
 static char *seperators = "+ ";
 char **argv/*, **arg_list*/;
 char *token;
-size_t total_length = (options ? strlen(options) : 0) + 7;
+size_t total_length = !options ? 0 : strlen(options); // (options ? strlen(options) : 0) + 10;
+
+if (total_length == 0)
+	return;
+
 char *copy/*, *copy_start*/;
 
-copy = options_copy = new char[total_length];
+copy = options_copy = new char[total_length + 1];
 memset(copy, 0, sizeof(*copy) * total_length);
 
-memcpy(copy, "atire+", 6);
-copy += 6;
+/*
+ For native command line program
+ argc = 1 + number of options
+
+ For node script
+ argc = 2 (node + script) + number of options
+ */
+// memcpy(copy, "antelope+", 9);
+// copy += 9;
 if (options)
 	{
 	memcpy(copy, options, strlen(options));
@@ -1859,12 +1890,25 @@ for (; token != NULL; token = strtok(NULL, seperators))
 set_params(argc, arg_list);
 }
 
+/*
+	SET_PARMS()
+	-----------
+*/
+void ATIRE_API_server::set_param(int param) 
+{
+this->param = param;
+}
+
+/*
+	SET_PARMS()
+	-----------
+*/
 void ATIRE_API_server::set_params(int argc, char* argv[])
 {
 params_ptr = new ANT_ANT_param_block(argc, argv);
 ANT_ANT_param_block& params = *params_ptr;
 
-params.parse();
+params.parse(param);
 if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_NCBI)
 	stop_word_list = new ANT_stop_word(ANT_stop_word::NCBI);
 else if (params.query_stopping & ANT_ANT_param_block::STOPWORDS_PUURULA)
