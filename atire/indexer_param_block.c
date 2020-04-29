@@ -419,60 +419,62 @@ for (param = 1; param < argc; param++)
 	if (*argv[param] == '-')		// command line switch
 		{
 		command = argv[param] + 1;
-		if (strcmp(command, "r") == 0)
+		if (*command == 'r')
+			{
 			recursive = DIRECTORIES;
-		else if (strcmp(command, "rt") == 0)
-			recursive = TAR;
-		else if (strcmp(command, "rtgz") == 0)
-			recursive = TAR_GZ;
-		else if (strcmp(command, "rtbz2") == 0)
-			recursive = TAR_BZ2;
-		else if (strcmp(command, "rzip") == 0)
-			recursive = PKZIP;
-		else if (strcmp(command, "rtlzo") == 0)
-			recursive = TAR_LZO;
-		else if (strncmp(command, "rtrec", 5) == 0)
-			{
-			recursive = TREC;
-			doc_tag = NULL;
-			docno_tag = NULL;
-			if (strncmp(command + 5, ":clean", 6) == 0)
-				this->scrub("an");
-			else if (strncmp(command + 5, ":tag", 4) == 0)
+			++command;
+			if (*command == 't')
+				recursive = TAR;
+			else if (strncmp(command, "tgz", 3) == 0)
+				recursive = TAR_GZ;
+			else if (strncmp(command, "tbz2", 4) == 0)
+				recursive = TAR_BZ2;
+			else if (strncmp(command, "bz2", 3) == 0)
+				recursive = BZ2;			
+			else if (strncmp(command, "zip", 3) == 0)
+				recursive = PKZIP;
+			else if (strncmp(command, "tlzo", 4) == 0)
+				recursive = TAR_LZO;
+			else if (strncmp(command, "trec", 4) == 0)
+				recursive = TREC;
+			else if (strncmp(command, "rtrec", 5) == 0)
+				recursive = RECURSIVE_TREC;
+			else if (strncmp(command, "trecbig", 7) == 0)
 				{
-				doc_tag = command + 10;
-				if ((start = strchr(doc_tag, ':')) != NULL)
-					{
-					*start = '\0';
-					docno_tag = ++start;
-					}
-				}
-			}
-		else if (strncmp(command, "rrtrec", 6) == 0)
-			{
-			recursive = RECURSIVE_TREC;
-			if (strncmp(command + 6, ":clean", 6) == 0)
+				recursive = TREC;
 				this->scrub("an");
+				}
+			else if (strncmp(command, "csv", 3) == 0)
+				recursive = CSV;
+			else if (strncmp(command, "tsv", 3) == 0)
+				recursive = TSV;
+			else if (strncmp(command, "warcgz", 6) == 0)
+				recursive = WARC_GZ;
+			else if (strncmp(command, "rwarcgz", 7) == 0)
+				recursive = RECURSIVE_WARC_GZ;
+			else if (strncmp(command, "phpbb", 5) == 0)
+				recursive = PHPBB;
+			else if (strncmp(command, "mysql", 5) == 0)
+				recursive = MYSQL;
+			else if (strncmp(command, "vbulletin", 9) == 0)
+				recursive = VBULLETIN;
+
+			if ((start = strchr(command, ':')))
+				{
+				command = ++start;
+				if (strncmp(command, "clean", 5) == 0)
+					this->scrub("an");
+				else if (strncmp(command, "tag", 3) == 0)
+					{
+					doc_tag = command + 4;
+					if ((start = strchr(doc_tag, ':')) != NULL)
+						{
+						*start = '\0';
+						docno_tag = ++start;
+						}
+					}
+				}	
 			}
-		else if (strcmp(command, "rtrecbig") == 0)
-			{
-			recursive = TREC;
-			this->scrub("an");
-			}
-		else if (strcmp(command, "rcsv") == 0)
-			recursive = CSV;
-		else if (strcmp(command, "rtsv") == 0)
-			recursive = TSV;
-		else if (strcmp(command, "rwarcgz") == 0)
-			recursive = WARC_GZ;
-		else if (strcmp(command, "rrwarcgz") == 0)
-			recursive = RECURSIVE_WARC_GZ;
-		else if (strcmp(command, "rphpbb") == 0)
-			recursive = PHPBB;
-		else if (strcmp(command, "rmysql") == 0)
-			recursive = MYSQL;
-		else if (strcmp(command, "rvbulletin") == 0)
-			recursive = VBULLETIN;
 		else if (strncmp(command, "ispam", 5) == 0)
 			{
 			if (*(command + 5) == ':')

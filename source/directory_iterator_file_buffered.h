@@ -33,11 +33,6 @@ protected:
 	long asciiafy;
 	ANT_instream *source;
 	long auto_file_id;
-	char ** doc_tag;
-	char **docno_tag;
-
-private:
-	void free_tag();
 
 protected:
 	ANT_directory_iterator_object *read_entire_file(ANT_directory_iterator_object *object);
@@ -50,8 +45,6 @@ public:
 
 	virtual ANT_directory_iterator_object *first(ANT_directory_iterator_object *object) { return next(object); }
 	virtual ANT_directory_iterator_object *next(ANT_directory_iterator_object *object);
-
-	void set_tags(char *doc_name, char *docno_name);
 } ;
 
 

@@ -22,10 +22,13 @@ protected:
 	ANT_directory_iterator_internals *internals;
 	char wildcard[PATH_MAX];
 	long get_file;
+	char ** doc_tag;
+	char **docno_tag;
 
 private:
 	char *construct_full_path(char *filename);
-
+	void free_tag();
+	
 public:
 	ANT_directory_iterator(char *wildcard = "", long get_file = 0);
 	virtual ~ANT_directory_iterator();
@@ -39,6 +42,8 @@ public:
 	*/
 	virtual ANT_directory_iterator_object *first(ANT_directory_iterator_object *object);
 	virtual ANT_directory_iterator_object *next(ANT_directory_iterator_object *object);
+
+	void set_tags(char *doc_name, char *docno_name);
 } ;
 
 #endif  /* DIRECTORY_ITERATOR_H_ */

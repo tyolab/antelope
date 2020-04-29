@@ -249,6 +249,13 @@ for (param = first_param; param < argc; param++)
 		instream_buffer = new ANT_instream_buffer(&file_buffer, decompressor);
 		source = new ANT_directory_iterator_tar(instream_buffer, ANT_directory_iterator::READ_FILE, ANT_directory_iterator_tar::NAME);
 		}
+	else if (param_block.recursive == ANT_indexer_param_block::BZ2)
+		{
+		file_stream = new ANT_instream_file(&file_buffer, argv[param]);
+		decompressor = new ANT_instream_bz2(&file_buffer, file_stream);
+		instream_buffer = new ANT_instream_buffer(&file_buffer, decompressor);
+		source = new ANT_directory_iterator_file_buffered(instream_buffer, ANT_directory_iterator::READ_FILE);
+		}		
 	else if (param_block.recursive == ANT_indexer_param_block::WARC_GZ)
 		{
 		file_stream = new ANT_instream_file(&file_buffer, argv[param]);
@@ -334,8 +341,6 @@ for (param = first_param; param < argc; param++)
 		else
 			scrubber = file_stream;
 		ANT_directory_iterator_file_buffered *buffered_file_iterator = new ANT_directory_iterator_file_buffered(scrubber, ANT_directory_iterator::READ_FILE);
-		if (param_block.doc_tag != NULL && param_block.docno_tag != NULL)
-			buffered_file_iterator->set_tags(param_block.doc_tag, param_block.docno_tag);
 		source = buffered_file_iterator;
 //		source = new ANT_directory_iterator_file(ANT_disk::read_entire_file(argv[param]), ANT_directory_iterator::READ_FILE);
 		}
@@ -367,6 +372,10 @@ for (param = first_param; param < argc; param++)
 		else
 			source = new ANT_directory_iterator(argv[param], ANT_directory_iterator::READ_FILE);					// current directory
 		}
+
+	// Setting the document tag and document number tag if provided
+	if (param_block.doc_tag != NULL && param_block.docno_tag != NULL)
+		source->set_tags(param_block.doc_tag, param_block.docno_tag);		
 
 	if (param_block.filter_filename != NULL)
 		source = new ANT_directory_iterator_filter(source, param_block.filter_filename, param_block.filter_method, ANT_directory_iterator_filter::READ_FILE);

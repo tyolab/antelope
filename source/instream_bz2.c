@@ -20,11 +20,11 @@ ANT_instream_bz2::ANT_instream_bz2(ANT_memory *memory, ANT_instream *source) : A
 	total_written = total_read = 0;
 	internals = new (memory) ANT_instream_bz2_internals;
 
-	internals->stream.bzalloc = NULL;
-	internals->stream.bzfree = NULL;
-	internals->stream.opaque = NULL;
-	internals->stream.avail_in = 0;
-	internals->stream.next_in = NULL;
+	internals->stream.bzalloc 	   = NULL;
+	internals->stream.bzfree       = NULL;
+	internals->stream.opaque       = NULL;
+	internals->stream.avail_in     = 0;
+	internals->stream.next_in      = NULL;
 	buffer = NULL;
 #else
 	exit(printf("You are trying to decompress a bz2 file but BZLIB is not included in this build"));
@@ -76,6 +76,9 @@ long long ANT_instream_bz2::read(unsigned char *data, long long size)
 			}
 
 		state = BZ2_bzDecompress(&internals->stream);
+
+		if (state != BZ_OK && BZ_STREAM_END)
+			break;
 
 		if (state == BZ_STREAM_END)
 			{
