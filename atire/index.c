@@ -101,19 +101,8 @@ return result;
 */
 int atire_index(int argc, char *argv[])
 {
-	
-if (argc < 2) 
-	else if (param_block.recursive == ANT_indexer_param_block::BZ2)
-		{
-		file_stream = new ANT_instream_file(&file_buffer, argv[param]);
-		decompressor = new ANT_instream_bz2(&file_buffer, file_stream);
-		instream_buffer = new ANT_instream_buffer(&file_buffer, decompressor);
-		source = new ANT_directory_iterator_file_buffered(instream_buffer, ANT_directory_iterator::READ_FILE);
-		}		
 
-	// Setting the document tag and document number tag if provided
-	if (param_block.doc_tag != NULL && param_block.docno_tag != NULL)
-		source->set_tags(param_block.doc_tag, param_block.docno_tag);		
+if (argc < 2) 	
 	{
 	ANT_indexer_param_block param_block(argc, argv);
 	param_block.usage();
@@ -122,7 +111,6 @@ if (argc < 2)
 ATIRE_indexer indexer;
 indexer.init(argc, argv);
 indexer.index();
-
 
 return 0;
 }

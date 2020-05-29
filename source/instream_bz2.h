@@ -19,8 +19,10 @@ class ANT_instream_bz2 : public ANT_instream
 {
 private:
 	ANT_instream_bz2_internals *internals;
-	long long total_written;			// number of bytes returned
-	long long total_read;				// number of bytes read from the source stream
+	long long total_written;											// number of bytes returned
+	long long total_read;												// number of bytes read from the source stream
+	long long buffer_read;												// number of bytes read from the data source into the buffer
+	long long buffer_left;												// number of bytes decoded from the buffer
 	unsigned char *buffer;
 	static const long long buffer_length = 1024 * 1024 * 16;			// did use a 16K buffer, now using 16MB buffer
 
