@@ -54,6 +54,8 @@ long long ANT_instream_bz2::read(unsigned char *data, long long size)
 	long long bytes_read;
 	char* new_data;
 
+	bytes_sofar = 0;
+
 	if (size == 0)
 		return 0;
 
@@ -83,7 +85,11 @@ long long ANT_instream_bz2::read(unsigned char *data, long long size)
 		state = BZ2_bzDecompress(&internals->stream);
 
 		if (state != BZ_OK && state != BZ_STREAM_END)
+			{
+			if (bytes_sofar > 0)
+				return bytes_sofar;
 			break;
+			}
 
 		buffer_left = internals->stream.avail_in;
 
@@ -91,6 +97,7 @@ long long ANT_instream_bz2::read(unsigned char *data, long long size)
 			{
 			got = size - internals->stream.avail_out;		// number of bytes that were decompressed
 			total_written += got;
+			bytes_sofar += got;
 
 			// sometimes bzip2 files are joined together with STREAM_ENDs in between
 			// so we will continue reading util we get an error
