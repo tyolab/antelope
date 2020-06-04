@@ -101,8 +101,8 @@ return result;
 */
 int atire_index(int argc, char *argv[])
 {
-	
-if (argc < 2) 
+
+if (argc < 2) 	
 	{
 	ANT_indexer_param_block param_block(argc, argv);
 	param_block.usage();
@@ -111,7 +111,6 @@ if (argc < 2)
 ATIRE_indexer indexer;
 indexer.init(argc, argv);
 indexer.index();
-
 
 return 0;
 }
