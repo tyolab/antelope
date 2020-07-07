@@ -694,7 +694,7 @@ includedir = $(prefix)/include
 include_HEADERS = $(library_headers)
 		
 noinst_LTLIBRARIES = libantelope_index.la 
-lib_LTLIBRARIES = $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_API_LIB) $(ATIRE_CORE_LIB)
+lib_LTLIBRARIES = $(ATIRE_CORE_LIB) $(ATIRE_API_LIB) $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) 
 
 libantelope_core_la_SOURCES = $(core_sources)
 libantelope_core_la_LIBADD = -ldl -lpthread
@@ -722,7 +722,7 @@ libantelope_index_param_la_SOURCES = \
 	$(INDEX_PARAM_LIST)
 libantelope_index_param_la_LDFLAGS = 
 libantelope_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
-libantelope_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
+libantelope_index_param_la_LIBADD = 
 
 libantelope_index_la_SOURCES = \
 	$(ATIRE_DIR)/index.c 
@@ -737,7 +737,7 @@ libantelope_ant_param_la_LDFLAGS =
 libantelope_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
 libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
 
-#ATIRE_API_LIB = -L. -lantelope_core -ldl -lpthread
+#ATIRE_API_LIB = -L. -ldl -lpthread
 
 # this lists the binaries to produce, the (non-PHONY, binary) targets in
 # the previous manual Makefile
