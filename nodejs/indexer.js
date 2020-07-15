@@ -2,7 +2,7 @@
  * The indexer for creating file(s) index used by Antelope Search Engine
  */
 
-var antelope = require('./index');
+var antelope = require('.');
 var indexer = new antelope.ATIRE_indexer();
 const utils = require('tyo-utils').utils;
 

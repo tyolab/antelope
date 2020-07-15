@@ -6,6 +6,8 @@
 #ifndef INDEXER_H_
 #define INDEXER_H_
 
+#include "file.h"
+
 class ANT_memory_index;
 class ANT_directory_iterator_object;
 class ANT_readability_factory;
@@ -18,10 +20,6 @@ class ANT_indexer_param_block;
 
 #ifndef PARALLEL_INDEXING_DOCUMENTS
 class ANT_stem;
-#endif
-
-#ifndef FILENAME_INDEX
-class ANT_file;
 #endif
 
 /*
@@ -39,7 +37,7 @@ private:
 
 	ANT_memory_index 				*memory_index;
 #ifndef FILENAME_INDEX
-	ANT_file 						*id_list;
+	ANT_file id_list;
 #endif
 	ANT_index_document 				*document_indexer;
 	ANT_parser *parser;

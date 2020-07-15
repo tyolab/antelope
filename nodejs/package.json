@@ -9,8 +9,9 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified! Configure in package.json\" && exit 1",
-    "postinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null || echo 0",
-    "reinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/"
+    "copy": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null || echo 0",
+    "reinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/",
+    "install": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null && node-gyp build && node-gyp  install --fallback-to-build"
   },
   "repository": "",
   "keywords": [
@@ -26,7 +27,9 @@
     "async": "^3.1.0",
     "bunyan": "^1.8.5",
     "death": "^1.0.0",
+    "node-gyp": "^7.0.0",
     "node-programmer": "0.0.11",
+    "nopt": "^4.0.3",
     "restify": "^8.5.1",
     "restify-plugins": "^1.4.0",
     "tyo-utils": "0.0.3"

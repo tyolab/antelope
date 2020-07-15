@@ -4,6 +4,18 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+        {
+            "name": "Launch NodeJs Indexer",
+            "program": "${workspaceFolder}/nodejs/indexer.js",
+            "request": "launch",
+            "skipFiles": [
+                "<node_internals>/**"
+            ],
+            "type": "pwa-node",
+            "cwd": "${workspaceFolder}/nodejs",
+            "args": ["-?"]
+        },
+
         { 
             "name": "(lldb) Launch Antelope on Android",
             "type": "cppdbg",

@@ -1,27 +1,49 @@
 var antelope = null;
 const fs = require('fs');
+const path = require('path');
 
-var loaded;
-try {
-    if (process.platform.startsWith("win")) {
-        antelope = require('./bin/win/antelope_api.node');
-    } else if (process.platform == "darwin") {
-        antelope = require('./bin/darwin/antelope_api.node');
-    } else if (process.platform == "linux") {
-        antelope = require('./bin/linux/antelope_api.node');
-    }
-    loaded = true;
-} catch (err) {
-    loaded = false;
+var node_version = parseInt(process.version.split('.')[0].substr(1));
+
+if (node_version % 2 !== 0)
+    throw new Error("This version of NodeJs is not supported");
+
+if (node_version > 10) 
+    throw new Error("Only NodeJs version 10 or lower is supported at the moment");
+
+var nodelib = "antelope_api.node";
+var parentpath;
+var binpath = "." + path.sep + "bin";
+
+// if (process.platform.startsWith("win")) {
+//     parentpath = path.join(binpath, 'win');
+// } else if (process.platform == "darwin") {
+//     parentpath = path.join(binpath, 'darwin');
+// } else 
+if (process.platform == "linux") {
+    parentpath = path.join(binpath, 'linux');
 }
+else 
+    throw new Error("This platform is not supported at the moment: " + process.platform);
+
+var loaded = false;
+
+var nodepath =  "." + path.sep + parentpath + path.sep + nodelib;
+
+if (fs.existsSync(nodepath))
+    try {
+        antelope = require(nodepath);
+        loaded = true;
+    } catch (err) {
+        console.error(err);
+    }
 
 if (!loaded) {
     // Load the new built binary for other platforms.
-    var target = __dirname + '/build/' + (process.env.ANTELOPE_BUILD || 'Release') + '/antelope_api.node';
+    var target = __dirname + '/build/' + (process.env.ANTELOPE_BUILD || 'Release') + '/' + nodelib;
     if (fs.existsSync(target))
         antelope = require(target);
     else
-        throw new Error("No antelope binary can be found");
+        throw new Error("No antelope binary can be found. Please try run \"npm rebuild antelope-search --update-binary\"");
 }
 
 if (!antelope)

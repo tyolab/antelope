@@ -106,6 +106,10 @@ parallel_indexing = 0;
 docno = -1;
 param_block = NULL;
 input_files = NULL;
+
+#ifndef FILENAME_INDEX
+id_list = NULL;
+#endif
 }
 
 ATIRE_indexer::~ATIRE_indexer()
@@ -147,22 +151,30 @@ void ATIRE_indexer::cleanup() {
 		pregen = NULL;
 	}
 
-	#ifndef PARALLEL_INDEXING_DOCUMENTS
+#ifndef PARALLEL_INDEXING_DOCUMENTS
 		if (stemmer) {
 			delete stemmer;
 			stemmer = NULL;
 		}
-	#endif
+#endif
 
-	if (factory_text) {
+	if (factory_text) 
+		{
 		delete factory_text;
 		factory_text = NULL;
-	}
+		}
 
 	if (param_block) {
 		delete param_block;
 		param_block = NULL;
 	}
+#ifndef FILENAME_INDEX
+	if (id_list) 
+		{
+		delete id_list;
+		id_list = NULL;
+		}
+#endif	
 }
 
 /*
@@ -256,7 +268,9 @@ document_compression_scheme = param_block.document_compression_scheme;
 
 memory_index = new ANT_memory_index(param_block.index_filename);
 #ifndef FILENAME_INDEX
-	id_list.open(param_block.doclist_filename, "wbx");
+	if (!id_list)
+		id_list = new ANT_file();
+	id_list->open(param_block.doclist_filename, "wbx");
 #endif
 memory_index->set_compression_scheme(param_block.compression_scheme);
 memory_index->set_compression_validation(param_block.compression_validation);
@@ -426,7 +440,7 @@ if (!skip_document)
 		memory_index->add_to_document_repository(strip_space_inplace(filename));
 #else
 	//			puts(filename);
-	id_list.puts(strip_space_inplace(filename));
+	id_list->puts(strip_space_inplace(filename));
 #endif
 	}
 return docno;
@@ -448,7 +462,7 @@ if (docno <= 0)
 	return 0;
 
 #ifndef FILENAME_INDEX
-	id_list.close();
+	id_list->close();
 #endif
 	if (pregen)
 		{
