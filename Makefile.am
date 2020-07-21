@@ -660,7 +660,7 @@ main_headers = $(ATIRE_DIR)/atire_api.h \
 	
 ATIRE_PARAM_LIST = $(ATIRE_DIR)/ant_param_block.c
 
-INDEX_PARAM_LIST = $(ATIRE_DIR)/indexer.c \
+INDEX_PARAM_LIST =  \
 				 $(ATIRE_DIR)/indexer_param_block.c \
 				 $(ATIRE_DIR)/indexer_param_block_rank.c \
 				 $(ATIRE_DIR)/indexer_param_block_topsig.c \
@@ -701,7 +701,8 @@ libantelope_core_la_LIBADD = -ldl -lpthread
 libantelope_core_la_LIBFLAGS = 
 libantelope_core_la_LDFLAGS = 
 
-libantelope_api_la_SOURCES = $(ATIRE_DIR)/atire_api.c \
+libantelope_api_la_SOURCES = $(ATIRE_DIR)/indexer.c \
+				$(ATIRE_DIR)/atire_api.c \
 				$(ATIRE_DIR)/atire_api_result.c \
 				$(ATIRE_DIR)/atire_api_server.c \
 				$(ATIRE_DIR)/atire_api_remote.c \
@@ -722,20 +723,20 @@ libantelope_index_param_la_SOURCES = \
 	$(INDEX_PARAM_LIST)
 libantelope_index_param_la_LDFLAGS = 
 libantelope_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
-libantelope_index_param_la_LIBADD = 
+libantelope_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
 
 libantelope_index_la_SOURCES = \
 	$(ATIRE_DIR)/index.c 
 libantelope_index_la_LDFLAGS = 
 libantelope_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
 libantelope_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
-libantelope_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB) 
 
 libantelope_ant_param_la_SOURCES = \
 	$(ATIRE_PARAM_LIST)
 libantelope_ant_param_la_LDFLAGS =
 libantelope_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
-libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB)
+libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB) 
 
 #ATIRE_API_LIB = -L. -ldl -lpthread
 
@@ -787,7 +788,7 @@ antelope_broker_DEPENDENCIES = $(ATIRE_API_LIB)
 
 index_SOURCES = \
 	$(ATIRE_DIR)/index.c 
-index_LDADD = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB)
+index_LDADD = $(ATIRE_API_LIB) $(ATIRE_INDEX_PARAM_LIB)
 #index_LDFLAGS = -rdynamic
 index_LDFLAGS = -static -export-dynamic
 index_DEPENDENCIES = $(ATIRE_CORE_LIB) $(ATIRE_INDEX_PARAM_LIB)
