@@ -6,9 +6,9 @@
 #define ATIRE_API_H_
 
 #include <limits.h>
-#include "heap.h"
-#include "max_quantum.h"
-#include "compress.h"
+//#include "heap.h"
+//#include "max_quantum.h"
+//#include "compress.h"
 
 /*
      the reason for removing btree_iterator.h here is that when the atire api headers can be installed in a system path, and they should be kept minimum.
