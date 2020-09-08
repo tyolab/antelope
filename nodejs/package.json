@@ -1,6 +1,6 @@
 {
   "name": "antelope-search",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "atire_node",
   "main": "index.js",
   "bin": {
@@ -12,7 +12,7 @@
     "copy": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null || echo 0",
     "reinstall": "cp -rv ./bin/linux/*.so /usr/local/lib/",
     "install": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null",
-    "build": "node-gyp build && node-gyp  install --fallback-to-build"
+    "build": "node-gyp configure && node-gyp build && node-gyp install --fallback-to-build"
   },
   "repository": "",
   "keywords": [
@@ -42,6 +42,7 @@
     "*.js",
     "examples/",
     "Makefile",
-    ""
+    "binding.gyp",
+    "*.cxx"
   ]
 }
