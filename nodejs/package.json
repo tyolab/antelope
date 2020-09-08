@@ -1,6 +1,6 @@
 {
   "name": "antelope-search",
-  "version": "2.1.1",
+  "version": "2.1.4",
   "description": "atire_node",
   "main": "index.js",
   "bin": {
@@ -37,13 +37,16 @@
   },
   "files": [
     "LICENSE",
-    "lib/",
+    "lib",
+    "include",
+    "bin",
     "README.md",
     "*.js",
-    "examples/",
+    "examples",
     "Makefile",
     "binding.gyp",
     "*.cxx",
-    "*.cpp"
+    "*.cpp",
+    "build/Release/antelope_api.node"
   ]
 }
