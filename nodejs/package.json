@@ -43,6 +43,7 @@
     "examples/",
     "Makefile",
     "binding.gyp",
-    "*.cxx"
+    "*.cxx",
+    "*.cpp"
   ]
 }

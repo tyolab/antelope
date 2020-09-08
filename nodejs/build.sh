@@ -4,7 +4,7 @@
 
 . ./env.sh
 
-ln -sf ./binding-release.gyp ./binding.gyp
+cp -f ./binding-release.gyp ./binding.gyp
 
 ./configure.sh
 
