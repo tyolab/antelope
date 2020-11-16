@@ -33,7 +33,7 @@
     "nopt": "^4.0.3",
     "restify": "^8.5.1",
     "restify-plugins": "^1.4.0",
-    "tyo-utils": "0.0.3"
+    "tyo-utils": "0.0.4"
   },
   "files": [
     "LICENSE",
