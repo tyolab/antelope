@@ -7,7 +7,7 @@ var node_version = parseInt(process.version.split('.')[0].substr(1));
 if (node_version % 2 !== 0)
     throw new Error("This version of NodeJs is not supported");
 
-if (node_version > 10) 
+if (node_version > 14) 
     throw new Error("Only NodeJs version 10 or lower is supported at the moment");
 
 var nodelib = "antelope_api.node";
