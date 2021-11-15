@@ -33,8 +33,6 @@ this->auto_file_id = 0;
 ANT_directory_iterator_file_buffered::~ANT_directory_iterator_file_buffered()
 {
 delete [] read_buffer;
-delete [] doc_tag;
-delete [] docno_tag;
 }
 
 /*

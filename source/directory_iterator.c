@@ -38,6 +38,8 @@ ANT_directory_iterator::~ANT_directory_iterator()
 {
 free_tag();
 delete internals;
+delete [] doc_tag;
+delete [] docno_tag;
 }
 
 /*
@@ -154,11 +156,25 @@ return object;
  */
 void ANT_directory_iterator::free_tag()
 {
-for (int i = 0; i < 2; ++i)
-	{
-	delete [] doc_tag[i];
-	delete [] docno_tag[i];
-	}
+if (doc_tag)
+	for (int i = 0; i < 2; ++i)
+		{
+		if (doc_tag[i])
+			{
+			delete [] doc_tag[i];
+			doc_tag[i] = NULL;
+			}
+		}
+		
+if (docno_tag)
+	for (int i = 0; i < 2; ++i)
+		{
+		if (docno_tag[i]) 
+			{
+			delete [] docno_tag[i];
+			docno_tag[i] = NULL;
+			}
+		}		
 }
 
 /*
