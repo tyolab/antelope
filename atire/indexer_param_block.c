@@ -177,7 +177,7 @@ puts("   s            Snappy");
 puts("   z            zip (deflate)");
 puts("");
 
-puts("SEGMENTATION");
+puts("PARALLEL");
 puts("------------");
 puts("-parallel      Enable parallel indexing");
 puts("");
@@ -195,7 +195,10 @@ puts("-----------");
 puts("-R[-dt]        Calculate readability using one of:");
 puts("   -            none [default]");
 puts("   d            Dale-Chall");
-puts("   t[:CUSTOM_TAG1+CUSTOM_TAG2+...:] Tag up-weighting for TITLE and CATEGORY elements, custom tag must be a CAPITAL TAG");
+puts("   t[CUSTOM_TAG1+CUSTOM_TAG2+...]");
+puts("                Tag up-weighting for TITLE and CATEGORY elements");
+
+puts("                Custom tag(s) can be include between [] and must be in CAPITAL letters.");
 puts("");
 
 ANT_indexer_param_block_rank::help("QUANTIZATION", 'Q', ANT_ranking_function_factory_object::INDEXABLE);
