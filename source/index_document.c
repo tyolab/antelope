@@ -22,7 +22,7 @@ long ANT_index_document::index_document(ANT_memory_indexer *indexer, ANT_stem *s
 {
 char term[MAX_TERM_LENGTH + 1], token_stem_internals[MAX_TERM_LENGTH + 1];
 ANT_parser_token *token;
-long terms_in_document, length_of_token, is_previous_token_chinese;
+long terms_in_document, length_of_token, is_previous_token_utf8;
 size_t length_of_previous_token;
 char *previous_token_start;
 
@@ -36,7 +36,7 @@ terms_in_document = 0;
 */
 previous_token_start = NULL;
 length_of_previous_token = 0;
-is_previous_token_chinese = FALSE;
+is_previous_token_utf8 = FALSE;
 
 /*
 	Index the file
@@ -67,7 +67,7 @@ while ((token = readability->get_next_token()) != NULL)
 					{
 					// move a character forward, try not to re-index the last single character in previous bigram
 					length_of_token = utf8_bytes(token->start);
-					if ((segmentation & ANT_parser::BIGRAM_SEGMENTATION) == ANT_parser::BIGRAM_SEGMENTATION && is_previous_token_chinese && previous_token_start != NULL && (token->start + length_of_token) == (previous_token_start + length_of_previous_token))
+					if ((segmentation & ANT_parser::BIGRAM_SEGMENTATION) == ANT_parser::BIGRAM_SEGMENTATION && is_previous_token_utf8 && previous_token_start != NULL && (token->start + length_of_token) == (previous_token_start + length_of_previous_token))
 						{
 						previous_token_start = token->start;
 						length_of_previous_token = token->string_length;
@@ -89,11 +89,11 @@ while ((token = readability->get_next_token()) != NULL)
 						token->string_length -= length_of_token;
 						}
 					}
-				is_previous_token_chinese = TRUE;
+				is_previous_token_utf8 = TRUE;
 				}
 			else
 				{
-				is_previous_token_chinese = FALSE;
+				is_previous_token_utf8 = FALSE;
 				previous_token_start = NULL;
 
 				if ((stopword_mode & ANT_memory_index::PRUNE_STOPWORDS_BEFORE_INDEXING) && indexer->stopwords->isstop(token->normalized_pair()->string(), token->normalized_pair()->length()))
