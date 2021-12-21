@@ -8,7 +8,7 @@ import java.util.List;
 import au.com.tyo.antelope.jni.ATIRE_API_result;
 import au.com.tyo.antelope.jni.ATIRE_API_server;
 
-public abstract class Antelope<DocumentType extends AntelopeDoc> extends AntelopeClient<DocumentType> {
+public class Antelope<DocumentType extends AntelopeDoc> extends AntelopeClient<DocumentType> {
 
     private static final String TAG = "Antelope";
 
@@ -178,10 +178,10 @@ public abstract class Antelope<DocumentType extends AntelopeDoc> extends Antelop
         if (null != termResult) {
             int count = 0;
             list = new ArrayList<>();
-            list.add(createNewSearchResult(termResult.getDocid(), termResult.getTitle(), count));
+            list.add(this.createNewSearchResult(termResult.getDocid(), termResult.getTitle(), count));
 
             while ((termResult = server.next_term()) != null)
-                list.add(createNewSearchResult(termResult.getDocid(), termResult.getTitle(), ++count));
+                list.add(this.createNewSearchResult(termResult.getDocid(), termResult.getTitle(), ++count));
         }
         return list;
     }

@@ -26,24 +26,24 @@
 #endif
 
 %{
-#include "../source/error.h"
-#include "../atire/atire_api.h"
-#include "../atire/atire_api_remote.h"
-#include "../atire/atire_api_server.h"
-#include "../atire/atire_api_result.h"
-#include "../atire/indexer.h"
-//#include "../java/jni/include/index.h"
-//#include "../java/jni/include/atire.h"
+#include "../../source/error.h"
+#include "../../atire/atire_api.h"
+#include "../../atire/atire_api_remote.h"
+#include "../../atire/atire_api_server.h"
+#include "../../atire/atire_api_result.h"
+#include "../../atire/indexer.h"
+//#include "../../java/jni/include/index.h"
+//#include "../../java/jni/include/atire.h"
 %}
 
-%include "../atire/atire_api_remote.h"
-%include "../atire/atire_api_server.h"
-%include "../atire/atire_api_result.h"
-%include "../atire/indexer.h"
-%include "../source/error.h"
+%include "../../atire/atire_api_remote.h"
+%include "../../atire/atire_api_server.h"
+%include "../../atire/atire_api_result.h"
+%include "../../atire/indexer.h"
+%include "../../source/error.h"
 
 /*
-%include "../java/jni/include/index.h"
-%include "../java/jni/include/atire.h"
+%include "../../java/jni/include/index.h"
+%include "../../java/jni/include/atire.h"
 */
 

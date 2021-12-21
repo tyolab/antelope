@@ -14,11 +14,11 @@ public:
 	ANT_search_engine_forum_INEX_efficiency(char *filename, char *participant_id, char *run_id, long result_list_length, char *task);
 	virtual ~ANT_search_engine_forum_INEX_efficiency();
 
-// #ifdef FILENAME_INDEX
+#ifdef FILENAME_INDEX
 	void write(long topic_id, long long hits, ANT_search_engine *search_engine, ANT_focus_results_list *focused_results);
-// #else
+#else
 	void write(long topic_id, char **docids, long long hits, ANT_search_engine *search_engine, ANT_focus_results_list *focused_results);
-// #endif
+#endif
 private:
 	static const char* const ID_PREFIX;
 	static const long long INEX2009_index_size_bytes;

@@ -99,6 +99,7 @@ while (*current != '\0')
 return result;
 }
 
+#ifdef FILENAME_INDEX
 /*
 	ANT_SEARCH_ENGINE_FORUM_INEX::WRITE()
 	-------------------------------------
@@ -124,7 +125,7 @@ for (which = 0; which < hits; which++)
 fprintf(file, "</topic>\n");
 #pragma ANT_PRAGMA_UNUSED_PARAMETER
 }
-
+#else
 /*
 	ANT_SEARCH_ENGINE_FORUM_INEX::WRITE()
 	-------------------------------------
@@ -148,3 +149,4 @@ for (which = 0; which < hits; which++)
 fprintf(file, "</topic>\n");
 #pragma ANT_PRAGMA_UNUSED_PARAMETER
 }
+#endif

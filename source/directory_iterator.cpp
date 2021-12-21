@@ -8,6 +8,10 @@
 #include <string.h>
 #include "str.h"
 
+#ifdef ATIRE_MOBILE
+#include "glob.h"
+#endif
+
 /*
 	ANT_DIRECTORY_ITERATOR::ANT_DIRECTORY_ITERATOR()
 	------------------------------------------------

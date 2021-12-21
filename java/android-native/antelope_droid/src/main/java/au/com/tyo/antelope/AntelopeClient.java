@@ -166,8 +166,8 @@ public abstract class AntelopeClient<DocumentType extends AntelopeDoc> {
                                 docid = -1;
                             }
 
-                            DocumentType documentType = createNewSearchResult(docid, title, list.size());
-                            list.add(documentType);
+                            DocumentType document = createNewSearchResult(docid, title, list.size());
+                            list.add(document);
                         }
 //                        try {
 //                            long docid = Long.parseLong(line);

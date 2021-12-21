@@ -72,11 +72,11 @@ public class AntelopeSearchResult<DocumentType extends AntelopeDoc> {
         this.size = size;
     }
 
-    public List getList() {
+    public List<DocumentType> getList() {
         return list;
     }
 
-    public void setList(List list) {
+    public void setList(List<DocumentType> list) {
         this.list = list;
     }
 }

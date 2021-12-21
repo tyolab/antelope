@@ -58,4 +58,8 @@ public class AntelopeDoc {
     public void setDoc(String doc) {
         this.doc = doc;
     }
+
+    public void setDocid(long docid) {
+        this.docid = docid;
+    }
 }

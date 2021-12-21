@@ -1266,8 +1266,12 @@ return atire->get_search_engine()->document_count();
 */
 const char *ATIRE_API_server::get_document(long docid)
 {
-current_document_length = length_of_longest_document;
-atire->get_document(document_buffer, &current_document_length, docid);
+*document_buffer = '\0';
+if ((current_document_length = length_of_longest_document) != 0)
+	{
+	current_document_length = length_of_longest_document;
+	document_buffer = atire->get_document(document_buffer, &current_document_length, docid);
+	}
 return document_buffer;
 }
 
@@ -1440,7 +1444,7 @@ else
 		*document_buffer = '\0';
 		if ((current_document_length = length_of_longest_document) != 0)
 			{
-			atire->get_document(document_buffer, &current_document_length, atoll(command + 10));
+			get_document(atoll(command + 10));
 			query = atire->extract_query_terms(document_buffer, 10);		// choose top 10 terms
 
 			// delete [] command;
@@ -1457,7 +1461,7 @@ else
 		*document_buffer = '\0';
 		if ((current_document_length = length_of_longest_document) != 0)
 			{
-			atire->get_document(document_buffer, &current_document_length, atoll(command + 5));
+			get_document(atoll(command + 5));
 
 			if (params->focussing_algorithm == ANT_ANT_param_block::RANGE)
 				{
@@ -1641,7 +1645,7 @@ else
 		*document_buffer = '\0';
 		if ((current_document_length = length_of_longest_document) != 0)
 			{
-			atire->get_document(document_buffer, &current_document_length, atoll(strstr(command, "<docid>") + 7));
+			get_document(atoll(strstr(command, "<docid>") + 7));
 			outchannel->puts("<ATIREgetdoc>");
 			*outchannel << "<length>" << current_document_length << "</length>" << ANT_channel::endl;
 			outchannel->write(document_buffer, current_document_length);
