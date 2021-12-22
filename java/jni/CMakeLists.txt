@@ -18,9 +18,16 @@ file(GLOB SRCS "src/*.cpp" )
 #set_source_files_properties(${APIS} PROPERTIES LANGUAGE CXX)
 #set_source_files_properties(${SRCS} PROPERTIES LANGUAGE CXX)
 #set_source_files_properties(atire/ant_param_block.c LANGUAGE CXX)
-#set_source_files_properties(atire/indexer.c PROPERTIES LANGUAGE CXX)
+set_source_files_properties(glob.c PROPERTIES LANGUAGE C)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+
+# set(CMAKE_AUTOMOC ON)
+set(CMAKE_INCLUDE_CURRENT_DIR ON)
+set(CMAKE_BUILD_TYPE Debug)
+
+# similar to release but with debug symbols
+# set(CMAKE_BUILD_TYPE RelWithDebInfo)
 
 add_compile_definitions(
         ANT_HAS_ZLIB
@@ -60,7 +67,7 @@ add_library( # Sets the name of the library.
              ${SRCS}
              ${INDEXERS}
              ${APIS}
-             glob.c
+             glob.cpp
         )
 
 include_directories(
@@ -100,4 +107,9 @@ target_link_libraries( # Specifies the target library.
                        dl
                        z
                        c
+        )
+
+target_compile_options(antelope_jni
+        PUBLIC
+        -std=c++11
         )

@@ -2,7 +2,7 @@
 	ATIRE_API_SERVER.C
 	------------------
 	Created on: 30 Nov 2015
-    Author: Eric Tang (eric.tang@tyo.com.au)
+    Author: Eric Tang (email: eric.tang@tyo.com.au, twitter: @_e_tang)
 */
 #include <stdio.h>
 #include <string.h>
@@ -1270,7 +1270,7 @@ const char *ATIRE_API_server::get_document(long docid)
 if ((current_document_length = length_of_longest_document) != 0)
 	{
 	current_document_length = length_of_longest_document;
-	document_buffer = atire->get_document(document_buffer, &current_document_length, docid);
+	atire->get_document(document_buffer, &current_document_length, docid);
 	}
 return document_buffer;
 }

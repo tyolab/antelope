@@ -295,57 +295,57 @@ LIB_DIR = lib
 TOOLS_DIR = tools
 TESTS_DIR = tests
 
-IGNORE_LIST := $(SRC_DIR)/stem_paice_husk.c
+IGNORE_LIST := $(SRC_DIR)/stem_paice_husk.cpp
 
-MAIN_FILES := $(ATIRE_DIR)/atire.c \
-              $(ATIRE_DIR)/index.c \
-              $(ATIRE_DIR)/atire_client.c \
-              $(ATIRE_DIR)/atire_broker.c \
-              $(ATIRE_DIR)/atire_merge.c \
-              $(ATIRE_DIR)/atire_doclist.c \
-              $(ATIRE_DIR)/atire_dictionary.c
+MAIN_FILES := $(ATIRE_DIR)/atire.cpp \
+              $(ATIRE_DIR)/index.cpp \
+              $(ATIRE_DIR)/atire_client.cpp \
+              $(ATIRE_DIR)/atire_broker.cpp \
+              $(ATIRE_DIR)/atire_merge.cpp \
+              $(ATIRE_DIR)/atire_doclist.cpp \
+              $(ATIRE_DIR)/atire_dictionary.cpp
 
-ALL_SOURCES := $(shell ls $(ATIRE_DIR)/*.c $(SRC_DIR)/*.c)
+ALL_SOURCES := $(shell ls $(ATIRE_DIR)/*.cpp $(SRC_DIR)/*.cpp)
 SOURCES := $(filter-out $(MAIN_FILES) $(IGNORE_LIST), $(ALL_SOURCES))
 
 ifeq ($(USE_STEM_PAICE_HUSK), 1)
 	override CFLAGS += -DANT_HAS_PAICE_HUSK
-	SOURCES += $(SRC_DIR)/stem_paice_husk.c
+	SOURCES += $(SRC_DIR)/stem_paice_husk.cpp
 endif
 
-SOURCES_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(notdir $(SOURCES))))
+SOURCES_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(notdir $(SOURCES))))
 
 
-INDEX_SOURCES := index.c $(notdir $(SOURCES))
-INDEX_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(INDEX_SOURCES)))
+INDEX_SOURCES := index.cpp $(notdir $(SOURCES))
+INDEX_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(INDEX_SOURCES)))
 
-ATIRE_DICT_SOURCES := atire_dictionary.c $(notdir $(SOURCES))
-ATIRE_DICT_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_DICT_SOURCES)))
+ATIRE_DICT_SOURCES := atire_dictionary.cpp $(notdir $(SOURCES))
+ATIRE_DICT_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_DICT_SOURCES)))
 
-ATIRE_CLIENT_SOURCES := atire_client.c $(notdir $(SOURCES))
-ATIRE_CLIENT_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_CLIENT_SOURCES)))
+ATIRE_CLIENT_SOURCES := atire_client.cpp $(notdir $(SOURCES))
+ATIRE_CLIENT_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_CLIENT_SOURCES)))
 
-ATIRE_SOURCES := atire.c $(notdir $(SOURCES))
-ATIRE_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_SOURCES)))
+ATIRE_SOURCES := atire.cpp $(notdir $(SOURCES))
+ATIRE_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_SOURCES)))
 
-ATIRE_MERGE_SOURCES := atire_merge.c $(notdir $(SOURCES))
-ATIRE_MERGE_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_MERGE_SOURCES)))
+ATIRE_MERGE_SOURCES := atire_merge.cpp $(notdir $(SOURCES))
+ATIRE_MERGE_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_MERGE_SOURCES)))
 
-ATIRE_BROKER_SOURCES := atire_broker.c $(notdir $(SOURCES))
-ATIRE_BROKER_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_BROKER_SOURCES)))
+ATIRE_BROKER_SOURCES := atire_broker.cpp $(notdir $(SOURCES))
+ATIRE_BROKER_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_BROKER_SOURCES)))
 
-ATIRE_DOCLIST_SOURCES := atire_doclist.c $(notdir $(SOURCES))
-ATIRE_DOCLIST_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(ATIRE_DOCLIST_SOURCES)))
+ATIRE_DOCLIST_SOURCES := atire_doclist.cpp $(notdir $(SOURCES))
+ATIRE_DOCLIST_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(ATIRE_DOCLIST_SOURCES)))
 
-TOOLS_IGNORES := $(TOOLS_DIR)/mysql_xml_dump.c
-TOOLS_SOURCES := $(notdir $(filter-out $(TOOLS_IGNORES), $(shell ls $(TOOLS_DIR)/*.c)))
+TOOLS_IGNORES := $(TOOLS_DIR)/mysql_xml_dump.cpp
+TOOLS_SOURCES := $(notdir $(filter-out $(TOOLS_IGNORES), $(shell ls $(TOOLS_DIR)/*.cpp)))
 TOOLS_EXES := $(basename $(TOOLS_SOURCES))
-TOOLS_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(TOOLS_SOURCES)))
+TOOLS_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(TOOLS_SOURCES)))
 
 TESTS_IGNORES :=
-TESTS_SOURCES := $(notdir $(filter-out $(TESTS_IGNORES), $(shell ls $(TESTS_DIR)/*.c)))
+TESTS_SOURCES := $(notdir $(filter-out $(TESTS_IGNORES), $(shell ls $(TESTS_DIR)/*.cpp)))
 TESTS_EXES := $(basename $(TESTS_SOURCES))
-TESTS_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .c,.o, $(TESTS_SOURCES)))
+TESTS_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(TESTS_SOURCES)))
 
 
 all: $(EXTRA_OBJS) GNUmakefile index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
@@ -393,19 +393,19 @@ test_tests:
 	@echo $(TESTS_EXES)
 	@echo $(TESTS_OBJECTS)
 
-$(OBJ_DIR)/%.o : $(ATIRE_DIR)/%.c
+$(OBJ_DIR)/%.o : $(ATIRE_DIR)/%.cpp
 	$(PUT_FILENAME)
 	$(CC) $(CFLAGS) -Isource -c $< -o $@
 
-$(OBJ_DIR)/%.o : $(SRC_DIR)/%.c
+$(OBJ_DIR)/%.o : $(SRC_DIR)/%.cpp
 	$(PUT_FILENAME)
 	$(CC) $(CFLAGS) -Isource -c $< -o $@
 
-$(OBJ_DIR)/%.o : $(TOOLS_DIR)/%.c
+$(OBJ_DIR)/%.o : $(TOOLS_DIR)/%.cpp
 	$(PUT_FILENAME)
 	$(CC) $(CFLAGS) -Isource -c $< -o $@
 
-$(OBJ_DIR)/%.o : $(TESTS_DIR)/%.c
+$(OBJ_DIR)/%.o : $(TESTS_DIR)/%.cpp
 	$(PUT_FILENAME)
 	$(CC) $(CFLAGS) -Isource -c $< -o $@
 
@@ -469,6 +469,6 @@ clean-internal:
 	\rm -f $(OBJ_DIR)/*.o $(BIN_DIR)/*
 
 depend :
-	@makedepend  -f- -Y -o.o -w1024 -pobj/ source/*.c tools/*.c atire/*.c Link-The-Wiki/*.c | sed -e "s/obj\/source/obj/" | sed -e "s/obj\/tools/obj/" | sed -e "s/obj\/atire/obj/" | sed -e "s/obj\/Link-The-Wiki/obj/" > GNUmakefile.dependencies
+	@makedepend  -f- -Y -o.o -w1024 -pobj/ source/*.cpp tools/*.cpp atire/*.cpp Link-The-Wiki/*.cpp | sed -e "s/obj\/source/obj/" | sed -e "s/obj\/tools/obj/" | sed -e "s/obj\/atire/obj/" | sed -e "s/obj\/Link-The-Wiki/obj/" > GNUmakefile.dependencies
 
 include GNUmakefile.dependencies

@@ -73,231 +73,231 @@ AM_CFLAGS += -I $(srcdir)/$(SRC_DIR)
 #OBJDIR = 
 #BINDIR = 
 
-#	$(SRC_DIR)/assessment_INEX.c 
-#	$(SRC_DIR)/assessment_TREC.c 
-#	$(SRC_DIR)/search_engine_forum_INEX_bep.c 
-#	$(SRC_DIR)/search_engine_forum_INEX.c 
-#	$(SRC_DIR)/search_engine_forum_INEX_efficiency.c 
-#	$(SRC_DIR)/search_engine_forum_INEX_focus.c 
-#	$(SRC_DIR)/search_engine_forum_TREC.c 
+#	$(SRC_DIR)/assessment_INEX.cpp 
+#	$(SRC_DIR)/assessment_TREC.cpp 
+#	$(SRC_DIR)/search_engine_forum_INEX_bep.cpp 
+#	$(SRC_DIR)/search_engine_forum_INEX.cpp 
+#	$(SRC_DIR)/search_engine_forum_INEX_efficiency.cpp 
+#	$(SRC_DIR)/search_engine_forum_INEX_focus.cpp 
+#	$(SRC_DIR)/search_engine_forum_TREC.cpp 
 
 core_sources =  \
-	$(SRC_DIR)/arithmetic_model_bigram.c \
-	$(SRC_DIR)/arithmetic_model_tables.c \
-	$(SRC_DIR)/arithmetic_model_unigram.c \
-	$(SRC_DIR)/assessment.c \
-	$(SRC_DIR)/assessment_factory.c \
-	$(SRC_DIR)/barrier.c \
-	$(SRC_DIR)/bitstream.c \
-	$(SRC_DIR)/bitstring.c \
-	$(SRC_DIR)/bitstring_iterator.c \
-	$(SRC_DIR)/btree_iterator.c \
-	$(SRC_DIR)/channel_file.c \
-	$(SRC_DIR)/channel_inex.c \
-	$(SRC_DIR)/channel_socket.c \
-	$(SRC_DIR)/channel_trec.c \
-	$(SRC_DIR)/channel_memory.c \
-	$(SRC_DIR)/compress_carryover12.c \
-	$(SRC_DIR)/compress_elias_delta.c \
-	$(SRC_DIR)/compress_elias_gamma.c \
-	$(SRC_DIR)/compress_four_integer_variable_byte.c \
-	$(SRC_DIR)/compress_golomb.c \
-	$(SRC_DIR)/compression_factory.c \
-	$(SRC_DIR)/compression_text_factory.c \
-	$(SRC_DIR)/compress_none.c \
-	$(SRC_DIR)/compress_relative10.c \
-	$(SRC_DIR)/compress_sigma.c \
-	$(SRC_DIR)/compress_simple16.c \
-	$(SRC_DIR)/compress_simple16_packed.c \
-	$(SRC_DIR)/compress_simple8b.c \
-	$(SRC_DIR)/compress_simple8b_packed.c \
-	$(SRC_DIR)/compress_simple9.c \
-	$(SRC_DIR)/compress_simple9_packed.c \
-	$(SRC_DIR)/compress_text_bz2.c \
-	$(SRC_DIR)/compress_text_deflate.c \
-	$(SRC_DIR)/compress_text_none.c \
-	$(SRC_DIR)/compress_text_snappy.c \
-	$(SRC_DIR)/compress_variable_byte.c \
-	$(SRC_DIR)/critical_section.c \
-	$(SRC_DIR)/ctypes.c \
-	$(SRC_DIR)/directory_iterator.c \
-	$(SRC_DIR)/directory_iterator_compressor.c \
-	$(SRC_DIR)/directory_iterator_csv.c \
-	$(SRC_DIR)/directory_iterator_deflate.c \
-	$(SRC_DIR)/directory_iterator_file_buffered.c \
-	$(SRC_DIR)/directory_iterator_file.c \
-	$(SRC_DIR)/directory_iterator_filter.c \
-	$(SRC_DIR)/directory_iterator_filter_spam.c \
-	$(SRC_DIR)/directory_iterator_internals.c \
-	$(SRC_DIR)/directory_iterator_mime_filter.c \
-	$(SRC_DIR)/directory_iterator_multiple.c \
-	$(SRC_DIR)/directory_iterator_mysql.c \
-	$(SRC_DIR)/directory_iterator_pkzip.c \
-	$(SRC_DIR)/directory_iterator_preindex.c \
-	$(SRC_DIR)/directory_iterator_preindex_internals.c \
-	$(SRC_DIR)/directory_iterator_recursive.c \
-	$(SRC_DIR)/directory_iterator_scrub.c \
-	$(SRC_DIR)/directory_iterator_tar.c \
-	$(SRC_DIR)/directory_iterator_tsv.c \
-	$(SRC_DIR)/directory_iterator_warc.c \
-	$(SRC_DIR)/directory_iterator_warc_gz_recursive.c \
-	$(SRC_DIR)/disk.c \
-	$(SRC_DIR)/evaluation_binary_preference.c \
-	$(SRC_DIR)/evaluation.c \
-	$(SRC_DIR)/evaluation_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_expected_reciprocal_rank.c \
-	$(SRC_DIR)/evaluation_intent_aware_expected_reciprocal_rank.c \
-	$(SRC_DIR)/evaluation_intent_aware_mean_average_precision.c \
-	$(SRC_DIR)/evaluation_intent_aware_normalised_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_intent_aware_precision_at_n.c \
-	$(SRC_DIR)/evaluation_mean_average_generalised_precision_document.c \
-	$(SRC_DIR)/evaluation_mean_average_precision.c \
-	$(SRC_DIR)/evaluation_normalised_discounted_cumulative_gain.c \
-	$(SRC_DIR)/evaluation_precision_at_n.c \
-	$(SRC_DIR)/evaluation_rank_effectiveness.c \
-	$(SRC_DIR)/evaluation_success_at_n.c \
-	$(SRC_DIR)/evaluator.c \
-	$(SRC_DIR)/event.c \
-	$(SRC_DIR)/error.c \
-	$(SRC_DIR)/file.c \
-	$(SRC_DIR)/file_internals.c \
-	$(SRC_DIR)/file_memory.c \
-	$(SRC_DIR)/focus_article.c \
-	$(SRC_DIR)/focus.c \
-	$(SRC_DIR)/focus_lowest_tag.c \
-	$(SRC_DIR)/focus_results_list.c \
-	$(SRC_DIR)/hash_header.c \
-	$(SRC_DIR)/hash_header_collapse.c \
-	$(SRC_DIR)/hash_header_experimental.c \
-	$(SRC_DIR)/hash_matt.c \
-	$(SRC_DIR)/hash_random.c \
-	$(SRC_DIR)/index_document.c \
-	$(SRC_DIR)/index_document_topsig.c \
-	$(SRC_DIR)/index_document_topsig_signature.c \
-	$(SRC_DIR)/instream_buffer.c \
-	$(SRC_DIR)/instream_bz2.c \
-	$(SRC_DIR)/instream_deflate.c \
-	$(SRC_DIR)/instream_file.c \
-	$(SRC_DIR)/instream_file_star.c \
-	$(SRC_DIR)/instream_lzo.c \
-	$(SRC_DIR)/instream_memory.c \
-	$(SRC_DIR)/instream_pkzip.c \
-	$(SRC_DIR)/instream_scrub.c \
-	$(SRC_DIR)/maths.c \
-	$(SRC_DIR)/memory.c \
-	$(SRC_DIR)/memory_index.c \
-	$(SRC_DIR)/memory_indexer.c \
-	$(SRC_DIR)/memory_index_filename_index.c \
-	$(SRC_DIR)/memory_index_hash_node.c \
-	$(SRC_DIR)/memory_index_one.c \
-	$(SRC_DIR)/mersenne_twister.c \
-	$(SRC_DIR)/NEXI_ant.c \
-	$(SRC_DIR)/nexi.c \
-	$(SRC_DIR)/NEXI_term_ant.c \
-	$(SRC_DIR)/NEXI_term.c \
-	$(SRC_DIR)/NEXI_term_iterator.c \
-	$(SRC_DIR)/numbers.c \
-	$(SRC_DIR)/parser.c \
-	$(SRC_DIR)/parser_readability.c \
-	$(SRC_DIR)/plugin_manager.c \
-	$(SRC_DIR)/postings_piece.c \
-	$(SRC_DIR)/pregen.c \
-	$(SRC_DIR)/pregen_kendall_tau.c \
-	$(SRC_DIR)/pregens_writer.c \
-	$(SRC_DIR)/pregen_writer.c \
-	$(SRC_DIR)/pregen_writer_exact_integers.c \
-	$(SRC_DIR)/pregen_writer_exact_strings.c \
-	$(SRC_DIR)/pregen_writer_normal.c \
-	$(SRC_DIR)/query_boolean.c \
-	$(SRC_DIR)/query.c \
-	$(SRC_DIR)/query_parse_tree.c \
-	$(SRC_DIR)/ranking_function_bm25adpt.c \
-	$(SRC_DIR)/ranking_function_bm25.c \
-	$(SRC_DIR)/ranking_function_bm25l.c \
-	$(SRC_DIR)/ranking_function_bm25plus.c \
-	$(SRC_DIR)/ranking_function_bm25t.c \
-	$(SRC_DIR)/ranking_function_bose_einstein.c \
-	$(SRC_DIR)/ranking_function.c \
-	$(SRC_DIR)/ranking_function_dfi.c \
-	$(SRC_DIR)/ranking_function_dfi_idf.c \
-	$(SRC_DIR)/ranking_function_dfiw.c \
-	$(SRC_DIR)/ranking_function_dfiw_idf.c \
-	$(SRC_DIR)/ranking_function_dfree.c \
-	$(SRC_DIR)/ranking_function_divergence.c \
-	$(SRC_DIR)/ranking_function_dlh13.c \
-	$(SRC_DIR)/ranking_function_docid.c \
-	$(SRC_DIR)/ranking_function_dph.c \
-	$(SRC_DIR)/ranking_function_factory.c \
-	$(SRC_DIR)/ranking_function_impact.c \
-	$(SRC_DIR)/ranking_function_inner_product.c \
-	$(SRC_DIR)/ranking_function_kbtfidf.c \
-	$(SRC_DIR)/ranking_function_lmd.c \
-	$(SRC_DIR)/ranking_function_lmds.c \
-	$(SRC_DIR)/ranking_function_lmjm.c \
-	$(SRC_DIR)/ranking_function_pregen.c \
-	$(SRC_DIR)/ranking_function_puurula.c \
-	$(SRC_DIR)/ranking_function_puurula_idf.c \
-	$(SRC_DIR)/ranking_function_readability.c \
-	$(SRC_DIR)/ranking_function_term_count.c \
-	$(SRC_DIR)/ranking_function_tflodop.c \
-	$(SRC_DIR)/ranking_function_topsig_negative.c \
-	$(SRC_DIR)/ranking_function_topsig_positive.c \
-	$(SRC_DIR)/readability.c \
-	$(SRC_DIR)/readability_dale_chall.c \
-	$(SRC_DIR)/readability_factory.c \
-	$(SRC_DIR)/readability_tag_weighting.c \
-	$(SRC_DIR)/relevance_feedback_blind_kl.c \
-	$(SRC_DIR)/relevance_feedback_blind_kl_rm.c \
-	$(SRC_DIR)/relevance_feedback.c \
-	$(SRC_DIR)/relevance_feedback_factory.c \
-	$(SRC_DIR)/relevance_feedback_topsig.c \
-	$(SRC_DIR)/relevant_document.c \
-	$(SRC_DIR)/relevant_subtopic.c \
-	$(SRC_DIR)/relevant_topic.c \
-	$(SRC_DIR)/search_engine_accumulator.c \
-	$(SRC_DIR)/search_engine.c \
-	$(SRC_DIR)/search_engine_forum.c \
-	$(SRC_DIR)/search_engine_memory_index.c \
-	$(SRC_DIR)/search_engine_readability.c \
-	$(SRC_DIR)/search_engine_result.c \
-	$(SRC_DIR)/search_engine_result_id_iterator.c \
-	$(SRC_DIR)/search_engine_result_doc_iterator.c \
-	$(SRC_DIR)/search_engine_result_iterator.c \
-	$(SRC_DIR)/semaphores.c \
-	$(SRC_DIR)/snippet_beginning.c \
-	$(SRC_DIR)/snippet_best_tag.c \
-	$(SRC_DIR)/snippet.c \
-	$(SRC_DIR)/snippet_factory.c \
-	$(SRC_DIR)/snippet_tag.c \
-	$(SRC_DIR)/snippet_tficf.c \
-	$(SRC_DIR)/snippet_word_cloud.c \
-	$(SRC_DIR)/sockets.c \
-	$(SRC_DIR)/stats.c \
-	$(SRC_DIR)/stats_memory_index.c \
-	$(SRC_DIR)/stats_search_engine.c \
-	$(SRC_DIR)/stats_time.c \
-	$(SRC_DIR)/stem_krovetz.c \
-	$(SRC_DIR)/stemmer.c \
-	$(SRC_DIR)/stemmer_factory.c \
-	$(SRC_DIR)/stemmer_term_similarity.c \
-	$(SRC_DIR)/stemmer_term_similarity_threshold.c \
-	$(SRC_DIR)/stemmer_term_similarity_weighted.c \
-	$(SRC_DIR)/stem_otago.c \
-	$(SRC_DIR)/stem_otago_v2.c \
-	$(SRC_DIR)/stem_paice_husk.c \
-	$(SRC_DIR)/stem_porter.c \
-	$(SRC_DIR)/stem_s.c \
-	$(SRC_DIR)/stem_snowball.c \
-	$(SRC_DIR)/stop_word.c \
-	$(SRC_DIR)/str.c \
-	$(SRC_DIR)/term_divergence_kl.c \
-	$(SRC_DIR)/thesaurus.c \
-	$(SRC_DIR)/thesaurus_relationship.c \
-	$(SRC_DIR)/thesaurus_wordnet.c \
-	$(SRC_DIR)/threads.c \
-	$(SRC_DIR)/unicode.c \
-	$(SRC_DIR)/unicode_tables.c \
-	$(SRC_DIR)/version.c 
+	$(SRC_DIR)/arithmetic_model_bigram.cpp \
+	$(SRC_DIR)/arithmetic_model_tables.cpp \
+	$(SRC_DIR)/arithmetic_model_unigram.cpp \
+	$(SRC_DIR)/assessment.cpp \
+	$(SRC_DIR)/assessment_factory.cpp \
+	$(SRC_DIR)/barrier.cpp \
+	$(SRC_DIR)/bitstream.cpp \
+	$(SRC_DIR)/bitstring.cpp \
+	$(SRC_DIR)/bitstring_iterator.cpp \
+	$(SRC_DIR)/btree_iterator.cpp \
+	$(SRC_DIR)/channel_file.cpp \
+	$(SRC_DIR)/channel_inex.cpp \
+	$(SRC_DIR)/channel_socket.cpp \
+	$(SRC_DIR)/channel_trec.cpp \
+	$(SRC_DIR)/channel_memory.cpp \
+	$(SRC_DIR)/compress_carryover12.cpp \
+	$(SRC_DIR)/compress_elias_delta.cpp \
+	$(SRC_DIR)/compress_elias_gamma.cpp \
+	$(SRC_DIR)/compress_four_integer_variable_byte.cpp \
+	$(SRC_DIR)/compress_golomb.cpp \
+	$(SRC_DIR)/compression_factory.cpp \
+	$(SRC_DIR)/compression_text_factory.cpp \
+	$(SRC_DIR)/compress_none.cpp \
+	$(SRC_DIR)/compress_relative10.cpp \
+	$(SRC_DIR)/compress_sigma.cpp \
+	$(SRC_DIR)/compress_simple16.cpp \
+	$(SRC_DIR)/compress_simple16_packed.cpp \
+	$(SRC_DIR)/compress_simple8b.cpp \
+	$(SRC_DIR)/compress_simple8b_packed.cpp \
+	$(SRC_DIR)/compress_simple9.cpp \
+	$(SRC_DIR)/compress_simple9_packed.cpp \
+	$(SRC_DIR)/compress_text_bz2.cpp \
+	$(SRC_DIR)/compress_text_deflate.cpp \
+	$(SRC_DIR)/compress_text_none.cpp \
+	$(SRC_DIR)/compress_text_snappy.cpp \
+	$(SRC_DIR)/compress_variable_byte.cpp \
+	$(SRC_DIR)/critical_section.cpp \
+	$(SRC_DIR)/ctypes.cpp \
+	$(SRC_DIR)/directory_iterator.cpp \
+	$(SRC_DIR)/directory_iterator_compressor.cpp \
+	$(SRC_DIR)/directory_iterator_csv.cpp \
+	$(SRC_DIR)/directory_iterator_deflate.cpp \
+	$(SRC_DIR)/directory_iterator_file_buffered.cpp \
+	$(SRC_DIR)/directory_iterator_file.cpp \
+	$(SRC_DIR)/directory_iterator_filter.cpp \
+	$(SRC_DIR)/directory_iterator_filter_spam.cpp \
+	$(SRC_DIR)/directory_iterator_internals.cpp \
+	$(SRC_DIR)/directory_iterator_mime_filter.cpp \
+	$(SRC_DIR)/directory_iterator_multiple.cpp \
+	$(SRC_DIR)/directory_iterator_mysql.cpp \
+	$(SRC_DIR)/directory_iterator_pkzip.cpp \
+	$(SRC_DIR)/directory_iterator_preindex.cpp \
+	$(SRC_DIR)/directory_iterator_preindex_internals.cpp \
+	$(SRC_DIR)/directory_iterator_recursive.cpp \
+	$(SRC_DIR)/directory_iterator_scrub.cpp \
+	$(SRC_DIR)/directory_iterator_tar.cpp \
+	$(SRC_DIR)/directory_iterator_tsv.cpp \
+	$(SRC_DIR)/directory_iterator_warc.cpp \
+	$(SRC_DIR)/directory_iterator_warc_gz_recursive.cpp \
+	$(SRC_DIR)/disk.cpp \
+	$(SRC_DIR)/evaluation_binary_preference.cpp \
+	$(SRC_DIR)/evaluation.cpp \
+	$(SRC_DIR)/evaluation_discounted_cumulative_gain.cpp \
+	$(SRC_DIR)/evaluation_expected_reciprocal_rank.cpp \
+	$(SRC_DIR)/evaluation_intent_aware_expected_reciprocal_rank.cpp \
+	$(SRC_DIR)/evaluation_intent_aware_mean_average_precision.cpp \
+	$(SRC_DIR)/evaluation_intent_aware_normalised_discounted_cumulative_gain.cpp \
+	$(SRC_DIR)/evaluation_intent_aware_precision_at_n.cpp \
+	$(SRC_DIR)/evaluation_mean_average_generalised_precision_document.cpp \
+	$(SRC_DIR)/evaluation_mean_average_precision.cpp \
+	$(SRC_DIR)/evaluation_normalised_discounted_cumulative_gain.cpp \
+	$(SRC_DIR)/evaluation_precision_at_n.cpp \
+	$(SRC_DIR)/evaluation_rank_effectiveness.cpp \
+	$(SRC_DIR)/evaluation_success_at_n.cpp \
+	$(SRC_DIR)/evaluator.cpp \
+	$(SRC_DIR)/event.cpp \
+	$(SRC_DIR)/error.cpp \
+	$(SRC_DIR)/file.cpp \
+	$(SRC_DIR)/file_internals.cpp \
+	$(SRC_DIR)/file_memory.cpp \
+	$(SRC_DIR)/focus_article.cpp \
+	$(SRC_DIR)/focus.cpp \
+	$(SRC_DIR)/focus_lowest_tag.cpp \
+	$(SRC_DIR)/focus_results_list.cpp \
+	$(SRC_DIR)/hash_header.cpp \
+	$(SRC_DIR)/hash_header_collapse.cpp \
+	$(SRC_DIR)/hash_header_experimental.cpp \
+	$(SRC_DIR)/hash_matt.cpp \
+	$(SRC_DIR)/hash_random.cpp \
+	$(SRC_DIR)/index_document.cpp \
+	$(SRC_DIR)/index_document_topsig.cpp \
+	$(SRC_DIR)/index_document_topsig_signature.cpp \
+	$(SRC_DIR)/instream_buffer.cpp \
+	$(SRC_DIR)/instream_bz2.cpp \
+	$(SRC_DIR)/instream_deflate.cpp \
+	$(SRC_DIR)/instream_file.cpp \
+	$(SRC_DIR)/instream_file_star.cpp \
+	$(SRC_DIR)/instream_lzo.cpp \
+	$(SRC_DIR)/instream_memory.cpp \
+	$(SRC_DIR)/instream_pkzip.cpp \
+	$(SRC_DIR)/instream_scrub.cpp \
+	$(SRC_DIR)/maths.cpp \
+	$(SRC_DIR)/memory.cpp \
+	$(SRC_DIR)/memory_index.cpp \
+	$(SRC_DIR)/memory_indexer.cpp \
+	$(SRC_DIR)/memory_index_filename_index.cpp \
+	$(SRC_DIR)/memory_index_hash_node.cpp \
+	$(SRC_DIR)/memory_index_one.cpp \
+	$(SRC_DIR)/mersenne_twister.cpp \
+	$(SRC_DIR)/NEXI_ant.cpp \
+	$(SRC_DIR)/nexi.cpp \
+	$(SRC_DIR)/NEXI_term_ant.cpp \
+	$(SRC_DIR)/NEXI_term.cpp \
+	$(SRC_DIR)/NEXI_term_iterator.cpp \
+	$(SRC_DIR)/numbers.cpp \
+	$(SRC_DIR)/parser.cpp \
+	$(SRC_DIR)/parser_readability.cpp \
+	$(SRC_DIR)/plugin_manager.cpp \
+	$(SRC_DIR)/postings_piece.cpp \
+	$(SRC_DIR)/pregen.cpp \
+	$(SRC_DIR)/pregen_kendall_tau.cpp \
+	$(SRC_DIR)/pregens_writer.cpp \
+	$(SRC_DIR)/pregen_writer.cpp \
+	$(SRC_DIR)/pregen_writer_exact_integers.cpp \
+	$(SRC_DIR)/pregen_writer_exact_strings.cpp \
+	$(SRC_DIR)/pregen_writer_normal.cpp \
+	$(SRC_DIR)/query_boolean.cpp \
+	$(SRC_DIR)/query.cpp \
+	$(SRC_DIR)/query_parse_tree.cpp \
+	$(SRC_DIR)/ranking_function_bm25adpt.cpp \
+	$(SRC_DIR)/ranking_function_bm25.cpp \
+	$(SRC_DIR)/ranking_function_bm25l.cpp \
+	$(SRC_DIR)/ranking_function_bm25plus.cpp \
+	$(SRC_DIR)/ranking_function_bm25t.cpp \
+	$(SRC_DIR)/ranking_function_bose_einstein.cpp \
+	$(SRC_DIR)/ranking_function.cpp \
+	$(SRC_DIR)/ranking_function_dfi.cpp \
+	$(SRC_DIR)/ranking_function_dfi_idf.cpp \
+	$(SRC_DIR)/ranking_function_dfiw.cpp \
+	$(SRC_DIR)/ranking_function_dfiw_idf.cpp \
+	$(SRC_DIR)/ranking_function_dfree.cpp \
+	$(SRC_DIR)/ranking_function_divergence.cpp \
+	$(SRC_DIR)/ranking_function_dlh13.cpp \
+	$(SRC_DIR)/ranking_function_docid.cpp \
+	$(SRC_DIR)/ranking_function_dph.cpp \
+	$(SRC_DIR)/ranking_function_factory.cpp \
+	$(SRC_DIR)/ranking_function_impact.cpp \
+	$(SRC_DIR)/ranking_function_inner_product.cpp \
+	$(SRC_DIR)/ranking_function_kbtfidf.cpp \
+	$(SRC_DIR)/ranking_function_lmd.cpp \
+	$(SRC_DIR)/ranking_function_lmds.cpp \
+	$(SRC_DIR)/ranking_function_lmjm.cpp \
+	$(SRC_DIR)/ranking_function_pregen.cpp \
+	$(SRC_DIR)/ranking_function_puurula.cpp \
+	$(SRC_DIR)/ranking_function_puurula_idf.cpp \
+	$(SRC_DIR)/ranking_function_readability.cpp \
+	$(SRC_DIR)/ranking_function_term_count.cpp \
+	$(SRC_DIR)/ranking_function_tflodop.cpp \
+	$(SRC_DIR)/ranking_function_topsig_negative.cpp \
+	$(SRC_DIR)/ranking_function_topsig_positive.cpp \
+	$(SRC_DIR)/readability.cpp \
+	$(SRC_DIR)/readability_dale_chall.cpp \
+	$(SRC_DIR)/readability_factory.cpp \
+	$(SRC_DIR)/readability_tag_weighting.cpp \
+	$(SRC_DIR)/relevance_feedback_blind_kl.cpp \
+	$(SRC_DIR)/relevance_feedback_blind_kl_rm.cpp \
+	$(SRC_DIR)/relevance_feedback.cpp \
+	$(SRC_DIR)/relevance_feedback_factory.cpp \
+	$(SRC_DIR)/relevance_feedback_topsig.cpp \
+	$(SRC_DIR)/relevant_document.cpp \
+	$(SRC_DIR)/relevant_subtopic.cpp \
+	$(SRC_DIR)/relevant_topic.cpp \
+	$(SRC_DIR)/search_engine_accumulator.cpp \
+	$(SRC_DIR)/search_engine.cpp \
+	$(SRC_DIR)/search_engine_forum.cpp \
+	$(SRC_DIR)/search_engine_memory_index.cpp \
+	$(SRC_DIR)/search_engine_readability.cpp \
+	$(SRC_DIR)/search_engine_result.cpp \
+	$(SRC_DIR)/search_engine_result_id_iterator.cpp \
+	$(SRC_DIR)/search_engine_result_doc_iterator.cpp \
+	$(SRC_DIR)/search_engine_result_iterator.cpp \
+	$(SRC_DIR)/semaphores.cpp \
+	$(SRC_DIR)/snippet_beginning.cpp \
+	$(SRC_DIR)/snippet_best_tag.cpp \
+	$(SRC_DIR)/snippet.cpp \
+	$(SRC_DIR)/snippet_factory.cpp \
+	$(SRC_DIR)/snippet_tag.cpp \
+	$(SRC_DIR)/snippet_tficf.cpp \
+	$(SRC_DIR)/snippet_word_cloud.cpp \
+	$(SRC_DIR)/sockets.cpp \
+	$(SRC_DIR)/stats.cpp \
+	$(SRC_DIR)/stats_memory_index.cpp \
+	$(SRC_DIR)/stats_search_engine.cpp \
+	$(SRC_DIR)/stats_time.cpp \
+	$(SRC_DIR)/stem_krovetz.cpp \
+	$(SRC_DIR)/stemmer.cpp \
+	$(SRC_DIR)/stemmer_factory.cpp \
+	$(SRC_DIR)/stemmer_term_similarity.cpp \
+	$(SRC_DIR)/stemmer_term_similarity_threshold.cpp \
+	$(SRC_DIR)/stemmer_term_similarity_weighted.cpp \
+	$(SRC_DIR)/stem_otago.cpp \
+	$(SRC_DIR)/stem_otago_v2.cpp \
+	$(SRC_DIR)/stem_paice_husk.cpp \
+	$(SRC_DIR)/stem_porter.cpp \
+	$(SRC_DIR)/stem_s.cpp \
+	$(SRC_DIR)/stem_snowball.cpp \
+	$(SRC_DIR)/stop_word.cpp \
+	$(SRC_DIR)/str.cpp \
+	$(SRC_DIR)/term_divergence_kl.cpp \
+	$(SRC_DIR)/thesaurus.cpp \
+	$(SRC_DIR)/thesaurus_relationship.cpp \
+	$(SRC_DIR)/thesaurus_wordnet.cpp \
+	$(SRC_DIR)/threads.cpp \
+	$(SRC_DIR)/unicode.cpp \
+	$(SRC_DIR)/unicode_tables.cpp \
+	$(SRC_DIR)/version.cpp 
 
 #	$(SRC_DIR)/assessment_INEX.h 
 #	$(SRC_DIR)/assessment_TREC.h 
@@ -617,18 +617,18 @@ core_noinst_headers = \
 	$(SRC_DIR)/unicode_tables.h \
 	$(SRC_DIR)/version.h 
 	
-IGNORE_LIST = $(SRCDIR)/ant_ant.c \
-			  $(SRCDIR)/ant_api.c \
-			  $(SRCDIR)/ant_plugins.c \
-			  $(SRCDIR)/ant_dictionary.c \
-			  $(SRCDIR)/test_compression.c
+IGNORE_LIST = $(SRCDIR)/ant_ant.cpp \
+			  $(SRCDIR)/ant_api.cpp \
+			  $(SRCDIR)/ant_plugins.cpp \
+			  $(SRCDIR)/ant_dictionary.cpp \
+			  $(SRCDIR)/test_compression.cpp
 			  
-main_sources = $(ATIRE_DIR)/atire.c \
-			  $(ATIRE_DIR)/index.c \
-			  $(ATIRE_DIR)/atire_client.c \
-			  $(ATIRE_DIR)/atire_broker.c \
-			  $(ATIRE_DIR)/atire_dictionary.c \
-			  $(ATIRE_DIR)/atire_doclist.c
+main_sources = $(ATIRE_DIR)/atire.cpp \
+			  $(ATIRE_DIR)/index.cpp \
+			  $(ATIRE_DIR)/atire_client.cpp \
+			  $(ATIRE_DIR)/atire_broker.cpp \
+			  $(ATIRE_DIR)/atire_dictionary.cpp \
+			  $(ATIRE_DIR)/atire_doclist.cpp
 			  
 #$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h 
 #$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h 	  
@@ -651,21 +651,21 @@ main_headers = $(ATIRE_DIR)/atire_api.h \
 			$(ATIRE_DIR)/indexer_param_block_stem.h \
 			$(ATIRE_DIR)/indexer_param_block_topsig.h			  			  
 			  
-#ATIRE_PARAM_LIST = $(shell ls $(SRCIDR)/ant_param_*.c)
-#INDEX_PARAM_LIST = $(shell ls $(SRCDIR)/indexer_param_*.c)		  
+#ATIRE_PARAM_LIST = $(shell ls $(SRCIDR)/ant_param_*.cpp)
+#INDEX_PARAM_LIST = $(shell ls $(SRCDIR)/indexer_param_*.cpp)		  
 #
-#all_sources = $(shell ls $(SRCDIR)/*.c)
+#all_sources = $(shell ls $(SRCDIR)/*.cpp)
 #core_noinst_headers = $(shell ls $(SRCDIR)/*.h)
 #core_sources = $(filter-out $(IGNORE_LIST) $(ATIRE_PARAM_LIST) $(INDEX_PARAM_LIST), $(all_sources))
 	
-ATIRE_PARAM_LIST = $(ATIRE_DIR)/ant_param_block.c
+ATIRE_PARAM_LIST = $(ATIRE_DIR)/ant_param_block.cpp
 
 INDEX_PARAM_LIST =  \
-				 $(ATIRE_DIR)/indexer_param_block.c \
-				 $(ATIRE_DIR)/indexer_param_block_rank.c \
-				 $(ATIRE_DIR)/indexer_param_block_topsig.c \
-				 $(ATIRE_DIR)/indexer_param_block_pregen.c \
-				 $(ATIRE_DIR)/indexer_param_block_stem.c
+				 $(ATIRE_DIR)/indexer_param_block.cpp \
+				 $(ATIRE_DIR)/indexer_param_block_rank.cpp \
+				 $(ATIRE_DIR)/indexer_param_block_topsig.cpp \
+				 $(ATIRE_DIR)/indexer_param_block_pregen.cpp \
+				 $(ATIRE_DIR)/indexer_param_block_stem.cpp
 	
 #$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.h 
 #$(ATIRE_DIR)/atire_engine_result_set_export_TREC.h
@@ -708,7 +708,7 @@ libantelope_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
 libantelope_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
 
 libantelope_index_la_SOURCES = \
-	$(ATIRE_DIR)/index.c 
+	$(ATIRE_DIR)/index.cpp 
 libantelope_index_la_LDFLAGS = 
 libantelope_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
 libantelope_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
@@ -720,15 +720,15 @@ libantelope_ant_param_la_LDFLAGS =
 libantelope_ant_param_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
 libantelope_ant_param_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB) 
 
-libantelope_api_la_SOURCES = $(ATIRE_DIR)/indexer.c \
-				$(ATIRE_DIR)/atire_api.c \
-				$(ATIRE_DIR)/atire_api_result.c \
-				$(ATIRE_DIR)/atire_api_server.c \
-				$(ATIRE_DIR)/atire_api_remote.c \
-				$(ATIRE_DIR)/atire_engine_result_set.c 
+libantelope_api_la_SOURCES = $(ATIRE_DIR)/indexer.cpp \
+				$(ATIRE_DIR)/atire_api.cpp \
+				$(ATIRE_DIR)/atire_api_result.cpp \
+				$(ATIRE_DIR)/atire_api_server.cpp \
+				$(ATIRE_DIR)/atire_api_remote.cpp \
+				$(ATIRE_DIR)/atire_engine_result_set.cpp 
 #				
-#				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.c 
-#				$(ATIRE_DIR)/atire_engine_result_set_export_TREC.c
+#				$(ATIRE_DIR)/atire_engine_result_set_export_INEX_snippet.cpp 
+#				$(ATIRE_DIR)/atire_engine_result_set_export_TREC.cpp
 				
 libantelope_api_la_DEPENDENCIES = $(ATIRE_ANT_PARAM_LIB)
 libantelope_api_la_LIBADD = $(ATIRE_ANT_PARAM_LIB)
@@ -746,18 +746,18 @@ libantelope_api_la_LDFLAGS =
 bin_PROGRAMS = index antelope antelope_client antelope_broker antelope_dictionary antelope_doclist ant
 
 antelope_SOURCES = \
-	$(ATIRE_DIR)/antelope.c 
+	$(ATIRE_DIR)/antelope.cpp 
 antelope_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
 #antelope_LDFLAGS = -rdynamic
 antelope_LDFLAGS = -static -export-dynamic
 antelope_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 
 #antelope_SOURCES = \
-#	$(ATIRE_DIR)/atire_ant.c \
+#	$(ATIRE_DIR)/atire_ant.cpp \
 #	$(ATIRE_PARAM_LIST) \
 #	$(INDEX_PARAM_LIST)
-#	$(ATIRE_DIR)/indexer_param_block_rank.c \
-#	$(ATIRE_DIR)/atire_param_block.c
+#	$(ATIRE_DIR)/indexer_param_block_rank.cpp \
+#	$(ATIRE_DIR)/atire_param_block.cpp
 #antelope_LDADD = $(ATIRE_API_LIB)
 #antelope_LDFLAGS = -rdynamic
 #antelope_LDFLAGS = -static -export-dynamic
@@ -765,8 +765,8 @@ antelope_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 
 antelope_clientdir=$(ATIRE_DIR)
 antelope_client_SOURCES = \
-	$(ATIRE_DIR)/atire_client.c \
-	$(ATIRE_DIR)/atire_client_param_block.c
+	$(ATIRE_DIR)/atire_client.cpp \
+	$(ATIRE_DIR)/atire_client_param_block.cpp
 #atire_client_HEADERS = atire_client_param_block.h
 antelope_client_LDADD = $(ATIRE_API_LIB)
 #atire_client_LDFLAGS = -rdynamic
@@ -775,10 +775,10 @@ antelope_client_DEPENDENCIES = $(ATIRE_API_LIB)
 
 antelope_brokerdir=$(ATIRE_DIR)
 antelope_broker_SOURCES = \
-	$(ATIRE_DIR)/atire_broke_engine.c \
-	$(ATIRE_DIR)/atire_broke.c \
-	$(ATIRE_DIR)/atire_broker.c \
-	$(ATIRE_DIR)/atire_broker_param_block.c
+	$(ATIRE_DIR)/atire_broke_engine.cpp \
+	$(ATIRE_DIR)/atire_broke.cpp \
+	$(ATIRE_DIR)/atire_broker.cpp \
+	$(ATIRE_DIR)/atire_broker_param_block.cpp
 #atire_broker_HEADERS = $(ATIRE_DIR)/atire_broker_param_block.h \
 	$(ATIRE_DIR)/atire_broke_engine.h \
 	$(ATIRE_DIR)/atire_broke.h
@@ -788,26 +788,26 @@ antelope_broker_LDFLAGS = -static -export-dynamic
 antelope_broker_DEPENDENCIES = $(ATIRE_API_LIB)
 
 index_SOURCES = \
-	$(ATIRE_DIR)/index.c 
+	$(ATIRE_DIR)/index.cpp 
 index_LDADD = $(ATIRE_API_LIB) $(ATIRE_INDEX_PARAM_LIB)
 #index_LDFLAGS = -rdynamic
 index_LDFLAGS = -static -export-dynamic
 index_DEPENDENCIES = $(ATIRE_API_LIB) $(ATIRE_INDEX_PARAM_LIB)
 index_CFLAGS = $(AM_CFLAGS)
 
-antelope_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.c 
+antelope_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.cpp 
 antelope_dictionary_LDADD = $(ATIRE_CORE_LIB)
 antelope_dictionary_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
-antelope_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.c 
+antelope_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.cpp 
 antelope_doclist_LDADD = $(ATIRE_CORE_LIB)
 antelope_doclist_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
 ### The original atire main - we use it for comparison ###
 ant_SOURCES = \
-	$(ATIRE_DIR)/atire.c 
-#	$(ATIRE_DIR)/indexer_param_block_rank.c \
-#	$(ATIRE_DIR)/ant_param_block.c
+	$(ATIRE_DIR)/atire.cpp 
+#	$(ATIRE_DIR)/indexer_param_block_rank.cpp \
+#	$(ATIRE_DIR)/ant_param_block.cpp
 ant_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
 #ant_LDFLAGS = -rdynamic
 ant_LDFLAGS = -static -export-dynamic
@@ -820,8 +820,8 @@ ant_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 # atire_dictionary_CFLAGS = $(AM_CFLAGS)
 ##############################################################################
 						 
-#atire_plugins_SOURCES = $(ATIRE_DIR)/plugins.c \
-					$(ATIRE_DIR)/plugin_manager.c
+#atire_plugins_SOURCES = $(ATIRE_DIR)/plugins.cpp \
+					$(ATIRE_DIR)/plugin_manager.cpp
 #atire_plugins_CFLAGS = $(AM_CFLAGS)
 #atire_plugins_LDADD = $(ATIRE_API_LIB)
 #atire_plugins_LDFLAGS = -rdynamic
@@ -831,48 +831,48 @@ ant_DEPENDENCIES = $(noinst_LTLIBRARIES) $(lib_LTLIBRARIES)
 #################################################################################
 #                               TOOLS
 #################################################################################
-#filelist_SOURCES = $(TOOLDIR)/filelist.c
+#filelist_SOURCES = $(TOOLDIR)/filelist.cpp
 #filelist_LDFLAGS = -rdynamic
 #filelist_LDADD = $(ATIRE_API_LIB)
 #filelist_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#topic_tree_cas_SOURCES = $(TOOLDIR)/topic_tree_cas.c
+#topic_tree_cas_SOURCES = $(TOOLDIR)/topic_tree_cas.cpp
 #topic_tree_cas_LDFLAGS = -rdynamic
 #topic_tree_cas_LDADD = $(ATIRE_API_LIB)
 #topic_tree_cas_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#bindiff_SOURCES = $(TOOLDIR)/bindiff.c
+#bindiff_SOURCES = $(TOOLDIR)/bindiff.cpp
 #bindiff_LDFLAGS = -rdynamic
 #bindiff_LDADD = $(ATIRE_API_LIB)
 #bindiff_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#term_frequencies_SOURCES = $(TOOLDIR)/term_frequencies.c
+#term_frequencies_SOURCES = $(TOOLDIR)/term_frequencies.cpp
 #term_frequencies_LDFLAGS = -rdynamic
 #term_frequencies_LDADD = $(ATIRE_API_LIB)
 #term_frequencies_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#topic_tree_SOURCES = $(TOOLDIR)/topic_tree.c
+#topic_tree_SOURCES = $(TOOLDIR)/topic_tree.cpp
 #topic_tree_LDFLAGS = -rdynamic
 #topic_tree_LDADD = $(ATIRE_API_LIB)
 #topic_tree_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#INEXqrels_to_run_SOURCES = $(TOOLDIR)/INEXqrels_to_run.c
+#INEXqrels_to_run_SOURCES = $(TOOLDIR)/INEXqrels_to_run.cpp
 #INEXqrels_to_run_LDFLAGS = -rdynamic
 #INEXqrels_to_run_LDADD = $(ATIRE_API_LIB)
 #INEXqrels_to_run_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#foltbl_to_aspt_SOURCES = $(TOOLDIR)/foltbl_to_aspt.c
+#foltbl_to_aspt_SOURCES = $(TOOLDIR)/foltbl_to_aspt.cpp
 #foltbl_to_aspt_LDFLAGS = -rdynamic
 #foltbl_to_aspt_LDADD = $(ATIRE_API_LIB)
 #foltbl_to_aspt_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#zipf_graph_SOURCES = $(TOOLDIR)/zipf_graph.c
+#zipf_graph_SOURCES = $(TOOLDIR)/zipf_graph.cpp
 #zipf_graph_LDFLAGS = -rdynamic
 #zipf_graph_LDADD = $(ATIRE_API_LIB)
 #zipf_graph_DEPENDENCIES = $(ATIRE_CORE_LIB)
 #
-#test_stop_SOURCES = $(TOOLDIR)/test_stop.c \
-#				$(SRCDIR)/stop_word.c \
-#				$(SRCDIR)/str.c
+#test_stop_SOURCES = $(TOOLDIR)/test_stop.cpp \
+#				$(SRCDIR)/stop_word.cpp \
+#				$(SRCDIR)/str.cpp
 #test_stop_CFLAGS = $(AM_CFLAGS)
 #
