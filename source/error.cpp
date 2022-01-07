@@ -21,6 +21,6 @@ ANT_error_code = error_code;
 #ifdef ANTELOPE_API
     // do nothing
 #else
-    exit(printf(error_info));
+    exit(fputs(error_info, stderr));
 #endif
 }

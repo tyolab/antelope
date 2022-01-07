@@ -35,6 +35,7 @@
 #include "memory_index_one_node.h"
 #include "unicode.h"
 #include "atire_api_server.h"
+#include "error.h"
 
 #ifdef DEBUG
 #include <iostream>
@@ -348,7 +349,7 @@ if (params.inversion_type == ANT_indexer_param_block_topsig::TOPSIG)
 if (fail)
 	{
 	delete atire;
-
+	ANT_on_error("Failed to start the engine, please check the index file and make sure it exist!\n", ANT_ERROR_FAILED_TO_START);
 	atire = NULL;
 	}
 else
