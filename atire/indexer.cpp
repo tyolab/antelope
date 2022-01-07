@@ -82,7 +82,7 @@ const int  ATIRE_indexer::EMPTY_DOUCMENT_LENGTH = strlen(EMPTY_DOCUMENT_CONTENT)
 	// See the issue #6 on github
 	// This might cause a program that includes the "-lantelope" library to crash
 
-	// Only use the following code for indexer intialisation in where such as "index.c" 
+	// Only use the following code for indexer intialisation in where such as "index.cpp" 
 	// after an indexer instance is actually created
 	// static bool indexer_static_initialzed = ATIRE_indexer::initialize();
 

@@ -505,8 +505,8 @@ swig :
 !IF EXIST(atire/php) == 0
 	mkdir atire/php
 !ENDIF
-	$(SWIG) -o atire/php/atire_remote_wrap.c -outdir atire/php -php -c++ atire/atire_api_remote.swig
-	$(CC) $(CFLAGS) $(PHP_FLAGS) /LD /Tp atire\php\atire_remote_wrap.c $(PARTS) $(WINDOWS_LIBS) $(EXTRA_LIBS) /Featire\php\php_atire_remote.dll $(PHP_LIBS) /Foatire\php\php_atire_remote.obj /w
+	$(SWIG) -o atire/php/atire_remote_wrap.cpp -outdir atire/php -php -c++ atire/atire_api_remote.swig
+	$(CC) $(CFLAGS) $(PHP_FLAGS) /LD /Tp atire\php\atire_remote_wrap.cpp $(PARTS) $(WINDOWS_LIBS) $(EXTRA_LIBS) /Featire\php\php_atire_remote.dll $(PHP_LIBS) /Foatire\php\php_atire_remote.obj /w
 
 bin\link_index_merge.exe : $(OBJDIR)\link_index_merge.obj
 bin\make_unicode_tables.exe : $(OBJDIR)\make_unicode_tables.obj
@@ -523,19 +523,19 @@ bin\arithmetic_encoding_model_gen.exe : $(OBJDIR)\arithmetic_encoding_model_gen.
 #
 #	Default dependency rules
 #
-{$(SRCDIR)\}.c{$(OBJDIR)\}.obj:
+{$(SRCDIR)\}.cpp{$(OBJDIR)\}.obj:
 	$(CC) $(CFLAGS) /EHsc /c /Tp $< /Fo$@
 
-{$(ATIREDIR)\}.c{$(OBJDIR)\}.obj:
+{$(ATIREDIR)\}.cpp{$(OBJDIR)\}.obj:
 	$(CC) $(CFLAGS) /EHsc /c -Isource /Tp $< /Fo$@
 
-{$(LTWDIR)\}.c{$(OBJDIR)\}.obj:
+{$(LTWDIR)\}.cpp{$(OBJDIR)\}.obj:
 	$(CC) $(CFLAGS) /c /Tp $< /Fo$@
 
-{$(TOOLDIR)\}.c{$(OBJDIR)\}.obj:
+{$(TOOLDIR)\}.cpp{$(OBJDIR)\}.obj:
 	$(CC) $(CFLAGS) /EHsc /c -Isource /Tp $< /Fo$@
 
-{$(TESTDIR)\}.c{$(OBJDIR)\}.obj:
+{$(TESTDIR)\}.cpp{$(OBJDIR)\}.obj:
 	$(CC) $(CFLAGS) /EHsc /c -Isource /Tp $< /Fo$@
 
 {$(OBJDIR)\}.obj{$(BINDIR)\}.exe:
@@ -581,7 +581,7 @@ clean :
 	del *.obj *.exe *.ilk *.pdb *.suo *.lib *.dll /s
 
 depend:
-	makedepend  -f- -Y -o.obj -w1024 -p$(OBJDIR)/ source/*.c tools/*.c atire/*.c Link-The-Wiki/*.c | sed -e "s/$(OBJDIR)\/source/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/tools/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/atire/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/Link-The-Wiki/$(OBJDIR)/" > makefile.dependencies
+	makedepend  -f- -Y -o.obj -w1024 -p$(OBJDIR)/ source/*.cpp tools/*.cpp atire/*.cpp Link-The-Wiki/*.cpp | sed -e "s/$(OBJDIR)\/source/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/tools/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/atire/$(OBJDIR)/" | sed -e "s/$(OBJDIR)\/Link-The-Wiki/$(OBJDIR)/" > makefile.dependencies
 
 #
 #	And include the dependencie generated using makedepend from cygwin and "make depend"

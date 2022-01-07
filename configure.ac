@@ -6,12 +6,12 @@ AC_INIT([antelope], [2.0], [dev@tyo.com.au], [antelope-dist], [https://github.co
 
 AC_CONFIG_SRCDIR([atire/atire.c])
 #AC_CONFIG_HEADERS([config.h])
-#AC_CONFIG_MACRO_DIR([m4])
+AC_CONFIG_MACRO_DIR([m4])
 
 dnl for target_os
 AC_CANONICAL_SYSTEM
 
-AM_INIT_AUTOMAKE
+AM_INIT_AUTOMAKE([gnu subdir-objects])
 AC_PROG_LIBTOOL
 
 # Checks for programs.
@@ -19,7 +19,7 @@ AC_PROG_LIBTOOL
 AC_PROG_CXX
 AC_LANG([C++])
 
-#AM_PROG_CC_C_O
+AM_PROG_CC_C_O
 
 # Check for macros
 AC_FUNC_MALLOC
@@ -163,8 +163,8 @@ AC_CHECK_FUNCS([getcwd gettimeofday memmove memset sqrt strchr strcspn strdup st
 #                 Makefile
 #                 source/Makefile
 #                 stemmer/Makefile])
+				#java/jni/Makefile
 AC_CONFIG_FILES([
 				Makefile
-				java/jni/Makefile
 				])
 AC_OUTPUT

@@ -330,7 +330,7 @@ LOCAL_LDFLAGS +=
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := antelope
-LOCAL_SRC_FILES := $(JNI_SOURCES) $(ATIRE_DIR)/antelope.c
+LOCAL_SRC_FILES := $(JNI_SOURCES) $(ATIRE_DIR)/antelope.cpp
 LOCAL_CPPFLAGS := -std=c++11 -Wall         
 LOCAL_LDLIBS := -llog -lz -ldl
 LOCAL_STATIC_LIBRARIES := antelope_jni
@@ -347,7 +347,7 @@ LOCAL_LDFLAGS +=
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := antelope-dict
-LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.c
+LOCAL_SRC_FILES := $(ATIRE_DIR)/atire_dictionary.cpp
 LOCAL_CPPFLAGS := -std=c++11 -Wall         
 LOCAL_LDLIBS += -llog -lz -ldl
 LOCAL_SHARED_LIBRARIES += antelope_jni
@@ -361,7 +361,7 @@ LOCAL_LDFLAGS +=
 LOCAL_CPP_EXTENSION := .c
 
 LOCAL_MODULE := index
-LOCAL_SRC_FILES := $(ATIRE_DIR)/index.c
+LOCAL_SRC_FILES := $(ATIRE_DIR)/index.cpp
 LOCAL_CPPFLAGS := -std=c++11 -Wall             
 LOCAL_LDLIBS += -llog -lz -ldl
 LOCAL_STATIC_LIBRARIES := antelope_core

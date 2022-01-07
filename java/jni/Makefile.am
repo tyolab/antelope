@@ -23,9 +23,7 @@ MINUS_D += -DFILENAME_INDEX
 lib_LTLIBRARIES = libantelope_jni.la
 
 libantelope_jni_la_SOURCES = antelope_wrap.c \
-	antelope_helper.c \
-	$(top_srcdir)/atire/antelope.c \
-	$(top_srcdir)/atire/index.c
+	antelope_helper.c
 libantelope_jni_la_CFLAGS = -DATIRE_LIBRARY  -DONE_PARSER -D_CRT_SECURE_NO_WARNINGS -DHASHER=1 -DHEADER_HASHER=1 \
 		-DSPECIAL_COMPRESSION=1 -DTOP_K_READ_AND_DECOMPRESSOR $(MINUS_D) -I$(top_srcdir)/source
 libantelope_jni_la_LDFLAGS = -fPIC -export-dynamic -shared -lantelope_core -lantelope_api 		

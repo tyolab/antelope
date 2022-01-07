@@ -1,7 +1,7 @@
-#AUTOMAKE_OPTIONS = foreign
+AUTOMAKE_OPTIONS = foreign
 #SUBDIRS = plugins
 
-#ACLOCAL_AMFLAGS = -I m4
+ACLOCAL_AMFLAGS = -I m4
 
 ###############################################################################
 # source files and compile commands
@@ -69,6 +69,8 @@ CC = g++
 AM_CFLAGS += -std=c++11 
 
 AM_CFLAGS += -I $(srcdir)/$(SRC_DIR)
+
+AM_CXXFLAGS = $(AM_CFLAGS)
 
 #OBJDIR = 
 #BINDIR = 
@@ -693,7 +695,7 @@ ATIRE_LIBS = $(ATIRE_CORE_LIB)  $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB)
 includedir = $(prefix)/include
 include_HEADERS = $(library_headers)
 		
-noinst_LTLIBRARIES = libantelope_index.la 
+#noinst_LTLIBRARIES = libantelope_index.la 
 lib_LTLIBRARIES = $(ATIRE_INDEX_PARAM_LIB) $(ATIRE_ANT_PARAM_LIB) $(ATIRE_CORE_LIB) $(ATIRE_API_LIB) 
 
 libantelope_core_la_SOURCES = $(core_sources)
@@ -707,12 +709,12 @@ libantelope_index_param_la_LDFLAGS =
 libantelope_index_param_la_DEPENDENCIES = $(ATIRE_CORE_LIB)
 libantelope_index_param_la_LIBADD = $(ATIRE_CORE_LIB)
 
-libantelope_index_la_SOURCES = \
-	$(ATIRE_DIR)/index.cpp 
-libantelope_index_la_LDFLAGS = 
-libantelope_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
-libantelope_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
-libantelope_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB) 
+#libantelope_index_la_SOURCES = \
+#	$(ATIRE_DIR)/index.cpp 
+#libantelope_index_la_LDFLAGS = 
+#libantelope_index_la_CFLAGS = $(AM_CFLAGS) -DATIRE_LIBRARY
+#libantelope_index_la_DEPENDENCIES = $(ATIRE_INDEX_PARAM_LIB)
+#libantelope_index_la_LIBADD = $(ATIRE_INDEX_PARAM_LIB) 
 
 libantelope_ant_param_la_SOURCES = \
 	$(ATIRE_PARAM_LIST)
@@ -795,17 +797,17 @@ index_LDFLAGS = -static -export-dynamic
 index_DEPENDENCIES = $(ATIRE_API_LIB) $(ATIRE_INDEX_PARAM_LIB)
 index_CFLAGS = $(AM_CFLAGS)
 
-antelope_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.cpp 
+antelope_dictionary_SOURCES = $(ATIRE_DIR)/atire_dictionary.cpp
 antelope_dictionary_LDADD = $(ATIRE_CORE_LIB)
 antelope_dictionary_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
-antelope_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.cpp 
+antelope_doclist_SOURCES = $(ATIRE_DIR)/atire_doclist.cpp
 antelope_doclist_LDADD = $(ATIRE_CORE_LIB)
 antelope_doclist_DEPENDENCIES = $(ATIRE_CORE_LIB)
 
 ### The original atire main - we use it for comparison ###
 ant_SOURCES = \
-	$(ATIRE_DIR)/atire.cpp 
+	$(ATIRE_DIR)/atire.cpp
 #	$(ATIRE_DIR)/indexer_param_block_rank.cpp \
 #	$(ATIRE_DIR)/ant_param_block.cpp
 ant_LDADD = $(ATIRE_LIBS) $(ATIRE_API_LIB)
