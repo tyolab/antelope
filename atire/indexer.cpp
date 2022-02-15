@@ -63,12 +63,18 @@
 #include "stemmer_factory.h"
 #include "compression_text_factory.h"
 
-
 #ifdef _MSC_VER
 	#include <windows.h>
 	#define PATH_MAX MAX_PATH
+	/**
+	 * @todo
+	 * include file size for Windows
+	 */
 #else
 	#include <limits.h>
+	#include <sys/types.h>
+	#include <sys/stat.h>
+	#include <unistd.h>	
 #endif
 
 const char *ATIRE_indexer::EMPTY_DOCUMENT_CONTENT = "<error>EMPTYDOCUMENT</error>"; // [30]; //
@@ -479,6 +485,33 @@ if (docno <= 0)
 	cleanup();
 
 	return ret;
+}
+
+/*
+	ATIRE_INDEXER::GET_INDEX_FILE_SIZE()
+	----------------------
+*/
+long ATIRE_indexer::get_index_file_size()
+{
+#ifdef MS_VER
+WIN32_FILE_ATTRIBUTE_DATA fileInfo;
+ULONGLONG FileSize = 0ULL;
+//https://docs.microsoft.com/nl-nl/windows/win32/api/fileapi/nf-fileapi-getfileattributesexa?redirectedfrom=MSDN
+//https://docs.microsoft.com/nl-nl/windows/win32/api/fileapi/ns-fileapi-win32_file_attribute_data?redirectedfrom=MSDN
+if (GetFileAttributesEx(this->param_block->index_filename, GetFileExInfoStandard, &fileInfo))
+	{
+	ULARGE_INTEGER ul;
+	ul.HighPart = fileInfo.nFileSizeHigh;
+	ul.LowPart = fileInfo.nFileSizeLow;
+	FileSize = ul.QuadPart;
+	}
+return FileSize;
+#else
+struct stat st;
+if (stat(this->param_block->index_filename, &st)) /*failure*/
+	return -1; 
+return (long) st.st_size;
+#endif 
 }
 
 /*

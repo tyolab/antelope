@@ -35,7 +35,9 @@ MINUS_D +=  -DNOMINMAX
 
 MINUS_D +=  -DFILENAME_INDEX
 MINUS_D +=  -DATIRE_SOCKET_NONBLOCK
-MINUS_D +=  -DWITH_EMPTY_DOCUMENT
+
+# No we don't want empty documents
+# MINUS_D +=  -DWITH_EMPTY_DOCUMENT
 
 ### Don't use impact header, as the old index files were created without using it
 ### for search engine use in the desktop with the intention to set it on you can

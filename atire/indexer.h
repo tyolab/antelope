@@ -76,9 +76,13 @@ public:
 	void index_document(char *file_name, char *file, char *doc_to_store = 0x0);
 	void index();
 
+	long get_docno() { return docno; }
+
 	void enable_parallel_indexing() { parallel_indexing = 1; }
 
 	static bool initialize();
+
+	long get_index_file_size();
 
 private:
 	void init(ANT_indexer_param_block& param_block);
