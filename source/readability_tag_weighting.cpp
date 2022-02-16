@@ -120,6 +120,7 @@ void ANT_readability_TAG_WEIGHTING::handle_tag(ANT_parser_token *tag, long tag_o
 {
 if (tag_open)
 	{
+	matching_tag = NULL;
 	for (int i = 0; i < number_of_tags; ++i)
 		if (strncmp(tag->start, special_tags[i], tag->string_length) == 0)
 			{
@@ -131,7 +132,7 @@ if (tag_open)
 			parser->set_segment_info(ANT_parser::NOSEGMENTATION);
 			break;
 			}
-	if (tag_processing_on && strcmp(matching_tag, "TITLE") == 0) 
+	if (tag_processing_on && matching_tag &&strcmp(matching_tag, "TITLE") == 0) 
 		{
 		title_start = tag->start + 6; // "TITLE>..."
 		title_end = NULL;
@@ -165,7 +166,7 @@ else
 
 				and two terms have no spaces in between
 			 */
-			if (/*NULL != matching_tag && */strcmp(matching_tag, "TITLE") == 0)
+			if (NULL != matching_tag && strcmp(matching_tag, "TITLE") == 0)
 				{
 				// closing TITLE tag
 				title_end = tag->start - 2; // "</TITLE
@@ -265,7 +266,7 @@ if (tag_processing_on && term_count <= MAX_TERM_COUNT)
 			Wikipedia abstract file dump give title in such a way "wikipedia : XXXXX", term count is 1 when encounter the colon;
 			for for Chinese, the unicode colon ':' = "\357\274\232" in OCT, and the term count for word Wikipedia is 4.
 		 */
-		if ((strcmp(matching_tag, "TITLE") == 0)
+		if (matching_tag && (strcmp(matching_tag, "TITLE") == 0)
 				&& (term_count == 1 && (strncmp(token->start, ":", token->string_length) == 0))
 				|| (term_count == 4 && (strncmp(token->start, "\357\274\232", token->string_length) == 0))
 				/*&& strcmp(wiki_prefix, terms[0]) == 0*/)
