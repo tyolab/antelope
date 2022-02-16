@@ -48,6 +48,8 @@ delete [] measure;
 ANT_parser_token *ANT_readability_factory::get_next_token()
 {
 ANT_parser_token *token = parser->get_next_token();
+if (token == NULL)
+	return token;
 
 /*
 	Starting with >, skip it

@@ -116,6 +116,9 @@ input_files = NULL;
 #ifndef FILENAME_INDEX
 id_list = NULL;
 #endif
+
+copy_start = NULL;
+file_list = NULL;
 }
 
 ATIRE_indexer::~ATIRE_indexer()
@@ -132,36 +135,54 @@ void ATIRE_indexer::usage() {
 }
 
 void ATIRE_indexer::cleanup() {
-	if (memory_index) {
+	if (copy_start)
+		{
+		delete [] copy_start;
+		copy_start = NULL;
+		}
+
+	if (file_list) 
+		{
+		delete [] file_list;
+		file_list = NULL;
+		}
+
+	if (memory_index) 
+		{
 		delete memory_index;
 		memory_index = NULL;
-	}
+		}
 
-	if (parser) {
+	if (parser) 
+		{
 		delete parser;
 		parser = NULL;
-	}
+		}
 
-	if (readability) {
+	if (readability) 
+		{
 		delete readability;
 		readability = NULL;
-	}
+		}
 
-	if (document_indexer) {
+	if (document_indexer) 
+		{
 		delete document_indexer;
 		document_indexer = NULL;
-	}
+		}
 
-	if (pregen) {
+	if (pregen) 
+		{
 		delete pregen;
 		pregen = NULL;
-	}
+		}
 
 #ifndef PARALLEL_INDEXING_DOCUMENTS
-		if (stemmer) {
+		if (stemmer) 
+			{
 			delete stemmer;
 			stemmer = NULL;
-		}
+			}
 #endif
 
 	if (factory_text) 
@@ -170,10 +191,11 @@ void ATIRE_indexer::cleanup() {
 		factory_text = NULL;
 		}
 
-	if (param_block) {
+	if (param_block) 
+		{
 		delete param_block;
 		param_block = NULL;
-	}
+		}
 #ifndef FILENAME_INDEX
 	if (id_list) 
 		{
@@ -199,10 +221,10 @@ bool ATIRE_indexer::initialize()
 void ATIRE_indexer::init(char *options)
 {
 static char *seperators = "+";
-char **argv, **file_list;
+char **argv;
 char *token;
 size_t total_length = (options ? strlen(options) : 0) + 7;
-char *copy, *copy_start;
+char *copy;
 
 copy = copy_start = new char[total_length];
 
@@ -238,9 +260,6 @@ for (; token != NULL; token = strtok(NULL, seperators))
 input_files = NULL;
 
 init(argc, file_list);
-
-delete [] copy_start;
-delete [] file_list;
 }
 
 void ATIRE_indexer::init(int argc, char *argv[])
@@ -480,9 +499,6 @@ if (docno <= 0)
 
 	// write the index information into file, and store the serialisation status
 	long ret = memory_index->serialise();
-
-	// clean up, release resources
-	cleanup();
 
 	return ret;
 }
@@ -904,4 +920,13 @@ delete file_stream;
 delete decompressor;
 delete instream_buffer;
 
+}
+
+/*
+	ATIRE_INDEXER::GET_INDEX_FILE()
+	----------------------
+*/
+const char* ATIRE_indexer::get_index_file() 
+{ 
+return param_block->index_filename; 
 }

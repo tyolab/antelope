@@ -61,6 +61,9 @@ private:
 	char 							**input_files;
 	long							input_files_count;
 
+	char                            **file_list;
+	char                            *copy_start;
+
 public:
 	ATIRE_indexer();
 	virtual ~ATIRE_indexer();
@@ -83,6 +86,8 @@ public:
 	static bool initialize();
 
 	long get_index_file_size();
+
+	const char* get_index_file();
 
 private:
 	void init(ANT_indexer_param_block& param_block);
