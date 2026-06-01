@@ -27,6 +27,7 @@ class ANT_stats;
 class ANT_ANT_param_block;
 class ANT_btree_iterator;
 class ANT_search_engine_btree_leaf;
+class ATIRE_indexer;
 
 class ATIRE_API_server
 {
@@ -91,6 +92,7 @@ private:
 	long long lookup_term_docid, lookup_term_max_id;
 
 	#ifdef IMPACT_HEADER
+	ANT_compressable_integer *impact_header_buffer;
 	ANT_compressable_integer *impact_offset_start;
 	ANT_compressable_integer *doc_count_ptr;
 	#endif
@@ -142,6 +144,14 @@ public:
 
 	/* before ready */
 	void start();
+
+	/*
+		Open directly from an ATIRE_indexer that has finished indexing, without
+		serialising the inverted index to disk.  The indexer's ANT_memory_index is
+		transferred to this engine (the indexer must not be used for indexing after
+		this call).  Returns 0 on success, non-zero on failure.
+	*/
+	long open_from_indexer(ATIRE_indexer *indexer);
 
 	/* Option 1. standalone*/
 	void loop();

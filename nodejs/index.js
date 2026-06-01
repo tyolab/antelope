@@ -114,4 +114,28 @@ antelope.create_indexer = function (opts, inputs) {
     return instance;
 }
 
+/*
+ * Create a search engine that searches directly from an already-built indexer's
+ * in-memory index, without serialising to disk first.
+ *
+ * Usage:
+ *   var indexer = new antelope.ATIRE_indexer();
+ *   antelope.initialize(indexer, opts);
+ *   // ... call indexer.index_document() or indexer.index() ...
+ *   // Do NOT call indexer.finish() — that would write to disk.
+ *   var engine = antelope.create_engine_from_indexer(indexer);
+ *   var hits = engine.search("my query");
+ */
+antelope.create_engine_from_indexer = function (indexer, opts) {
+    var instance = new antelope.ATIRE_API_server();
+    var optionsStr = opts || "-nologo";
+    if (typeof optionsStr !== 'string')
+        optionsStr = createOptionsString(optionsStr, null);
+    instance.set_params(optionsStr);
+    var rc = instance.open_from_indexer(indexer);
+    if (rc !== 0)
+        throw new Error("open_from_indexer failed with code " + rc);
+    return instance;
+}
+
 module.exports = antelope;

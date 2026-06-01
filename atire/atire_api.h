@@ -172,6 +172,13 @@ public:
 	*/
 	long open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits, unsigned long header_offset = 0);		// see the enum above for possible types (ORed together)
 
+	/*
+		Open the search engine directly from an already-built in-memory index,
+		bypassing disk serialisation.  doc_list is an array of doc_count filename
+		strings owned by the caller; this method deep-copies them.
+	*/
+	long open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count);
+
 	ANT_search_engine *get_search_engine(void) { return search_engine; }
 
 	/*

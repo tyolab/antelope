@@ -321,6 +321,86 @@ return 0;		// success
 }
 
 /*
+	ATIRE_API::OPEN_FROM_MEMORY_INDEX()
+	------------------------------------
+	Wire up an already-built ANT_memory_index as the live search engine,
+	bypassing disk serialisation entirely.  The memory_index must have had
+	allocate_decompress_buffer() called (done automatically by serialise(), or
+	by open_from_indexer() below).  doc_list is deep-copied so the caller
+	retains ownership of those strings.
+*/
+long ATIRE_API::open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count)
+{
+if (document_list != NULL)
+	return 1;		// already open
+
+/*
+	Prepare the memory index for searching (idempotent if finish() was
+	already called, since it just allocates from a pool).
+*/
+index->allocate_decompress_buffer();
+
+/*
+	Create a fresh ANT_memory object for the search engine.
+	ANT_search_engine_memory_index takes ownership of both pointers and
+	deletes them in its destructor.
+*/
+ANT_memory *mem = new ANT_memory;
+search_engine = new ANT_search_engine_memory_index(index, mem);
+search_engine->open();
+
+/*
+	Build document_list and filename_list as deep copies of doc_list so
+	that the normal ATIRE_API destructor (delete[] mem1, delete[] mem2,
+	delete[] document_list, delete[] filename_list) cleans up correctly.
+*/
+if (doc_count > 0 && doc_list != NULL)
+	{
+	size_t total = 0;
+	for (long long i = 0; i < doc_count; i++)
+		if (doc_list[i])
+			total += strlen(doc_list[i]) + 1;	// +1 for '\n' separator
+
+	mem1 = new char[total + 1];
+	char *pos = mem1;
+	for (long long i = 0; i < doc_count; i++)
+		{
+		if (doc_list[i])
+			{
+			size_t len = strlen(doc_list[i]);
+			memcpy(pos, doc_list[i], len);
+			pos[len] = '\n';
+			pos += len + 1;
+			}
+		}
+	*pos = '\0';
+
+	mem2 = new char[total + 1];
+	memcpy(mem2, mem1, total + 1);
+
+	document_list = ANT_disk::buffer_to_list(mem1, &documents_in_id_list);
+	filename_list = ANT_disk::buffer_to_list(mem2, &documents_in_id_list);
+	}
+
+if (documents_in_id_list > 0)
+	answer_list = (char **)memory->malloc(sizeof(*answer_list) * (documents_in_id_list + 1));
+
+/*
+	Use divergence-from-randomness as the default ranking function.
+*/
+delete ranking_function;
+ranking_function = new ANT_ranking_function_divergence(search_engine, false, -1);
+
+/*
+	Flag as a non-V5 index so the server uses get_document_filename_from_doclist()
+	rather than trying to read filename offsets out of the (absent) index file.
+*/
+ant_version = ANT_V3;
+
+return 0;		// success
+}
+
+/*
 	ATIRE_API::LOAD_PREGEN()
 	------------------------
 

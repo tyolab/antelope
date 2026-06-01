@@ -35,6 +35,8 @@
 #include "memory_index_one_node.h"
 #include "unicode.h"
 #include "atire_api_server.h"
+#include "indexer.h"
+#include "memory_index.h"
 #include "error.h"
 
 #ifdef DEBUG
@@ -575,6 +577,84 @@ if (params->title_algorithm != ANT_ANT_param_block::NONE)
 	*result_document.title = '\0';
 	title_generator = ANT_snippet_factory::get_snippet_maker(params->title_algorithm, params->title_length, atire->get_longest_document_length(), params->title_tag);
 	}
+}
+
+/*
+	OPEN_FROM_INDEXER()
+	-------------------
+	Wire up an already-built ATIRE_indexer as the live search engine without
+	serialising the inverted index to disk.  The indexer's ANT_memory_index is
+	transferred to this server (release_index()); do not continue indexing
+	through the indexer after this call.
+
+	If set_params() has not been called, a minimal default param block is
+	created so that search() can function.
+*/
+long ATIRE_API_server::open_from_indexer(ATIRE_indexer *indexer)
+{
+if (atire)
+	cleanup();
+
+/* Ensure params_ptr is set so that search() / perform_query() have sane defaults. */
+if (!params_ptr)
+	set_params(0, NULL);
+
+atire = new ATIRE_API();
+atire->set_ant_version(ant_version);
+
+long long doc_count;
+char **doc_list = indexer->get_doc_list(&doc_count);
+ANT_memory_index *index = indexer->release_index();
+
+long fail = atire->open_from_memory_index(index, doc_list, doc_count);
+
+if (fail)
+	{
+	delete atire;
+	atire = NULL;
+	return fail;
+	}
+
+/* Set the server-level version to non-V5 so we use the doclist title path. */
+ant_version = ANT_V3;
+
+/* Set up ranking function from params. */
+ant_init_ranking();
+
+ANT_search_engine *search_engine = atire->get_search_engine();
+
+if (iterator)
+	delete iterator;
+iterator = new ANT_btree_iterator(search_engine);
+
+if (leaf)
+	delete leaf;
+leaf = new ANT_search_engine_btree_leaf();
+
+/* Allocate postings / raw decode buffers. */
+if (postings_list_mem)
+	free(postings_list_mem);
+if (raw_mem)
+	free(raw_mem);
+
+long long postings_list_size = 5 * 1024 * 1024;
+long long raw_list_size = (long long)sizeof(*raw) * (512 + search_engine->document_count() + ANT_COMPRESSION_FACTORY_END_PADDING);
+postings_list_mem = (unsigned char *)malloc((size_t)postings_list_size);
+raw_mem = (ANT_compressable_integer *)malloc((size_t)raw_list_size);
+
+global_trim = search_engine->get_global_trim_postings_k();
+
+/* Document buffer — non-zero only if document content was stored during indexing. */
+if (document_buffer)
+	delete [] document_buffer;
+length_of_longest_document = atire->get_longest_document_length();
+document_buffer = new char[length_of_longest_document > 0 ? length_of_longest_document + 1 : 1];
+
+if (print_buffer)
+	delete [] print_buffer;
+print_buffer = new char[ATIRE_API_result::MAX_TITLE_LENGTH + 1024];
+
+return 0;
 }
 
 void ATIRE_API_server::finish()

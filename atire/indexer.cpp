@@ -119,6 +119,10 @@ id_list = NULL;
 
 copy_start = NULL;
 file_list = NULL;
+
+doc_list = NULL;
+doc_list_count = 0;
+doc_list_capacity = 0;
 }
 
 ATIRE_indexer::~ATIRE_indexer()
@@ -197,12 +201,21 @@ void ATIRE_indexer::cleanup() {
 		param_block = NULL;
 		}
 #ifndef FILENAME_INDEX
-	if (id_list) 
+	if (id_list)
 		{
 		delete id_list;
 		id_list = NULL;
 		}
-#endif	
+#endif
+
+	if (doc_list)
+		{
+		for (long long i = 0; i < doc_list_count; i++)
+			free(doc_list[i]);
+		delete [] doc_list;
+		doc_list = NULL;
+		}
+	doc_list_count = doc_list_capacity = 0;
 }
 
 /*
@@ -467,6 +480,24 @@ if (!skip_document)
 	//			puts(filename);
 	id_list->puts(strip_space_inplace(filename));
 #endif
+
+	/*
+		Maintain an in-memory doc list so open_from_indexer() can wire up
+		the search engine without reading a doclist file from disk.
+	*/
+	if (doc_list_count >= doc_list_capacity)
+		{
+		long long new_cap = doc_list_capacity == 0 ? 1024 : doc_list_capacity * 2;
+		char **new_list = new char *[new_cap];
+		if (doc_list)
+			{
+			memcpy(new_list, doc_list, (size_t)(doc_list_count * sizeof(*doc_list)));
+			delete [] doc_list;
+			}
+		doc_list = new_list;
+		doc_list_capacity = new_cap;
+		}
+	doc_list[doc_list_count++] = strdup(filename);
 	}
 return docno;
 }

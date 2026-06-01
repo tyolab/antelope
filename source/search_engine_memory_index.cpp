@@ -5,6 +5,8 @@
 #include "btree_iterator.h"
 #include "search_engine_memory_index.h"
 #include "search_engine_btree_leaf.h"
+#include "search_engine_result.h"
+#include "compression_factory.h"
 #include "memory_index.h"
 
 /*
@@ -56,6 +58,38 @@ memory->realign();
 memory->realign();
 stem_buffer = (ANT_weighted_tf *)memory->malloc(stem_buffer_length_in_bytes = (sizeof(*stem_buffer) * documents));
 memory->realign();
+
+/*
+	Initialize the accumulator results list so that search() can be called directly
+	on this in-memory index without first loading from a disk-based index file.
+*/
+results_list = new (memory) ANT_search_engine_result(memory, documents);
+
+/*
+	Load document lengths from the memory index hash table so that ranking
+	functions (BM25, DFR, etc.) that depend on per-document length work correctly.
+*/
+{
+ANT_compression_factory factory;
+ANT_search_engine_btree_leaf term_details;
+unsigned char *compressed;
+
+char length_term[] = "~length";
+if (get_postings_details(length_term, &term_details) != NULL)
+	{
+	document_lengths = (ANT_compressable_integer *)memory->malloc(documents * sizeof(*document_lengths));
+	compressed = get_postings(&term_details, (unsigned char *)decompress_buffer);
+	factory.decompress(decompress_buffer, compressed, term_details.local_document_frequency);
+	long long sum = 0;
+	for (long long i = 0; i < documents; i++)
+		{
+		document_lengths[i] = decompress_buffer[i] > 0 ? decompress_buffer[i] - 1 : 0;
+		sum += document_lengths[i];
+		}
+	mean_document_length = documents > 0 ? (double)sum / (double)documents : 0.0;
+	collection_length_in_terms = sum;
+	}
+}
 
 return 1;
 }

@@ -64,6 +64,10 @@ private:
 	char                            **file_list;
 	char                            *copy_start;
 
+	char                            **doc_list;
+	long long                       doc_list_count;
+	long long                       doc_list_capacity;
+
 public:
 	ATIRE_indexer();
 	virtual ~ATIRE_indexer();
@@ -89,12 +93,14 @@ public:
 
 	const char* get_index_file();
 
+	ANT_memory_index *get_index() { return memory_index; }
+	ANT_memory_index *release_index() { ANT_memory_index *i = memory_index; memory_index = 0; return i; }
+	char **get_doc_list(long long *count) { *count = doc_list_count; return doc_list; }
+
 private:
 	void init(ANT_indexer_param_block& param_block);
 	void index(ANT_indexer_param_block& param_block);
 	void cleanup();
-
-	ANT_memory_index *get_index() { return memory_index; }
 	ANT_compression_text_factory *get_compression_text_factory() { return factory_text; }
 	ANT_index_document *get_document_indexer() { return document_indexer; }
 };
