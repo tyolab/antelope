@@ -1308,7 +1308,11 @@ if (result < last_to_list)
 		atire->get_document_filename(result_document.document_name, result_document.docid);
 	else
 	// #else
-		memcpy(result_document.document_name, answer_list[result], strlen(answer_list[result]));
+		{
+		size_t name_len = strlen(answer_list[result]);
+		memcpy(result_document.document_name, answer_list[result], name_len);
+		result_document.document_name[name_len] = '\0';
+		}
 	// #endif
 	
 	result++;

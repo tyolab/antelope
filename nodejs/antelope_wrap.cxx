@@ -140,6 +140,14 @@
 #endif 
 
 
+#define SWIG_FromCharPtrAndSize(cptr, size) SWIG_Env_FromCharPtrAndSize(env, cptr, size)
+#define SWIG_FromCharPtr(cptr)              SWIG_Env_FromCharPtrAndSize(env, cptr, strlen(cptr))
+
+
+#define SWIG_NAPI_FROM_DECL_ARGS(arg1)              (Napi::Env env, arg1)
+#define SWIG_NAPI_FROM_CALL_ARGS(arg1)              (env, arg1)
+
+
 
 #define SWIG_exception_fail(code, msg) do { SWIG_Error(code, msg); SWIG_fail; } while(0) 
 
@@ -147,23 +155,30 @@
 
 
 
-#include <node.h>
-//Older version of node.h does not include this
-#include <node_version.h>
+#if defined(_CPPUNWIND) || defined(__EXCEPTIONS)
+#define NAPI_CPP_EXCEPTIONS
+#else
+#define NAPI_DISABLE_CPP_EXCEPTIONS
+#define NODE_ADDON_API_ENABLE_MAYBE
+#endif
 
-
-#include <v8.h>
-
-#undef SWIG_V8_VERSION
-#define SWIG_V8_VERSION ((V8_MAJOR_VERSION / 10) * 4096 + \
-                         (V8_MAJOR_VERSION % 10) * 256 + \
-                         (V8_MINOR_VERSION / 10) * 16 + \
-                         (V8_MINOR_VERSION % 10))
+// This gives us
+// Branch Node.js v10.x - from v10.20.0
+// Branch Node.js v12.x - from v12.17.0
+// Everything from Node.js v14.0.0 on
+// Our limiting feature is napi_set_instance_data
+#ifndef NAPI_VERSION
+#define NAPI_VERSION 6
+#elif NAPI_VERSION < 6
+#error NAPI_VERSION 6 is the minimum supported target (Node.js >=14, >=12.17, >=10.20)
+#endif
+#include <napi.h>
 
 #include <errno.h>
 #include <limits.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <map>
 
 /* -----------------------------------------------------------------------------
  * swigrun.swg
@@ -781,478 +796,429 @@ SWIG_UnpackDataName(const char *c, void *ptr, size_t sz, const char *name) {
 
 
 /* ---------------------------------------------------------------------------
- * These typedefs and defines are used to deal with v8 API changes
- *
- * Useful table of versions: https://nodejs.org/en/download/releases/
- * ---------------------------------------------------------------------------*/
-
-#if (SWIG_V8_VERSION < 0x0704)
-#define SWIGV8_STRING_NEW2(cstr, len) v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), cstr, v8::String::kNormalString, len)
-#else
-#define SWIGV8_STRING_NEW2(cstr, len) (v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), cstr, v8::NewStringType::kNormal, len)).ToLocalChecked()
-#endif
-
-typedef void SwigV8ReturnValue;
-typedef v8::FunctionCallbackInfo<v8::Value> SwigV8Arguments;
-typedef v8::PropertyCallbackInfo<v8::Value> SwigV8PropertyCallbackInfo;
-#define SWIGV8_RETURN(val) args.GetReturnValue().Set(val); return
-#define SWIGV8_RETURN_INFO(val, info) info.GetReturnValue().Set(val); return
-
-#define SWIGV8_HANDLESCOPE() v8::HandleScope scope(v8::Isolate::GetCurrent());
-#define SWIGV8_HANDLESCOPE_ESC() v8::EscapableHandleScope scope(v8::Isolate::GetCurrent());
-#define SWIGV8_ESCAPE(val) return scope.Escape(val)
-
-#define SWIGV8_ADJUST_MEMORY(size) v8::Isolate::GetCurrent()->AdjustAmountOfExternalAllocatedMemory(size)
-#define SWIGV8_CURRENT_CONTEXT() v8::Isolate::GetCurrent()->GetCurrentContext()
-#define SWIGV8_THROW_EXCEPTION(err) v8::Isolate::GetCurrent()->ThrowException(err)
-
-#if (SWIG_V8_VERSION < 0x0704)
-#define SWIGV8_STRING_NEW(str) v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), str, v8::String::kNormalString)
-#define SWIGV8_SYMBOL_NEW(sym) v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), sym, v8::String::kNormalString)
-#else
-#define SWIGV8_STRING_NEW(str) (v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), str, v8::NewStringType::kNormal)).ToLocalChecked()
-#define SWIGV8_SYMBOL_NEW(sym) (v8::String::NewFromUtf8(v8::Isolate::GetCurrent(), sym, v8::NewStringType::kNormal)).ToLocalChecked()
-#endif
-
-#if (SWIG_V8_VERSION < 0x0704)
-#define SWIGV8_MAYBE_CHECK(maybe) maybe.FromJust()
-#else
-#define SWIGV8_MAYBE_CHECK(maybe) maybe.Check()
-#endif
-
-#define SWIGV8_ARRAY_NEW(size) v8::Array::New(v8::Isolate::GetCurrent(), size)
-#define SWIGV8_BOOLEAN_NEW(bool) v8::Boolean::New(v8::Isolate::GetCurrent(), bool)
-#define SWIGV8_EXTERNAL_NEW(val) v8::External::New(v8::Isolate::GetCurrent(), val)
-#define SWIGV8_FUNCTEMPLATE_NEW(func) v8::FunctionTemplate::New(v8::Isolate::GetCurrent(), func)
-#define SWIGV8_FUNCTEMPLATE_NEW_VOID() v8::FunctionTemplate::New(v8::Isolate::GetCurrent())
-#define SWIGV8_INT32_NEW(num) v8::Int32::New(v8::Isolate::GetCurrent(), num)
-#define SWIGV8_INTEGER_NEW(num) v8::Integer::New(v8::Isolate::GetCurrent(), num)
-#define SWIGV8_INTEGER_NEW_UNS(num) v8::Integer::NewFromUnsigned(v8::Isolate::GetCurrent(), num)
-#define SWIGV8_NUMBER_NEW(num) v8::Number::New(v8::Isolate::GetCurrent(), num)
-#define SWIGV8_OBJECT_NEW() v8::Object::New(v8::Isolate::GetCurrent())
-#define SWIGV8_UNDEFINED() v8::Undefined(v8::Isolate::GetCurrent())
-#define SWIGV8_ARRAY v8::Local<v8::Array>
-#define SWIGV8_FUNCTION_TEMPLATE v8::Local<v8::FunctionTemplate>
-#define SWIGV8_OBJECT v8::Local<v8::Object>
-#define SWIGV8_OBJECT_TEMPLATE v8::Local<v8::ObjectTemplate>
-#define SWIGV8_OBJECT_TEMPLATE_NEW() v8::ObjectTemplate::New(v8::Isolate::GetCurrent())
-#define SWIGV8_VALUE v8::Local<v8::Value>
-#define SWIGV8_NULL() v8::Null(v8::Isolate::GetCurrent())
-#define SWIGV8_ARRAY_GET(array, index) (array)->Get(SWIGV8_CURRENT_CONTEXT(), index).ToLocalChecked()
-#define SWIGV8_ARRAY_SET(array, index, value) SWIGV8_MAYBE_CHECK((array)->Set(SWIGV8_CURRENT_CONTEXT(), index, value))
-
-#define SWIGV8_SET_CLASS_TEMPL(class_templ, class) class_templ.Reset(v8::Isolate::GetCurrent(), class);
-
-#if SWIG_V8_VERSION < 0x0608
-#define SWIGV8_TO_OBJECT(handle) (handle)->ToObject()
-#define SWIGV8_TO_STRING(handle) (handle)->ToString()
-#define SWIGV8_NUMBER_VALUE(handle) (handle)->NumberValue()
-#define SWIGV8_INTEGER_VALUE(handle) (handle)->IntegerValue()
-#define SWIGV8_BOOLEAN_VALUE(handle) (handle)->BooleanValue()
-#define SWIGV8_WRITE_UTF8(handle, buffer, len) (handle)->WriteUtf8(buffer, len)
-#define SWIGV8_UTF8_LENGTH(handle) (handle)->Utf8Length()
-#define SWIGV8_OBJECT_TEMPLATE_INSTACE(tmpl) tmpl->NewInstance();
-#else
-#define SWIGV8_TO_OBJECT(handle) (handle)->ToObject(SWIGV8_CURRENT_CONTEXT()).ToLocalChecked()
-#define SWIGV8_TO_STRING(handle) (handle)->ToString(SWIGV8_CURRENT_CONTEXT()).ToLocalChecked()
-#define SWIGV8_NUMBER_VALUE(handle) (handle)->NumberValue(SWIGV8_CURRENT_CONTEXT()).ToChecked()
-#define SWIGV8_INTEGER_VALUE(handle) (handle)->IntegerValue(SWIGV8_CURRENT_CONTEXT()).ToChecked()
-#define SWIGV8_WRITE_UTF8(handle, buffer, len) (handle)->WriteUtf8(v8::Isolate::GetCurrent(), buffer, len)
-#define SWIGV8_UTF8_LENGTH(handle) (handle)->Utf8Length(v8::Isolate::GetCurrent())
-#define SWIGV8_OBJECT_TEMPLATE_INSTACE(tmpl) tmpl->NewInstance(SWIGV8_CURRENT_CONTEXT()).ToLocalChecked();
-#if (SWIG_V8_VERSION < 0x0704)
-#define SWIGV8_BOOLEAN_VALUE(handle) (handle)->BooleanValue(SWIGV8_CURRENT_CONTEXT()).ToChecked()
-#else
-#define SWIGV8_BOOLEAN_VALUE(handle) (handle)->BooleanValue(v8::Isolate::GetCurrent())
-#endif
-#endif
-
-/* ---------------------------------------------------------------------------
  * Error handling
  *
  * ---------------------------------------------------------------------------*/
 
-#define SWIG_Error(code, msg)     SWIGV8_ErrorHandler.error(code, msg)
-#define SWIG_exception(code, msg) do { SWIGV8_ErrorHandler.error(code, msg); SWIG_fail; } while (0)
-#define SWIG_fail                 goto fail
-#define SWIGV8_OVERLOAD false
-
-SWIGINTERN void SWIG_V8_Raise(const char *msg) {
-  SWIGV8_THROW_EXCEPTION(v8::Exception::Error(SWIGV8_STRING_NEW(msg)));
-}
-
-SWIGINTERN void SWIG_V8_Raise(SWIGV8_VALUE obj, const char *msg) {
-  SWIGV8_THROW_EXCEPTION(v8::Exception::Error(SWIGV8_TO_STRING(obj)));
-}
-
-
 /*
-  Note: There are two contexts for handling errors.
-  A static V8ErrorHandler is used in not overloaded methods.
-  For overloaded methods the throwing type checking mechanism is used
-  during dispatching. As V8 exceptions can not be reset properly
-  the trick is to use a dynamic ErrorHandler with same local name as the global
-  one.
-
-  - See definition of SWIG_Error above.
-  - See code templates 'JS_function_dispatcher', 'JS_functionwrapper_overload',
-    and 'JS_function_dispatch_case' in javascriptcode.swg
-
-*/
-class V8ErrorHandler {
-public:
-  virtual ~V8ErrorHandler() {}
-  virtual void error(int code, const char *msg) {
-    SWIG_V8_Raise(msg);
-  }
-};
-// this is used in usually
-SWIGRUNTIME V8ErrorHandler SWIGV8_ErrorHandler;
-
-// instances of this are used in overloaded functions
-class OverloadErrorHandler: public V8ErrorHandler {
-public:
-  virtual void error(int code, const char *msg) {
-    err = v8::Exception::Error(SWIGV8_STRING_NEW(msg));
-    if(code != SWIG_TypeError) {
-        SWIGV8_THROW_EXCEPTION(err);
-    }
-  }
-  SWIGV8_VALUE err;
-};
-
-/* ---------------------------------------------------------------------------
- * Basic Proxy object
+ * We support several forms:
  *
- * ---------------------------------------------------------------------------*/
+ * SWIG_Raise("Error message")
+ * which creates an Error object with the error message
+ *
+ * SWIG_Raise(SWIG_TypeError, "Type error")
+ * which creates the specified error type with the message
+ *
+ * SWIG_Raise(obj)
+ * which throws the object itself
+ *
+ * SWIG_Raise(obj, "Exception const &", SWIGType_p_Exception)
+ * which also throws the object itself and discards the unneeded extra type info
+ *
+ * These must be functions instead of macros to use the C++ overloading to
+ * resolve the arguments
+ */
+#define SWIG_exception(code, msg)               SWIG_Error(code, msg)
+#define SWIG_fail                               goto fail
 
-// Note: to trigger the v8 gc more often one can tell v8 about the memory consumption
-// TODO: we could add a v8 specific parameter to control this value
-#define SWIGV8_AVG_OBJ_SIZE 1000
+#ifdef NAPI_CPP_EXCEPTIONS
 
-class SWIGV8_Proxy {
-public:
-  SWIGV8_Proxy(): swigCMemOwn(false), swigCObject(0), info(0) {
-    SWIGV8_ADJUST_MEMORY(SWIGV8_AVG_OBJ_SIZE);
-  };
+#define SWIG_Error(code, msg)                   SWIG_NAPI_Raise(env, code, msg)
+#define NAPI_CHECK_MAYBE(maybe)                 (maybe)
+#define NAPI_CHECK_RESULT(maybe, result)        (result = maybe)
 
-  ~SWIGV8_Proxy() {
-    handle.ClearWeak();
-    handle.Reset();
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, const char *msg) {
+  throw Napi::Error::New(env, msg);
+}
 
-    SWIGV8_ADJUST_MEMORY(-SWIGV8_AVG_OBJ_SIZE);
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, int type, const char *msg) {
+  switch(type) {
+    default:
+    case SWIG_IOError:
+    case SWIG_MemoryError:
+    case SWIG_SystemError:
+    case SWIG_RuntimeError:
+    case SWIG_DivisionByZero:
+    case SWIG_SyntaxError:
+      throw Napi::Error::New(env, msg);
+    case SWIG_OverflowError:
+    case SWIG_IndexError:
+      throw Napi::RangeError::New(env, msg);
+    case SWIG_ValueError:
+    case SWIG_TypeError:
+      throw Napi::TypeError::New(env, msg);
   }
+}
 
-  bool swigCMemOwn;
-  void *swigCObject;
-  swig_type_info *info;
-  v8::Persistent<v8::Object> handle;
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, Napi::Value obj,
+        const char *msg = nullptr, swig_type_info *info = nullptr) {
+  throw Napi::Error(env, obj);
+}
+
+#else
+
+#define SWIG_Error(code, msg)     do { SWIG_NAPI_Raise(env, code, msg); SWIG_fail; } while (0)
+#define NAPI_CHECK_MAYBE(maybe)   do { if (maybe.IsNothing()) SWIG_fail; } while (0)
+#define NAPI_CHECK_RESULT(maybe, result)          \
+        do {                                      \
+                auto r = maybe;                   \
+                if (r.IsNothing()) SWIG_fail;     \
+                result = r.Unwrap();              \
+        } while (0)
+
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, const char *msg) {
+  Napi::Error::New(env, msg).ThrowAsJavaScriptException();
+}
+
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, int type, const char *msg) {
+  switch(type) {
+    default:
+    case SWIG_IOError:
+    case SWIG_MemoryError:
+    case SWIG_SystemError:
+    case SWIG_RuntimeError:
+    case SWIG_DivisionByZero:
+    case SWIG_SyntaxError:
+      Napi::Error::New(env, msg).ThrowAsJavaScriptException();
+      return;
+    case SWIG_OverflowError:
+    case SWIG_IndexError:
+      Napi::RangeError::New(env, msg).ThrowAsJavaScriptException();
+      return;
+    case SWIG_ValueError:
+    case SWIG_TypeError:
+      Napi::TypeError::New(env, msg).ThrowAsJavaScriptException();
+      return;
+  }
+}
+
+SWIGINTERN void SWIG_NAPI_Raise(Napi::Env env, Napi::Value obj,
+        const char *msg = nullptr, swig_type_info *info = nullptr) {
+  Napi::Error(env, obj).ThrowAsJavaScriptException();
+}
+
+#endif
+
+void JS_veto_set_variable(const Napi::CallbackInfo &info) {
+  SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+
+struct EnvInstanceData {
+  Napi::Env env;
+  // Base class per-environment constructor, used to check
+  // if a JS object is a SWIG wrapper
+  Napi::FunctionReference *SWIG_NAPI_ObjectWrapCtor;
+  // Per-environment wrapper constructors, indexed by the number in
+  // swig_type->clientdata
+  Napi::FunctionReference **ctor;
+  swig_module_info *swig_module;
+  EnvInstanceData(Napi::Env, swig_module_info *);
+  ~EnvInstanceData();
 };
 
-class SWIGV8_ClientData {
-public:
-  v8::Persistent<v8::FunctionTemplate> class_templ;
+typedef size_t SWIG_NAPI_ClientData;
 
-  void (*dtor) (const v8::WeakCallbackInfo<SWIGV8_Proxy> &data);
+// Base class for all wrapped objects,
+// used mostly when unwrapping unknown objects
+template <typename SWIG_OBJ_WRAP>
+class SWIG_NAPI_ObjectWrap_templ : public Napi::ObjectWrap<SWIG_OBJ_WRAP> {
+  public:
+    void *self;
+    bool owned;
+    size_t size;
+    swig_type_info *info;
+    SWIG_NAPI_ObjectWrap_templ(const Napi::CallbackInfo &info);
+    SWIG_NAPI_ObjectWrap_templ(bool, const Napi::CallbackInfo &info) :
+        Napi::ObjectWrap<SWIG_OBJ_WRAP>(info),
+        self(nullptr),
+        owned(true),
+        size(0),
+        info(nullptr)
+        {}
+    virtual ~SWIG_NAPI_ObjectWrap_templ() {};
+
+    Napi::Value ToString(const Napi::CallbackInfo &info);
 };
 
-SWIGRUNTIME v8::Persistent<v8::FunctionTemplate> SWIGV8_SWIGTYPE_Proxy_class_templ;
-
-SWIGRUNTIME int SWIG_V8_ConvertInstancePtr(SWIGV8_OBJECT objRef, void **ptr, swig_type_info *info, int flags) {
-  SWIGV8_HANDLESCOPE();
-
-  if(objRef->InternalFieldCount() < 1) return SWIG_ERROR;
-
-  SWIGV8_Proxy *cdata = static_cast<SWIGV8_Proxy *>(objRef->GetAlignedPointerFromInternalField(0));
-
-  if(cdata == NULL) {
-    return SWIG_ERROR;
+template <typename SWIG_OBJ_WRAP>
+SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>::SWIG_NAPI_ObjectWrap_templ(const Napi::CallbackInfo &info) :
+        Napi::ObjectWrap<SWIG_OBJ_WRAP>(info), size(0), info(nullptr) { 
+  Napi::Env env = info.Env();
+  if (info.Length() == 1 && info[0].IsExternal()) {
+    // This constructor has been called internally from C++/SWIG
+    // to wrap an already existing C++ object of unknown type in JS
+    this->self = info[0].As<Napi::External<void>>().Data();
+    this->owned = false;
+  } else {
+    SWIG_Error(SWIG_ERROR, "This constructor is not accessible from JS");
   }
-  if(info && cdata->info != info) {
-    swig_cast_info *tc = SWIG_TypeCheckStruct(cdata->info, info);
-    if (!tc && cdata->info->name) {
-      tc = SWIG_TypeCheck(cdata->info->name, info);
+  return;
+  goto fail;
+fail:
+  return;
+}
+
+template <typename SWIG_OBJ_WRAP>
+Napi::Value SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>::ToString(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  static char repr[128];
+  const char *name = SWIG_TypePrettyName(this->info);
+  snprintf(repr, sizeof(repr), "{SwigObject %s (%s) at %p %s}",
+    this->info ? this->info->name : "unknown",
+    name ? name : "unknown",
+    this->self,
+    this->owned ? "[owned]" : "[copy]");
+  return Napi::String::New(env, repr);
+}
+
+class SWIG_NAPI_ObjectWrap_inst : public SWIG_NAPI_ObjectWrap_templ<SWIG_NAPI_ObjectWrap_inst> {
+public:
+  using SWIG_NAPI_ObjectWrap_templ::SWIG_NAPI_ObjectWrap_templ;
+  static Napi::Function GetClass(Napi::Env);
+  static void GetMembers(
+    Napi::Env,
+    std::map<std::string, SWIG_NAPI_ObjectWrap_templ::PropertyDescriptor> &,
+    std::map<std::string, SWIG_NAPI_ObjectWrap_templ::PropertyDescriptor> &
+  );
+};
+
+void SWIG_NAPI_ObjectWrap_inst::GetMembers(
+        Napi::Env env,
+        std::map<std::string, SWIG_NAPI_ObjectWrap_templ::PropertyDescriptor> &members,
+        std::map<std::string, SWIG_NAPI_ObjectWrap_templ::PropertyDescriptor> &
+) {
+  members.erase("toString");
+  members.insert({"toString", SWIG_NAPI_ObjectWrap_templ::InstanceMethod("toString", &SWIG_NAPI_ObjectWrap_templ::ToString)});
+}
+
+Napi::Function SWIG_NAPI_ObjectWrap_inst::GetClass(Napi::Env env) {
+  return Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::DefineClass(env, "SwigObject", {});
+}
+
+SWIGRUNTIME int SWIG_NAPI_ConvertInstancePtr(Napi::Object objRef, void **ptr, swig_type_info *info, int flags) {
+  SWIG_NAPI_ObjectWrap_inst *ow;
+  Napi::Env env = objRef.Env();
+  if(!objRef.IsObject()) return SWIG_ERROR;
+
+  // Check if this is a SWIG wrapper
+  Napi::FunctionReference *ctor = env.GetInstanceData<EnvInstanceData>()->SWIG_NAPI_ObjectWrapCtor;
+  bool instanceOf;
+  NAPI_CHECK_RESULT(objRef.InstanceOf(ctor->Value()), instanceOf);
+  if (!instanceOf) {
+    return SWIG_TypeError;
+  }
+
+  ow = Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::Unwrap(objRef);
+
+  // Now check if the SWIG type is compatible unless the types match exactly or the type is unknown
+  if(info && ow->info != info && ow->info != nullptr) {
+    swig_cast_info *tc = SWIG_TypeCheckStruct(ow->info, info);
+    if (!tc && ow->info->name) {
+      tc = SWIG_TypeCheck(ow->info->name, info);
     }
     bool type_valid = tc != 0;
     if(!type_valid) {
       return SWIG_TypeError;
     }
     int newmemory = 0;
-    *ptr = SWIG_TypeCast(tc, cdata->swigCObject, &newmemory);
+    *ptr = SWIG_TypeCast(tc, ow->self, &newmemory);
     assert(!newmemory); /* newmemory handling not yet implemented */
   } else {
-    *ptr = cdata->swigCObject;
+    *ptr = ow->self;
   }
 
-  if (((flags & SWIG_POINTER_RELEASE) == SWIG_POINTER_RELEASE) && !cdata->swigCMemOwn) {
+  if (((flags & SWIG_POINTER_RELEASE) == SWIG_POINTER_RELEASE) && !ow->owned) {
     return SWIG_ERROR_RELEASE_NOT_OWNED;
   } else {
     if (flags & SWIG_POINTER_DISOWN) {
-      cdata->swigCMemOwn = false;
+      ow->owned = false;
     }
     if (flags & SWIG_POINTER_CLEAR) {
-      cdata->swigCObject = 0;
+      ow->self = nullptr;
     }
   }
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
 
-SWIGRUNTIME void SWIGV8_Proxy_DefaultDtor(const v8::WeakCallbackInfo<SWIGV8_Proxy> &data) {
-  SWIGV8_Proxy *proxy = data.GetParameter();
-  delete proxy;
-}
-
-SWIGRUNTIME int SWIG_V8_GetInstancePtr(SWIGV8_VALUE valRef, void **ptr) {
-  if(!valRef->IsObject()) {
+SWIGRUNTIME int SWIG_NAPI_GetInstancePtr(Napi::Value valRef, void **ptr) {
+  SWIG_NAPI_ObjectWrap_inst *ow;
+  if(!valRef.IsObject()) {
     return SWIG_TypeError;
   }
-  SWIGV8_OBJECT objRef = SWIGV8_OBJECT::Cast(valRef);
+  Napi::Object objRef;
+  NAPI_CHECK_RESULT(valRef.ToObject(), objRef);
+  ow = Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::Unwrap(objRef);
 
-  if(objRef->InternalFieldCount() < 1) return SWIG_ERROR;
-
-  SWIGV8_Proxy *cdata = static_cast<SWIGV8_Proxy *>(objRef->GetAlignedPointerFromInternalField(0));
-
-  if(cdata == NULL) {
+  if(ow->self == nullptr) {
     return SWIG_ERROR;
   }
 
-  *ptr = cdata->swigCObject;
-
+  *ptr = ow->self;
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
-SWIGRUNTIME void SWIGV8_SetPrivateData(SWIGV8_OBJECT obj, void *ptr, swig_type_info *info, int flags) {
-  SWIGV8_Proxy *cdata = new SWIGV8_Proxy();
-  cdata->swigCObject = ptr;
-  cdata->swigCMemOwn = (flags & SWIG_POINTER_OWN) ? 1 : 0;
-  cdata->info = info;
 
-  obj->SetAlignedPointerInInternalField(0, cdata);
-
-  cdata->handle.Reset(v8::Isolate::GetCurrent(), obj);
-
-  if(cdata->swigCMemOwn && (SWIGV8_ClientData*)info->clientdata) {
-    cdata->handle.SetWeak(cdata, ((SWIGV8_ClientData*)info->clientdata)->dtor, v8::WeakCallbackType::kParameter);
-  } else {
-    cdata->handle.SetWeak(cdata, SWIGV8_Proxy_DefaultDtor, v8::WeakCallbackType::kParameter);
-  }
-
-#if (SWIG_V8_VERSION < 0x0704)
-  cdata->handle.MarkIndependent();
-// Looks like future versions do not require that anymore:
-// https://monorail-prod.appspot.com/p/chromium/issues/detail?id=923361#c11
-#endif
-}
-
-SWIGRUNTIME int SWIG_V8_ConvertPtr(SWIGV8_VALUE valRef, void **ptr, swig_type_info *info, int flags) {
-  SWIGV8_HANDLESCOPE();
-  
-  /* special case: JavaScript null => C NULL pointer */
-  if(valRef->IsNull()) {
+SWIGRUNTIME int SWIG_NAPI_ConvertPtr(Napi::Value valRef, void **ptr, swig_type_info *info, int flags) {
+  // special case: JavaScript null => C NULL pointer
+  if (valRef.IsNull()) {
     *ptr=0;
     return (flags & SWIG_POINTER_NO_NULL) ? SWIG_NullReferenceError : SWIG_OK;
   }
-  if(!valRef->IsObject()) {
+
+  if (!valRef.IsObject()) {
     return SWIG_TypeError;
   }
-  SWIGV8_OBJECT objRef = SWIGV8_OBJECT::Cast(valRef);
-  return SWIG_V8_ConvertInstancePtr(objRef, ptr, info, flags);
+
+  Napi::Object objRef;
+  NAPI_CHECK_RESULT(valRef.ToObject(), objRef);
+  return SWIG_NAPI_ConvertInstancePtr(objRef, ptr, info, flags);
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
-SWIGRUNTIME SWIGV8_VALUE SWIG_V8_NewPointerObj(void *ptr, swig_type_info *info, int flags) {
-  SWIGV8_HANDLESCOPE_ESC();
-  
-  SWIGV8_FUNCTION_TEMPLATE class_templ;
+SWIGRUNTIME Napi::Value SWIG_NAPI_NewPointerObj(Napi::Env env, void *ptr, swig_type_info *info, int flags) {
+  Napi::External<void> native;
+  Napi::FunctionReference *ctor;
 
-  if (ptr == NULL) {
-    v8::Local<v8::Primitive> result = SWIGV8_NULL();
-    SWIGV8_ESCAPE(result);
+  if (ptr == nullptr) {
+    return env.Null();
   }
+  native = Napi::External<void>::New(env, ptr);
 
-  v8::Isolate *isolate = v8::Isolate::GetCurrent();
-
-  if(info->clientdata != 0) {
-    class_templ = v8::Local<v8::FunctionTemplate>::New(isolate, ((SWIGV8_ClientData*) info->clientdata)->class_templ);
+  size_t *idx = info != nullptr ?
+        reinterpret_cast<SWIG_NAPI_ClientData *>(info->clientdata) :
+        nullptr;
+  if (idx == nullptr) {
+    // This type does not have a dedicated wrapper
+    ctor = env.GetInstanceData<EnvInstanceData>()->SWIG_NAPI_ObjectWrapCtor;
   } else {
-    class_templ = v8::Local<v8::FunctionTemplate>::New(isolate, SWIGV8_SWIGTYPE_Proxy_class_templ);
+    ctor = env.GetInstanceData<EnvInstanceData>()->ctor[*idx];
   }
 
-  v8::Local<v8::Object> result = class_templ->InstanceTemplate()->NewInstance(SWIGV8_CURRENT_CONTEXT()).ToLocalChecked();
+  Napi::Value wrapped;
+  NAPI_CHECK_RESULT(ctor->New({native}), wrapped);
 
-  SWIGV8_SetPrivateData(result, ptr, info, flags);
+  // Preserve the type even if using the generic wrapper
+  if (idx == nullptr && info != nullptr) {
+    Napi::Object obj;
+    NAPI_CHECK_RESULT(wrapped.ToObject(), obj);
+    Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::Unwrap(obj)->info = info;
+  }
 
-  SWIGV8_ESCAPE(result);
+  if ((flags & SWIG_POINTER_OWN) == SWIG_POINTER_OWN) {
+    Napi::Object obj;
+    NAPI_CHECK_RESULT(wrapped.ToObject(), obj);
+    Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::Unwrap(obj)->owned = true;
+  }
+
+  return wrapped;
+  goto fail;
+fail:
+  return Napi::Value();
 }
 
-#define SWIG_ConvertPtr(obj, ptr, info, flags)    SWIG_V8_ConvertPtr(obj, ptr, info, flags)
-#define SWIG_NewPointerObj(ptr, info, flags)      SWIG_V8_NewPointerObj(ptr, info, flags)
+#define SWIG_ConvertPtr(obj, ptr, info, flags)          SWIG_NAPI_ConvertPtr(obj, ptr, info, flags)
+#define SWIG_NewPointerObj(ptr, info, flags)            SWIG_NAPI_NewPointerObj(env, ptr, info, flags)
 
-#define SWIG_ConvertInstance(obj, pptr, type, flags)    SWIG_V8_ConvertInstancePtr(obj, pptr, type, flags)
-#define SWIG_NewInstanceObj(thisvalue, type, flags)     SWIG_V8_NewPointerObj(thisvalue, type, flags)
+#define SWIG_ConvertInstance(obj, pptr, type, flags)    SWIG_NAPI_ConvertInstancePtr(obj, pptr, type, flags)
+#define SWIG_NewInstanceObj(thisvalue, type, flags)     SWIG_NAPI_NewPointerObj(env, thisvalue, type, flags)
 
-#define SWIG_ConvertFunctionPtr(obj, pptr, type)        SWIG_V8_ConvertPtr(obj, pptr, type, 0)
-#define SWIG_NewFunctionPtrObj(ptr, type)               SWIG_V8_NewPointerObj(ptr, type, 0)
+#define SWIG_ConvertFunctionPtr(obj, pptr, type)        SWIG_NAPI_ConvertPtr(obj, pptr, type, 0)
+#define SWIG_NewFunctionPtrObj(ptr, type)               SWIG_NAPI_NewPointerObj(env, ptr, type, 0)
 
-#define SWIG_GetInstancePtr(obj, ptr)    SWIG_V8_GetInstancePtr(obj, ptr)
+#define SWIG_GetInstancePtr(obj, ptr)                   SWIG_NAPI_GetInstancePtr(obj, ptr)
 
-SWIGRUNTIME SwigV8ReturnValue _SWIGV8_wrap_equals(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+SWIGRUNTIME Napi::Value _SWIG_NAPI_wrap_equals(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   void *arg1 = (void *) 0 ;
   void *arg2 = (void *) 0 ;
   bool result;
   int res1;
   int res2;
 
-  if(args.Length() != 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for equals.");
+  if(info.Length() != 1) SWIG_Error(SWIG_ERROR, "Illegal number of arguments for equals.");
 
-  res1 = SWIG_GetInstancePtr(args.Holder(), &arg1);
+  res1 = SWIG_GetInstancePtr(info.This(), &arg1);
   if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ERROR, "Could not get pointer from 'this' object for equals.");
+    SWIG_Error(SWIG_ERROR, "Could not get pointer from 'this' object for equals.");
   }
-  res2 = SWIG_GetInstancePtr(args[0], &arg2);
+  res2 = SWIG_GetInstancePtr(info[0], &arg2);
   if (!SWIG_IsOK(res2)) {
-    SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "equals" "', argument " "1"" of type '" "void *""'");
+    SWIG_Error(SWIG_ArgError(res2), " in method '" "equals" "', argument " "1"" of type '" "void *""'");
   }
 
   result = (bool)(arg1 == arg2);
-  jsresult =  SWIGV8_BOOLEAN_NEW(result);
+  jsresult = Napi::Boolean::New(env, result);
 
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
-SWIGRUNTIME SwigV8ReturnValue _wrap_getCPtr(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+SWIGRUNTIME Napi::Value _wrap_getCPtr(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   void *arg1 = (void *) 0 ;
   long result;
   int res1;
 
-  res1 = SWIG_GetInstancePtr(args.Holder(), &arg1);
+  res1 = SWIG_GetInstancePtr(info.This(), &arg1);
   if (!SWIG_IsOK(res1)) {
-    SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "getCPtr" "', argument " "1"" of type '" "void *""'");
+    SWIG_Error(SWIG_ArgError(res1), " in method '" "getCPtr" "', argument " "1"" of type '" "void *""'");
   }
 
   result = (long)arg1;
-  jsresult = SWIGV8_NUMBER_NEW(result);
+  jsresult = Napi::Number::New(env, result);
 
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
+
 
 /* ---------------------------------------------------------------------------
  * PackedData object
- *
+ * (objects visible to JS that do not have a dedicated wrapper but must preserve type)
  * ---------------------------------------------------------------------------*/
 
-class SwigV8PackedData {
-public:
-  SwigV8PackedData(void *data, size_t size, swig_type_info *type): data(nullptr), size(size), type(type) {
-    this->data = malloc(size);
-    if (this->data != nullptr)
-      memcpy(this->data, data, size);
-  };
+SWIGRUNTIME
+Napi::Value SWIG_NAPI_NewPackedObj(Napi::Env env, void *data, size_t size, swig_type_info *type) {
+  void *data_copy = new uint8_t[size];
+  memcpy(data_copy, data, size);
+  Napi::Value val = SWIG_NAPI_NewPointerObj(env, data_copy, type, SWIG_POINTER_OWN);
+  Napi::Object obj;
+  if (val.IsEmpty()) goto fail;
 
-  ~SwigV8PackedData() {
-    free(this->data);
-  };
+  NAPI_CHECK_RESULT(val.ToObject(), obj);
+  Napi::ObjectWrap<SWIG_NAPI_ObjectWrap_inst>::Unwrap(obj)->size = size;
 
-  void *data;
-  size_t size;
-  swig_type_info *type;
-
-  v8::Persistent<v8::Object> handle;
-};
-
-SWIGRUNTIMEINLINE
-int SwigV8Packed_Check(SWIGV8_VALUE valRef) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_OBJECT objRef = SWIGV8_TO_OBJECT(valRef);
-  if(objRef->InternalFieldCount() < 1) return false;
-  v8::Local<v8::Private> privateKey = v8::Private::ForApi(v8::Isolate::GetCurrent(), SWIGV8_STRING_NEW("__swig__packed_data__"));
-  v8::Local<v8::Value> flag;
-  if (!objRef->GetPrivate(SWIGV8_CURRENT_CONTEXT(), privateKey).ToLocal(&flag))
-    return false;
-  return (flag->IsBoolean() && SWIGV8_BOOLEAN_VALUE(flag));
+fail:
+  return val;
 }
 
 SWIGRUNTIME
-swig_type_info *SwigV8Packed_UnpackData(SWIGV8_VALUE valRef, void *ptr, size_t size) {
-  if (SwigV8Packed_Check(valRef)) {
-    SWIGV8_HANDLESCOPE();
-    
-    SwigV8PackedData *sobj;
-
-    SWIGV8_OBJECT objRef = SWIGV8_TO_OBJECT(valRef);
-
-    sobj = static_cast<SwigV8PackedData*>(objRef->GetAlignedPointerFromInternalField(0));
-    if (sobj == NULL || sobj->size != size) return 0;
-    memcpy(ptr, sobj->data, size);
-    return sobj->type;
-  } else {
-    return 0;
+int SWIG_NAPI_ConvertPacked(Napi::Value valRef, void *ptr, size_t size, swig_type_info *type) {
+  void *tmp;
+  if (!SWIG_IsOK(SWIG_NAPI_ConvertPtr(valRef, &tmp, type, 0))) {
+    return SWIG_ERROR;
   }
-}
-
-SWIGRUNTIME
-int SWIGV8_ConvertPacked(SWIGV8_VALUE valRef, void *ptr, size_t sz, swig_type_info *ty) {
-  swig_type_info *to = SwigV8Packed_UnpackData(valRef, ptr, sz);
-  if (!to) return SWIG_ERROR;
-  if (ty) {
-    if (to != ty) {
-      /* check type cast? */
-      swig_cast_info *tc = SWIG_TypeCheck(to->name,ty);
-      if (!tc) return SWIG_ERROR;
-    }
-  }
+  memcpy(ptr, tmp, size);
   return SWIG_OK;
 }
 
-SWIGRUNTIME void _wrap_SwigV8PackedData_delete(const v8::WeakCallbackInfo<SwigV8PackedData> &data) {
-  SwigV8PackedData *cdata = data.GetParameter();
-  cdata->handle.Reset();
-  delete cdata;
-}
-
-SWIGRUNTIME
-SWIGV8_VALUE SWIGV8_NewPackedObj(void *data, size_t size, swig_type_info *type) {
-  SWIGV8_HANDLESCOPE_ESC();
-
-  SwigV8PackedData *cdata = new SwigV8PackedData(data, size, type);
-  SWIGV8_OBJECT_TEMPLATE tmpl = SWIGV8_OBJECT_TEMPLATE_NEW();
-  tmpl->SetInternalFieldCount(1);
-  v8::Local<v8::Object> obj = SWIGV8_OBJECT_TEMPLATE_INSTACE(tmpl);
-
-  v8::Local<v8::Private> privateKey = v8::Private::ForApi(v8::Isolate::GetCurrent(), SWIGV8_STRING_NEW("__swig__packed_data__"));
-  obj->SetPrivate(SWIGV8_CURRENT_CONTEXT(), privateKey, SWIGV8_BOOLEAN_NEW(true));
-
-  obj->SetAlignedPointerInInternalField(0, cdata);
-
-  cdata->handle.Reset(v8::Isolate::GetCurrent(), obj);
-
-  cdata->handle.SetWeak(cdata, _wrap_SwigV8PackedData_delete, v8::WeakCallbackType::kParameter);
-
-#if (SWIG_V8_VERSION < 0x0704)
-  cdata->handle.MarkIndependent();
-// Looks like future versions do not require that anymore:
-// https://monorail-prod.appspot.com/p/chromium/issues/detail?id=923361#c11
-#endif
-
-  SWIGV8_ESCAPE(obj);
-
-}
-
-#define SWIG_ConvertMember(obj, ptr, sz, ty)            SWIGV8_ConvertPacked(obj, ptr, sz, ty)
-#define SWIG_NewMemberObj(ptr, sz, type)                SWIGV8_NewPackedObj(ptr, sz, type)
+#define SWIG_ConvertMember(obj, ptr, sz, ty)            SWIG_NAPI_ConvertPacked(obj, ptr, sz, ty)
+#define SWIG_NewMemberObj(ptr, sz, type)                SWIG_NAPI_NewPackedObj(env, ptr, sz, type)
 
 
 /* ---------------------------------------------------------------------------
@@ -1262,108 +1228,19 @@ SWIGV8_VALUE SWIGV8_NewPackedObj(void *data, size_t size, swig_type_info *type) 
 
 SWIGRUNTIME
 
-SWIGV8_VALUE SWIGV8_AppendOutput(SWIGV8_VALUE result, SWIGV8_VALUE obj) {
-  SWIGV8_HANDLESCOPE_ESC();
-  
-  if (result->IsUndefined()) {
-    result = SWIGV8_ARRAY_NEW(0);
-  } else if (!result->IsArray()) {
-    SWIGV8_ARRAY tmparr = SWIGV8_ARRAY_NEW(0);
-    SWIGV8_ARRAY_SET(tmparr, 0, result);
+Napi::Value SWIG_NAPI_AppendOutput(Napi::Env env, Napi::Value result, Napi::Value obj) {
+  if (result.IsUndefined()) {
+    result = Napi::Array::New(env);
+  } else if (!result.IsArray()) {
+    Napi::Array tmparr = Napi::Array::New(env);
+    tmparr.Set(static_cast<uint32_t>(0), result);
     result = tmparr;
   }
 
-  SWIGV8_ARRAY arr = SWIGV8_ARRAY::Cast(result);
-  SWIGV8_ARRAY_SET(arr, arr->Length(), obj);
-  SWIGV8_ESCAPE(arr);
+  Napi::Array arr = result.As<Napi::Array>();
+  arr.Set(arr.Length(), obj);
+  return arr;
 }
-
-
-
-typedef v8::FunctionCallback            SwigV8FunctionCallback;
-typedef v8::AccessorNameGetterCallback  SwigV8AccessorGetterCallback;
-typedef v8::AccessorNameSetterCallback  SwigV8AccessorSetterCallback;
-typedef v8::PropertyCallbackInfo<void>  SwigV8PropertyCallbackInfoVoid;
-
-/**
- * Creates a class template for a class with specified initialization function.
- */
-SWIGRUNTIME SWIGV8_FUNCTION_TEMPLATE SWIGV8_CreateClassTemplate(const char* symbol) {
-    SWIGV8_HANDLESCOPE_ESC();
-    
-    v8::Local<v8::FunctionTemplate> class_templ = SWIGV8_FUNCTEMPLATE_NEW_VOID();
-    class_templ->SetClassName(SWIGV8_SYMBOL_NEW(symbol));
-
-    SWIGV8_OBJECT_TEMPLATE inst_templ = class_templ->InstanceTemplate();
-    inst_templ->SetInternalFieldCount(1);
-
-    SWIGV8_OBJECT_TEMPLATE equals_templ = class_templ->PrototypeTemplate();
-    equals_templ->Set(SWIGV8_SYMBOL_NEW("equals"), SWIGV8_FUNCTEMPLATE_NEW(_SWIGV8_wrap_equals));
-
-    SWIGV8_OBJECT_TEMPLATE cptr_templ = class_templ->PrototypeTemplate();
-    cptr_templ->Set(SWIGV8_SYMBOL_NEW("getCPtr"), SWIGV8_FUNCTEMPLATE_NEW(_wrap_getCPtr));
-
-    SWIGV8_ESCAPE(class_templ);
-}
-
-/**
- * Registers a class method with given name for a given class template.
- */
-SWIGRUNTIME void SWIGV8_AddMemberFunction(SWIGV8_FUNCTION_TEMPLATE class_templ, const char* symbol,
-  SwigV8FunctionCallback _func) {
-    SWIGV8_OBJECT_TEMPLATE proto_templ = class_templ->PrototypeTemplate();
-    proto_templ->Set(SWIGV8_SYMBOL_NEW(symbol), SWIGV8_FUNCTEMPLATE_NEW(_func));
-}
-
-/**
- * Registers a class property with given name for a given class template.
- */
-SWIGRUNTIME void SWIGV8_AddMemberVariable(SWIGV8_FUNCTION_TEMPLATE class_templ, const char* symbol,
-  SwigV8AccessorGetterCallback getter, SwigV8AccessorSetterCallback setter) {
-  SWIGV8_OBJECT_TEMPLATE proto_templ = class_templ->InstanceTemplate();
-  proto_templ->SetAccessor(SWIGV8_SYMBOL_NEW(symbol), getter, setter);
-}
-
-/**
- * Registers a class method with given name for a given object.
- */
-SWIGRUNTIME void SWIGV8_AddStaticFunction(SWIGV8_OBJECT obj, const char* symbol,
-  const SwigV8FunctionCallback& _func, v8::Local<v8::Context> context) {
-  SWIGV8_MAYBE_CHECK(obj->Set(context, SWIGV8_SYMBOL_NEW(symbol), SWIGV8_FUNCTEMPLATE_NEW(_func)->GetFunction(context).ToLocalChecked()));
-}
-
-/**
- * Registers a class method with given name for a given object.
- */
-SWIGRUNTIME void SWIGV8_AddStaticVariable(SWIGV8_OBJECT obj, const char* symbol,
-  SwigV8AccessorGetterCallback getter, SwigV8AccessorSetterCallback setter,
-  v8::Local<v8::Context> context) {
-  SWIGV8_MAYBE_CHECK(obj->SetAccessor(context, SWIGV8_SYMBOL_NEW(symbol), getter, setter));
-}
-
-SWIGRUNTIME void JS_veto_set_variable(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid& info)
-{
-    char buffer[256];
-    char msg[512];
-    int res;
-
-    v8::Local<v8::String> sproperty;
-    if (property->ToString(SWIGV8_CURRENT_CONTEXT()).ToLocal(&sproperty)) {
-      SWIGV8_WRITE_UTF8(sproperty, buffer, 256);
-      res = SWIG_snprintf(msg, sizeof(msg), "Tried to write read-only variable: %s.", buffer);
-    }
-    else {
-      res = -1;
-    }
-
-    if(res<0) {
-      SWIG_exception(SWIG_ERROR, "Tried to write read-only variable.");
-    } else {
-      SWIG_exception(SWIG_ERROR, msg);
-    }
-fail: ;
-}
-
 
 
 /* -------- TYPES TABLE (BEGIN) -------- */
@@ -1447,10 +1324,10 @@ template <typename T> T SwigValueInit() {
 #include <assert.h>
 
 
-SWIGINTERNINLINE
-SWIGV8_VALUE SWIG_From_int  (int value)
+SWIGINTERN
+Napi::Value SWIG_From_int(Napi::Env env, int val)
 {
-  return SWIGV8_INT32_NEW(value);
+  return Napi::Number::New(env, val);
 }
 
 
@@ -1478,14 +1355,16 @@ SWIG_pchar_descriptor(void)
 
 
 SWIGINTERN int
-SWIG_AsCharPtrAndSize(SWIGV8_VALUE valRef, char** cptr, size_t* psize, int *alloc)
+SWIG_AsCharPtrAndSize(Napi::Value valRef, char** cptr, size_t* psize, int *alloc)
 {
-  if(valRef->IsString()) {
-    v8::Local<v8::String> js_str = v8::Local<v8::String>::Cast(valRef);
+  if(valRef.IsString()) {
+    Napi::String js_str;
+    NAPI_CHECK_RESULT(valRef.ToString(), js_str);
 
-    size_t len = SWIGV8_UTF8_LENGTH(js_str) + 1;
+    std::string str = js_str.Utf8Value();
+    size_t len = str.size() + 1;
     char* cstr = (char*) (new char[len]());
-    SWIGV8_WRITE_UTF8(js_str, cstr, len);
+    memcpy(cstr, str.data(), len);
     
     if(alloc) *alloc = SWIG_NEWOBJ;
     if(psize) *psize = len;
@@ -1493,10 +1372,11 @@ SWIG_AsCharPtrAndSize(SWIGV8_VALUE valRef, char** cptr, size_t* psize, int *allo
     
     return SWIG_OK;
   } else {
-    if(valRef->IsObject()) {
-      SWIGV8_OBJECT obj = SWIGV8_OBJECT::Cast(valRef);
-      // try if the object is a wrapped char[]
+    if(valRef.IsObject()) {
       swig_type_info* pchar_descriptor = SWIG_pchar_descriptor();
+      Napi::Object obj;
+      NAPI_CHECK_RESULT(valRef.ToObject(), obj);
+      // try if the object is a wrapped char[]
       if (pchar_descriptor) {
         void* vptr = 0;
         if (SWIG_ConvertPtr(obj, &vptr, pchar_descriptor, 0) == SWIG_OK) {
@@ -1506,57 +1386,56 @@ SWIG_AsCharPtrAndSize(SWIGV8_VALUE valRef, char** cptr, size_t* psize, int *allo
           return SWIG_OK;
         }
       }
-      return SWIG_TypeError;
-    } else {
-      return SWIG_TypeError;
     }
   }
+  goto fail;
+fail:
+  return SWIG_TypeError;
 }
 
 
 
-
-
-SWIGINTERNINLINE
-SWIGV8_VALUE SWIG_From_long  (long value)
-{
-  return SWIGV8_NUMBER_NEW(value);
-}
-
-
-SWIGINTERNINLINE SWIGV8_VALUE
-SWIG_FromCharPtrAndSize(const char* carray, size_t size)
-{
-  if (carray) {
-    if (size > INT_MAX) {
-      // TODO: handle extra long strings
-      return SWIGV8_UNDEFINED();
-    } else {
-      v8::Local<v8::String> js_str = SWIGV8_STRING_NEW2(carray, size);
-      return js_str;
-    }
-  } else {
-    return SWIGV8_UNDEFINED();
-  }
-}
-
-
-SWIGINTERNINLINE SWIGV8_VALUE 
-SWIG_FromCharPtr(const char *cptr)
-{ 
-  return SWIG_FromCharPtrAndSize(cptr, (cptr ? strlen(cptr) : 0));
-}
 
 
 SWIGINTERN
-int SWIG_AsVal_double (SWIGV8_VALUE obj, double *val)
+Napi::Value SWIG_From_long(Napi::Env env, long val)
 {
-  if(!obj->IsNumber()) {
+  return Napi::Number::New(env, val);
+}
+
+
+SWIGINTERNINLINE Napi::Value
+SWIG_Env_FromCharPtrAndSize(Napi::Env env, const char* carray, size_t size)
+{
+  if (carray) {
+    Napi::String js_str = Napi::String::New(env, carray, size);
+    return js_str;
+  } else {
+    return env.Undefined();
+  }
+}
+
+
+// Override the default one with an empty one
+
+
+SWIGINTERN
+int SWIG_AsVal_double (Napi::Value obj, double *val)
+{
+  if(!obj.IsNumber()) {
     return SWIG_TypeError;
   }
-  if(val) *val = SWIGV8_NUMBER_VALUE(obj);
+
+  if(val) {
+    Napi::Number num;
+    NAPI_CHECK_RESULT(obj.ToNumber(), num);
+    *val = static_cast<double>(num.DoubleValue());
+  }
 
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
 
@@ -1599,14 +1478,21 @@ SWIG_CanCastAsInteger(double *d, double min, double max) {
 
 
 SWIGINTERN
-int SWIG_AsVal_long (SWIGV8_VALUE obj, long* val)
+int SWIG_AsVal_long (Napi::Value obj, long* val)
 {
-  if (!obj->IsNumber()) {
+  if (!obj.IsNumber()) {
     return SWIG_TypeError;
   }
-  if(val) *val = (long) SWIGV8_INTEGER_VALUE(obj);
+  if (val) {
+    Napi::Number num;
+    NAPI_CHECK_RESULT(obj.ToNumber(), num);
+    *val = static_cast<long>(num.Int64Value());
+  }
 
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
 
@@ -1627,191 +1513,1323 @@ int SWIG_AsVal_long (SWIGV8_VALUE obj, long* val)
 
 #ifdef SWIG_LONG_LONG_AVAILABLE
 SWIGINTERN
-int SWIG_AsVal_long_SS_long (SWIGV8_VALUE obj, long long* val)
+int SWIG_AsVal_long_SS_long (Napi::Value obj, long long* val)
 {
-  if (!obj->IsNumber()) {
+  if(!obj.IsNumber()) {
     return SWIG_TypeError;
   }
-  if(val) *val = (long long) SWIGV8_INTEGER_VALUE(obj);
 
+  if (val) {
+    Napi::Number num;
+    NAPI_CHECK_RESULT(obj.ToNumber(), num);
+    *val = static_cast<long long>(num.Int64Value());
+  }
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 #endif
 
 
 SWIGINTERN
-int SWIG_AsVal_int (SWIGV8_VALUE valRef, int* val)
+int SWIG_AsVal_int (Napi::Value valRef, int* val)
 {
-  if (!valRef->IsNumber()) {
+  if (!valRef.IsNumber()) {
     return SWIG_TypeError;
   }
-  if(val) *val = SWIGV8_INTEGER_VALUE(valRef);
+  if (val) {
+    Napi::Number num;
+    NAPI_CHECK_RESULT(valRef.ToNumber(), num);
+    *val = static_cast<int>(num.Int32Value());
+  }
 
   return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
 
 #ifdef SWIG_LONG_LONG_AVAILABLE
-SWIGINTERNINLINE
-SWIGV8_VALUE SWIG_From_long_SS_long  (long long value)
+SWIGINTERN
+Napi::Value SWIG_From_long_SS_long(Napi::Env env, long long val)
 {
-  return SWIGV8_NUMBER_NEW(value);
+  return Napi::Number::New(env, val);
 }
 #endif
 
 
-/* Getting isfinite working pre C99 across multiple platforms is non-trivial. Users can provide SWIG_isfinite on older platforms. */
-#ifndef SWIG_isfinite
-/* isfinite() is a macro for C99 */
-# if defined(isfinite)
-#  define SWIG_isfinite(X) (isfinite(X))
-# elif defined(__cplusplus) && __cplusplus >= 201103L
-/* Use a template so that this works whether isfinite() is std::isfinite() or
- * in the global namespace.  The reality seems to vary between compiler
- * versions.
- *
- * Make sure namespace std exists to avoid compiler warnings.
- *
- * extern "C++" is required as this fragment can end up inside an extern "C" { } block
- */
-namespace std { }
-extern "C++" template<typename T>
-inline int SWIG_isfinite_func(T x) {
-  using namespace std;
-  return isfinite(x);
-}
-#  define SWIG_isfinite(X) (SWIG_isfinite_func(X))
-# elif defined(__GNUC__) && (__GNUC__ > 4 || (__GNUC__ == 4 && __GNUC_MINOR__ >= 2))
-#  define SWIG_isfinite(X) (__builtin_isfinite(X))
-# elif defined(_MSC_VER)
-#  define SWIG_isfinite(X) (_finite(X))
-# elif defined(__sun) && defined(__SVR4)
-#  include <ieeefp.h>
-#  define SWIG_isfinite(X) (finite(X))
-# endif
-#endif
-
-
-/* Accept infinite as a valid float value unless we are unable to check if a value is finite */
-#ifdef SWIG_isfinite
-# define SWIG_Float_Overflow_Check(X) ((X < -FLT_MAX || X > FLT_MAX) && SWIG_isfinite(X))
-#else
-# define SWIG_Float_Overflow_Check(X) ((X < -FLT_MAX || X > FLT_MAX))
-#endif
-
-
-SWIGINTERN int
-SWIG_AsVal_float (SWIGV8_VALUE obj, float *val)
+SWIGINTERN
+int SWIG_AsVal_float (Napi::Value obj, float *val)
 {
-  double v;
-  int res = SWIG_AsVal_double (obj, &v);
-  if (SWIG_IsOK(res)) {
-    if (SWIG_Float_Overflow_Check(v)) {
-      return SWIG_OverflowError;
-    } else {
-      if (val) *val = static_cast< float >(v);
-    }
-  }  
-  return res;
+  if(!obj.IsNumber()) {
+    return SWIG_TypeError;
+  }
+
+  if(val) {
+    Napi::Number num;
+    NAPI_CHECK_RESULT(obj.ToNumber(), num);
+    *val = static_cast<float>(num.DoubleValue());
+  }
+
+  return SWIG_OK;
+  goto fail;
+fail:
+  return SWIG_ERROR;
 }
 
 
 SWIGINTERN
-SWIGV8_VALUE SWIG_From_double   (double val)
+Napi::Value SWIG_From_float(Napi::Env env, float val)
 {
-  return SWIGV8_NUMBER_NEW(val);
+  return Napi::Number::New(env, val);
 }
 
 
-SWIGINTERNINLINE SWIGV8_VALUE
-SWIG_From_float  (float value)
-{    
-  return SWIG_From_double  (value);
-}
-
-
-SWIGINTERNINLINE
-SWIGV8_VALUE
-SWIG_From_bool  (bool value)
+SWIGINTERN
+Napi::Value SWIG_From_bool(Napi::Env env, bool val)
 {
-  return SWIGV8_BOOLEAN_NEW(value);
+  return Napi::Boolean::New(env, val);
 }
 
 
-#define SWIGV8_INIT Antelope_initialize
+#define SWIG_NAPI_INIT Antelope_initialize
 
 
-SWIGV8_ClientData _exports_ATIRE_API_remote_clientData;
-SWIGV8_ClientData _exports_ATIRE_API_server_clientData;
-SWIGV8_ClientData _exports_ATIRE_API_result_clientData;
-SWIGV8_ClientData _exports_ATIRE_indexer_clientData;
+// jsnapi_class_prologue_template
+template <typename SWIG_OBJ_WRAP>
+class _exports_ATIRE_API_remote_templ : public SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP> {
+public:
+  _exports_ATIRE_API_remote_templ(const Napi::CallbackInfo &);
+_exports_ATIRE_API_remote_templ(bool, const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_new_ATIRE_API_remote(const Napi::CallbackInfo &);
+virtual ~_exports_ATIRE_API_remote_templ();
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_open(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_close(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_get_connect_string(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_load_index(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_describe_index(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_search__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_search__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote__wrap_ATIRE_API_remote_search(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_get_document(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_send_command(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_remote_exit(const Napi::CallbackInfo &);
+// jsnapi_class_epilogue_template
+static void JS_veto_set_static_variable(const Napi::CallbackInfo &, const Napi::Value &);
+void JS_veto_set_variable(const Napi::CallbackInfo &, const Napi::Value &);
+};
 
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::JS_veto_set_static_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
 
-static SwigV8ReturnValue exports_FILENAME_INDEX_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::JS_veto_set_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+// jsnapi_class_instance
+class _exports_ATIRE_API_remote_inst : public _exports_ATIRE_API_remote_templ<_exports_ATIRE_API_remote_inst> {
+public:
+  using _exports_ATIRE_API_remote_templ::_exports_ATIRE_API_remote_templ;
+  virtual ~_exports_ATIRE_API_remote_inst() {
+    
+  };
+  static void GetMembers(
+    Napi::Env,
+    std::map<std::string, _exports_ATIRE_API_remote_templ::PropertyDescriptor> &,
+    std::map<std::string, _exports_ATIRE_API_remote_templ::PropertyDescriptor> &
+    );
+  static Napi::Function GetClass(Napi::Env);
+};
+/* Class: ATIRE_API_remote (_exports_ATIRE_API_remote) */
+// jsnapi_getclass
+Napi::Function _exports_ATIRE_API_remote_inst::GetClass(Napi::Env env) {
+  std::map<std::string, _exports_ATIRE_API_remote_templ::PropertyDescriptor> members, staticMembers;
+  GetMembers(env, members, staticMembers);
   
-  SWIGV8_VALUE jsresult;
+  std::vector<_exports_ATIRE_API_remote_inst::PropertyDescriptor> symbolTable;
+  for (auto it = members.begin(); it != members.end(); it++)
+  symbolTable.push_back(it->second);
+  for (auto it = staticMembers.begin(); it != staticMembers.end(); it++)
+  symbolTable.push_back(it->second);
   
-  jsresult = SWIG_From_int(static_cast< int >(1));
+  return Napi::ObjectWrap<_exports_ATIRE_API_remote_inst>::DefineClass(env, "ATIRE_API_remote", symbolTable);
+}
+
+void _exports_ATIRE_API_remote_inst::GetMembers(
+  Napi::Env env,
+  std::map<std::string, _exports_ATIRE_API_remote_templ::PropertyDescriptor> &members,
+  std::map<std::string, _exports_ATIRE_API_remote_templ::PropertyDescriptor> &staticMembers
+  ) {
+  std::map<std::string, SWIG_NAPI_ObjectWrap_templ<SWIG_NAPI_ObjectWrap_inst>::PropertyDescriptor> baseMembers, baseStaticMembers;
+  SWIG_NAPI_ObjectWrap_inst::GetMembers(env, baseMembers, baseStaticMembers);
+  members.insert(baseMembers.begin(), baseMembers.end());
+  staticMembers.insert(staticMembers.begin(), staticMembers.end());
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  /* register wrapper functions */
+  // jsnapi_member_function_descriptor
+  members.erase("open");
+  members.insert({
+    "open",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("open",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_open,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("close");
+  members.insert({
+    "close",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("close",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_close,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_connect_string");
+  members.insert({
+    "get_connect_string",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("get_connect_string",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_get_connect_string,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("load_index");
+  members.insert({
+    "load_index",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("load_index",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_load_index,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("describe_index");
+  members.insert({
+    "describe_index",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("describe_index",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_describe_index,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("search");
+  members.insert({
+    "search",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("search",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote__wrap_ATIRE_API_remote_search,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_document");
+  members.insert({
+    "get_document",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("get_document",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_get_document,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("send_command");
+  members.insert({
+    "send_command",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("send_command",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_send_command,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("exit");
+  members.insert({
+    "exit",
+      _exports_ATIRE_API_remote_templ::InstanceMethod("exit",
+        &_exports_ATIRE_API_remote_templ::_wrap_ATIRE_API_remote_exit,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  
+  /* add static class functions and variables */
+  
+}
+// jsnapi_class_prologue_template
+template <typename SWIG_OBJ_WRAP>
+class _exports_ATIRE_API_server_templ : public SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP> {
+public:
+  _exports_ATIRE_API_server_templ(const Napi::CallbackInfo &);
+_exports_ATIRE_API_server_templ(bool, const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_server_CHANNEL_FILE_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_server_CHANNEL_SOCKET_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_server_CHANNEL_MEMORY_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_server_XML_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_server_JSON_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_new_ATIRE_API_server(const Napi::CallbackInfo &);
+virtual ~_exports_ATIRE_API_server_templ();
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_initialize(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_atire(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_params__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_params__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_set_params(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_param(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_ant_version(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_start(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_open_from_indexer(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_loop(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_poll(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_poll_and_process(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_process_command(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_interrupt(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_finish(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_run__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_run__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_run(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_ant(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_start_stats(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_end_stats(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_stats(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_search_time(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_version(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_prompt(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_is_interrupted(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_interrupted(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_has_new_command(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_insert_command(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_outchannel(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_outchannel_content(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_search__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_search__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_search(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_goto_result(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_list_term__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_list_term__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_list_term(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_next_term__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_next_term__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_next_term(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_goto_term(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_result_to_json(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_result(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_next_result(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server__wrap_ATIRE_API_server_result_to_outchannel(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_load_document(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_document(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_current_document(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_get_document_count(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_page_size(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_server_set_output_format(const Napi::CallbackInfo &);
+// jsnapi_class_epilogue_template
+static void JS_veto_set_static_variable(const Napi::CallbackInfo &, const Napi::Value &);
+void JS_veto_set_variable(const Napi::CallbackInfo &, const Napi::Value &);
+};
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::JS_veto_set_static_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::JS_veto_set_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+// jsnapi_class_instance
+class _exports_ATIRE_API_server_inst : public _exports_ATIRE_API_server_templ<_exports_ATIRE_API_server_inst> {
+public:
+  using _exports_ATIRE_API_server_templ::_exports_ATIRE_API_server_templ;
+  virtual ~_exports_ATIRE_API_server_inst() {
+    
+  };
+  static void GetMembers(
+    Napi::Env,
+    std::map<std::string, _exports_ATIRE_API_server_templ::PropertyDescriptor> &,
+    std::map<std::string, _exports_ATIRE_API_server_templ::PropertyDescriptor> &
+    );
+  static Napi::Function GetClass(Napi::Env);
+};
+/* Class: ATIRE_API_server (_exports_ATIRE_API_server) */
+// jsnapi_getclass
+Napi::Function _exports_ATIRE_API_server_inst::GetClass(Napi::Env env) {
+  std::map<std::string, _exports_ATIRE_API_server_templ::PropertyDescriptor> members, staticMembers;
+  GetMembers(env, members, staticMembers);
+  
+  std::vector<_exports_ATIRE_API_server_inst::PropertyDescriptor> symbolTable;
+  for (auto it = members.begin(); it != members.end(); it++)
+  symbolTable.push_back(it->second);
+  for (auto it = staticMembers.begin(); it != staticMembers.end(); it++)
+  symbolTable.push_back(it->second);
+  
+  return Napi::ObjectWrap<_exports_ATIRE_API_server_inst>::DefineClass(env, "ATIRE_API_server", symbolTable);
+}
+
+void _exports_ATIRE_API_server_inst::GetMembers(
+  Napi::Env env,
+  std::map<std::string, _exports_ATIRE_API_server_templ::PropertyDescriptor> &members,
+  std::map<std::string, _exports_ATIRE_API_server_templ::PropertyDescriptor> &staticMembers
+  ) {
+  std::map<std::string, SWIG_NAPI_ObjectWrap_templ<SWIG_NAPI_ObjectWrap_inst>::PropertyDescriptor> baseMembers, baseStaticMembers;
+  SWIG_NAPI_ObjectWrap_inst::GetMembers(env, baseMembers, baseStaticMembers);
+  members.insert(baseMembers.begin(), baseMembers.end());
+  staticMembers.insert(staticMembers.begin(), staticMembers.end());
+  
+  /* register wrapper functions */
+  // jsnapi_member_function_descriptor
+  members.erase("initialize");
+  members.insert({
+    "initialize",
+      _exports_ATIRE_API_server_templ::InstanceMethod("initialize",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_initialize,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_atire");
+  members.insert({
+    "get_atire",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_atire",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_atire,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_params");
+  members.insert({
+    "set_params",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_params",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_set_params,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_param");
+  members.insert({
+    "set_param",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_param",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_param,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_ant_version");
+  members.insert({
+    "set_ant_version",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_ant_version",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_ant_version,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("start");
+  members.insert({
+    "start",
+      _exports_ATIRE_API_server_templ::InstanceMethod("start",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_start,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("open_from_indexer");
+  members.insert({
+    "open_from_indexer",
+      _exports_ATIRE_API_server_templ::InstanceMethod("open_from_indexer",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_open_from_indexer,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("loop");
+  members.insert({
+    "loop",
+      _exports_ATIRE_API_server_templ::InstanceMethod("loop",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_loop,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("poll");
+  members.insert({
+    "poll",
+      _exports_ATIRE_API_server_templ::InstanceMethod("poll",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_poll,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("poll_and_process");
+  members.insert({
+    "poll_and_process",
+      _exports_ATIRE_API_server_templ::InstanceMethod("poll_and_process",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_poll_and_process,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("process_command");
+  members.insert({
+    "process_command",
+      _exports_ATIRE_API_server_templ::InstanceMethod("process_command",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_process_command,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("interrupt");
+  members.insert({
+    "interrupt",
+      _exports_ATIRE_API_server_templ::InstanceMethod("interrupt",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_interrupt,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("finish");
+  members.insert({
+    "finish",
+      _exports_ATIRE_API_server_templ::InstanceMethod("finish",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_finish,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("run");
+  members.insert({
+    "run",
+      _exports_ATIRE_API_server_templ::InstanceMethod("run",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_run,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("ant");
+  members.insert({
+    "ant",
+      _exports_ATIRE_API_server_templ::InstanceMethod("ant",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_ant,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("start_stats");
+  members.insert({
+    "start_stats",
+      _exports_ATIRE_API_server_templ::InstanceMethod("start_stats",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_start_stats,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("end_stats");
+  members.insert({
+    "end_stats",
+      _exports_ATIRE_API_server_templ::InstanceMethod("end_stats",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_end_stats,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_stats");
+  members.insert({
+    "get_stats",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_stats",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_stats,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_search_time");
+  members.insert({
+    "get_search_time",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_search_time",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_search_time,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("version");
+  members.insert({
+    "version",
+      _exports_ATIRE_API_server_templ::InstanceMethod("version",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_version,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("prompt");
+  members.insert({
+    "prompt",
+      _exports_ATIRE_API_server_templ::InstanceMethod("prompt",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_prompt,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("is_interrupted");
+  members.insert({
+    "is_interrupted",
+      _exports_ATIRE_API_server_templ::InstanceMethod("is_interrupted",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_is_interrupted,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_interrupted");
+  members.insert({
+    "set_interrupted",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_interrupted",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_interrupted,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("has_new_command");
+  members.insert({
+    "has_new_command",
+      _exports_ATIRE_API_server_templ::InstanceMethod("has_new_command",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_has_new_command,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("insert_command");
+  members.insert({
+    "insert_command",
+      _exports_ATIRE_API_server_templ::InstanceMethod("insert_command",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_insert_command,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_outchannel");
+  members.insert({
+    "set_outchannel",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_outchannel",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_outchannel,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_outchannel_content");
+  members.insert({
+    "get_outchannel_content",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_outchannel_content",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_outchannel_content,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("search");
+  members.insert({
+    "search",
+      _exports_ATIRE_API_server_templ::InstanceMethod("search",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_search,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("goto_result");
+  members.insert({
+    "goto_result",
+      _exports_ATIRE_API_server_templ::InstanceMethod("goto_result",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_goto_result,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("list_term");
+  members.insert({
+    "list_term",
+      _exports_ATIRE_API_server_templ::InstanceMethod("list_term",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_list_term,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("next_term");
+  members.insert({
+    "next_term",
+      _exports_ATIRE_API_server_templ::InstanceMethod("next_term",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_next_term,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("goto_term");
+  members.insert({
+    "goto_term",
+      _exports_ATIRE_API_server_templ::InstanceMethod("goto_term",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_goto_term,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("result_to_json");
+  members.insert({
+    "result_to_json",
+      _exports_ATIRE_API_server_templ::InstanceMethod("result_to_json",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_result_to_json,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_result");
+  members.insert({
+    "get_result",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_result",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_result,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("next_result");
+  members.insert({
+    "next_result",
+      _exports_ATIRE_API_server_templ::InstanceMethod("next_result",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_next_result,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("result_to_outchannel");
+  members.insert({
+    "result_to_outchannel",
+      _exports_ATIRE_API_server_templ::InstanceMethod("result_to_outchannel",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_result_to_outchannel,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("load_document");
+  members.insert({
+    "load_document",
+      _exports_ATIRE_API_server_templ::InstanceMethod("load_document",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_load_document,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_document");
+  members.insert({
+    "get_document",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_document",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_document,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_current_document");
+  members.insert({
+    "get_current_document",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_current_document",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_current_document,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_document_count");
+  members.insert({
+    "get_document_count",
+      _exports_ATIRE_API_server_templ::InstanceMethod("get_document_count",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_get_document_count,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_page_size");
+  members.insert({
+    "set_page_size",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_page_size",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_page_size,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("set_output_format");
+  members.insert({
+    "set_output_format",
+      _exports_ATIRE_API_server_templ::InstanceMethod("set_output_format",
+        &_exports_ATIRE_API_server_templ::_wrap_ATIRE_API_server_set_output_format,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  
+  /* add static class functions and variables */
+  // jsnapi_register_static_variable
+  staticMembers.erase("CHANNEL_FILE");
+  staticMembers.insert({
+    "CHANNEL_FILE",
+      StaticAccessor("CHANNEL_FILE",
+        &_exports_ATIRE_API_server_templ::exports_ATIRE_API_server_CHANNEL_FILE_get,
+        &_exports_ATIRE_API_server_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("CHANNEL_SOCKET");
+  staticMembers.insert({
+    "CHANNEL_SOCKET",
+      StaticAccessor("CHANNEL_SOCKET",
+        &_exports_ATIRE_API_server_templ::exports_ATIRE_API_server_CHANNEL_SOCKET_get,
+        &_exports_ATIRE_API_server_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("CHANNEL_MEMORY");
+  staticMembers.insert({
+    "CHANNEL_MEMORY",
+      StaticAccessor("CHANNEL_MEMORY",
+        &_exports_ATIRE_API_server_templ::exports_ATIRE_API_server_CHANNEL_MEMORY_get,
+        &_exports_ATIRE_API_server_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("XML");
+  staticMembers.insert({
+    "XML",
+      StaticAccessor("XML",
+        &_exports_ATIRE_API_server_templ::exports_ATIRE_API_server_XML_get,
+        &_exports_ATIRE_API_server_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("JSON");
+  staticMembers.insert({
+    "JSON",
+      StaticAccessor("JSON",
+        &_exports_ATIRE_API_server_templ::exports_ATIRE_API_server_JSON_get,
+        &_exports_ATIRE_API_server_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  
+}
+// jsnapi_class_prologue_template
+template <typename SWIG_OBJ_WRAP>
+class _exports_ATIRE_API_result_templ : public SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP> {
+public:
+  _exports_ATIRE_API_result_templ(const Napi::CallbackInfo &);
+_exports_ATIRE_API_result_templ(bool, const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value _wrap_ATIRE_API_result_EMPTY_STRING_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+static void _wrap_ATIRE_API_result_EMPTY_STRING_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+static Napi::Value exports_ATIRE_API_result_MAX_TITLE_LENGTH_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_rank_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_rank_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_docid_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_docid_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_rsv_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_rsv_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_title_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_title_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_snippet_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_snippet_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_API_result_document_name_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+void _wrap_ATIRE_API_result_document_name_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_new_ATIRE_API_result(const Napi::CallbackInfo &);
+virtual ~_exports_ATIRE_API_result_templ();
+// jsnapi_class_epilogue_template
+static void JS_veto_set_static_variable(const Napi::CallbackInfo &, const Napi::Value &);
+void JS_veto_set_variable(const Napi::CallbackInfo &, const Napi::Value &);
+};
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::JS_veto_set_static_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::JS_veto_set_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+// jsnapi_class_instance
+class _exports_ATIRE_API_result_inst : public _exports_ATIRE_API_result_templ<_exports_ATIRE_API_result_inst> {
+public:
+  using _exports_ATIRE_API_result_templ::_exports_ATIRE_API_result_templ;
+  virtual ~_exports_ATIRE_API_result_inst() {
+    
+  };
+  static void GetMembers(
+    Napi::Env,
+    std::map<std::string, _exports_ATIRE_API_result_templ::PropertyDescriptor> &,
+    std::map<std::string, _exports_ATIRE_API_result_templ::PropertyDescriptor> &
+    );
+  static Napi::Function GetClass(Napi::Env);
+};
+/* Class: ATIRE_API_result (_exports_ATIRE_API_result) */
+// jsnapi_getclass
+Napi::Function _exports_ATIRE_API_result_inst::GetClass(Napi::Env env) {
+  std::map<std::string, _exports_ATIRE_API_result_templ::PropertyDescriptor> members, staticMembers;
+  GetMembers(env, members, staticMembers);
+  
+  std::vector<_exports_ATIRE_API_result_inst::PropertyDescriptor> symbolTable;
+  for (auto it = members.begin(); it != members.end(); it++)
+  symbolTable.push_back(it->second);
+  for (auto it = staticMembers.begin(); it != staticMembers.end(); it++)
+  symbolTable.push_back(it->second);
+  
+  return Napi::ObjectWrap<_exports_ATIRE_API_result_inst>::DefineClass(env, "ATIRE_API_result", symbolTable);
+}
+
+void _exports_ATIRE_API_result_inst::GetMembers(
+  Napi::Env env,
+  std::map<std::string, _exports_ATIRE_API_result_templ::PropertyDescriptor> &members,
+  std::map<std::string, _exports_ATIRE_API_result_templ::PropertyDescriptor> &staticMembers
+  ) {
+  std::map<std::string, SWIG_NAPI_ObjectWrap_templ<SWIG_NAPI_ObjectWrap_inst>::PropertyDescriptor> baseMembers, baseStaticMembers;
+  SWIG_NAPI_ObjectWrap_inst::GetMembers(env, baseMembers, baseStaticMembers);
+  members.insert(baseMembers.begin(), baseMembers.end());
+  staticMembers.insert(staticMembers.begin(), staticMembers.end());
+  
+  /* register wrapper functions */
+  // jsnapi_register_member_variable
+  members.erase("rank");
+  members.insert({
+    "rank",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("rank",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_rank_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_rank_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_member_variable
+  members.erase("docid");
+  members.insert({
+    "docid",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("docid",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_docid_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_docid_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_member_variable
+  members.erase("rsv");
+  members.insert({
+    "rsv",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("rsv",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_rsv_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_rsv_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_member_variable
+  members.erase("title");
+  members.insert({
+    "title",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("title",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_title_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_title_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_member_variable
+  members.erase("snippet");
+  members.insert({
+    "snippet",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("snippet",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_snippet_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_snippet_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_member_variable
+  members.erase("document_name");
+  members.insert({
+    "document_name",
+      _exports_ATIRE_API_result_templ::InstanceAccessor("document_name",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_document_name_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_document_name_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  
+  /* add static class functions and variables */
+  // jsnapi_register_static_variable
+  staticMembers.erase("EMPTY_STRING");
+  staticMembers.insert({
+    "EMPTY_STRING",
+      StaticAccessor("EMPTY_STRING",
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_EMPTY_STRING_get,
+        &_exports_ATIRE_API_result_templ::_wrap_ATIRE_API_result_EMPTY_STRING_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("MAX_TITLE_LENGTH");
+  staticMembers.insert({
+    "MAX_TITLE_LENGTH",
+      StaticAccessor("MAX_TITLE_LENGTH",
+        &_exports_ATIRE_API_result_templ::exports_ATIRE_API_result_MAX_TITLE_LENGTH_get,
+        &_exports_ATIRE_API_result_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  
+}
+// jsnapi_class_prologue_template
+template <typename SWIG_OBJ_WRAP>
+class _exports_ATIRE_indexer_templ : public SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP> {
+public:
+  _exports_ATIRE_indexer_templ(const Napi::CallbackInfo &);
+_exports_ATIRE_indexer_templ(bool, const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+static Napi::Value _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get(const Napi::CallbackInfo &);
+// jsnapi_class_setter_declaration
+static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set(const Napi::CallbackInfo &, const Napi::Value &);
+// jsnapi_class_method_declaration
+static Napi::Value _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_new_ATIRE_indexer(const Napi::CallbackInfo &);
+virtual ~_exports_ATIRE_indexer_templ();
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_usage(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_init__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_init__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer__wrap_ATIRE_indexer_init(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_finish(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_index_document__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_index_document__SWIG_1(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_index_document__SWIG_2(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_index_document__SWIG_3(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_index(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_get_docno(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_enable_parallel_indexing(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+static Napi::Value _wrap_ATIRE_indexer_initialize(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_get_index_file_size(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_get_index_file(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_get_index(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_release_index(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ATIRE_indexer_get_doc_list(const Napi::CallbackInfo &);
+// jsnapi_class_epilogue_template
+static void JS_veto_set_static_variable(const Napi::CallbackInfo &, const Napi::Value &);
+void JS_veto_set_variable(const Napi::CallbackInfo &, const Napi::Value &);
+};
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::JS_veto_set_static_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::JS_veto_set_variable(const Napi::CallbackInfo &info, const Napi::Value &value) {
+SWIG_NAPI_Raise(info.Env(), "Tried to write read-only variable.");
+}
+// jsnapi_class_instance
+class _exports_ATIRE_indexer_inst : public _exports_ATIRE_indexer_templ<_exports_ATIRE_indexer_inst> {
+public:
+  using _exports_ATIRE_indexer_templ::_exports_ATIRE_indexer_templ;
+  virtual ~_exports_ATIRE_indexer_inst() {
+    
+  };
+  static void GetMembers(
+    Napi::Env,
+    std::map<std::string, _exports_ATIRE_indexer_templ::PropertyDescriptor> &,
+    std::map<std::string, _exports_ATIRE_indexer_templ::PropertyDescriptor> &
+    );
+  static Napi::Function GetClass(Napi::Env);
+};
+/* Class: ATIRE_indexer (_exports_ATIRE_indexer) */
+// jsnapi_getclass
+Napi::Function _exports_ATIRE_indexer_inst::GetClass(Napi::Env env) {
+  std::map<std::string, _exports_ATIRE_indexer_templ::PropertyDescriptor> members, staticMembers;
+  GetMembers(env, members, staticMembers);
+  
+  std::vector<_exports_ATIRE_indexer_inst::PropertyDescriptor> symbolTable;
+  for (auto it = members.begin(); it != members.end(); it++)
+  symbolTable.push_back(it->second);
+  for (auto it = staticMembers.begin(); it != staticMembers.end(); it++)
+  symbolTable.push_back(it->second);
+  
+  return Napi::ObjectWrap<_exports_ATIRE_indexer_inst>::DefineClass(env, "ATIRE_indexer", symbolTable);
+}
+
+void _exports_ATIRE_indexer_inst::GetMembers(
+  Napi::Env env,
+  std::map<std::string, _exports_ATIRE_indexer_templ::PropertyDescriptor> &members,
+  std::map<std::string, _exports_ATIRE_indexer_templ::PropertyDescriptor> &staticMembers
+  ) {
+  std::map<std::string, SWIG_NAPI_ObjectWrap_templ<SWIG_NAPI_ObjectWrap_inst>::PropertyDescriptor> baseMembers, baseStaticMembers;
+  SWIG_NAPI_ObjectWrap_inst::GetMembers(env, baseMembers, baseStaticMembers);
+  members.insert(baseMembers.begin(), baseMembers.end());
+  staticMembers.insert(staticMembers.begin(), staticMembers.end());
+  
+  /* register wrapper functions */
+  // jsnapi_member_function_descriptor
+  members.erase("usage");
+  members.insert({
+    "usage",
+      _exports_ATIRE_indexer_templ::InstanceMethod("usage",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_usage,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("init");
+  members.insert({
+    "init",
+      _exports_ATIRE_indexer_templ::InstanceMethod("init",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer__wrap_ATIRE_indexer_init,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("finish");
+  members.insert({
+    "finish",
+      _exports_ATIRE_indexer_templ::InstanceMethod("finish",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_finish,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("index_document");
+  members.insert({
+    "index_document",
+      _exports_ATIRE_indexer_templ::InstanceMethod("index_document",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("index");
+  members.insert({
+    "index",
+      _exports_ATIRE_indexer_templ::InstanceMethod("index",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_index,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_docno");
+  members.insert({
+    "get_docno",
+      _exports_ATIRE_indexer_templ::InstanceMethod("get_docno",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_get_docno,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("enable_parallel_indexing");
+  members.insert({
+    "enable_parallel_indexing",
+      _exports_ATIRE_indexer_templ::InstanceMethod("enable_parallel_indexing",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_enable_parallel_indexing,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_index_file_size");
+  members.insert({
+    "get_index_file_size",
+      _exports_ATIRE_indexer_templ::InstanceMethod("get_index_file_size",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_get_index_file_size,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_index_file");
+  members.insert({
+    "get_index_file",
+      _exports_ATIRE_indexer_templ::InstanceMethod("get_index_file",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_get_index_file,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_index");
+  members.insert({
+    "get_index",
+      _exports_ATIRE_indexer_templ::InstanceMethod("get_index",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_get_index,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("release_index");
+  members.insert({
+    "release_index",
+      _exports_ATIRE_indexer_templ::InstanceMethod("release_index",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_release_index,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  // jsnapi_member_function_descriptor
+  members.erase("get_doc_list");
+  members.insert({
+    "get_doc_list",
+      _exports_ATIRE_indexer_templ::InstanceMethod("get_doc_list",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_get_doc_list,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  
+  /* add static class functions and variables */
+  // jsnapi_register_static_variable
+  staticMembers.erase("EMPTY_DOCUMENT_CONTENT");
+  staticMembers.insert({
+    "EMPTY_DOCUMENT_CONTENT",
+      StaticAccessor("EMPTY_DOCUMENT_CONTENT",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get,
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("EMPTY_DOCUMENT_FILENAME");
+  staticMembers.insert({
+    "EMPTY_DOCUMENT_FILENAME",
+      StaticAccessor("EMPTY_DOCUMENT_FILENAME",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get,
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_variable
+  staticMembers.erase("EMPTY_DOUCMENT_LENGTH");
+  staticMembers.insert({
+    "EMPTY_DOUCMENT_LENGTH",
+      StaticAccessor("EMPTY_DOUCMENT_LENGTH",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get,
+        &_exports_ATIRE_indexer_templ::JS_veto_set_static_variable,
+        static_cast<napi_property_attributes>(napi_writable | napi_enumerable | napi_configurable))
+    });
+  // jsnapi_register_static_function
+  staticMembers.erase("initialize");
+  staticMembers.insert({
+    "initialize",
+      StaticMethod("initialize",
+        &_exports_ATIRE_indexer_templ::_wrap_ATIRE_indexer_initialize,
+        static_cast<napi_property_attributes>(napi_writable | napi_configurable))
+    });
+  
+}
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ANT_on_error__SWIG_0(const Napi::CallbackInfo &);
+// jsnapi_class_method_declaration
+Napi::Value _wrap_ANT_on_error__SWIG_1(const Napi::CallbackInfo &);
+
+
+// js_global_getter
+Napi::Value exports_FILENAME_INDEX_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
+  
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(1));
+  
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_NULL_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_NULL_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(0));
   
-  jsresult = SWIG_From_int(static_cast< int >(0));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_new_ATIRE_API_remote(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+template <typename SWIG_OBJ_WRAP>
+// js_ctor
+// This is the main constructor
+_exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_remote_templ(const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  Napi::Env env = info.Env();
   
-  SWIGV8_OBJECT self = args.Holder();
+  this->info = SWIGTYPE_p_ATIRE_API_remote;
+  if (info.Length() == 1 && info[0].IsExternal()) {
+    // This constructor has been called internally from C++/SWIG
+    // to wrap an already existing C++ object in JS
+    this->self = info[0].As<Napi::External<void>>().Data();
+    this->owned = false;
+    return;
+  }
+  this->owned = true;
+  
   ATIRE_API_remote *result;
-  if(self->InternalFieldCount() < 1) SWIG_exception_fail(SWIG_ERROR, "Illegal call of constructor _wrap_new_ATIRE_API_remote.");
-  if(args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_remote.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_remote.");
+  }
   result = (ATIRE_API_remote *)new ATIRE_API_remote();
   
   
-  
-  SWIGV8_SetPrivateData(self, result, SWIGTYPE_p_ATIRE_API_remote, SWIG_POINTER_OWN);
-  SWIGV8_RETURN(self);
-  
+  this->self = result;
+  return;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return;
+}
+
+// This is the bypass constructor to be used from child classes
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_remote_templ(bool, const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  
 }
 
 
-static void _wrap_delete_ATIRE_API_remote(const v8::WeakCallbackInfo<SWIGV8_Proxy> &data) {
-  SWIGV8_Proxy *proxy = data.GetParameter();
-  
-  if(proxy->swigCMemOwn && proxy->swigCObject) {
-    ATIRE_API_remote * arg1 = (ATIRE_API_remote *)proxy->swigCObject;
+// js_dtoroverride
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::~_exports_ATIRE_API_remote_templ() {
+  auto arg1 = reinterpret_cast<ATIRE_API_remote *>(this->self);
+  if (this->owned && arg1) {
     delete arg1;
+    this->self = nullptr;
   }
-  delete proxy;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_open(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_open(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -1821,68 +2839,76 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_open(const SwigV8Arguments &args
   int alloc2 = 0 ;
   long result;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_open.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_open.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_open" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_remote_open" "', argument " "2"" of type '" "char *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);result = (long)(arg1)->open(arg2);
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_close(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_close(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_close.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_close.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_close" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);result = (long)(arg1)->close();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_get_connect_string(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_get_connect_string(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_get_connect_string.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_get_connect_string.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_get_connect_string" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
@@ -1890,18 +2916,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_get_connect_string(const SwigV8A
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_load_index(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_load_index(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -1915,46 +2942,51 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_load_index(const SwigV8Arguments
   int alloc3 = 0 ;
   long result;
   
-  if (args.Length() < 2 || args.Length() > 2) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_load_index.");
+  if(static_cast<int>(info.Length()) < 2 || static_cast<int>(info.Length()) > 2) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_load_index.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_load_index" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_remote_load_index" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(args[1], &buf3, NULL, &alloc3);
+  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(info[1], &buf3, NULL, &alloc3);
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_remote_load_index" "', argument " "3"" of type '" "char *""'");
   }
   arg3 = reinterpret_cast< char * >(buf3);result = (long)(arg1)->load_index(arg2,arg3);
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   if (alloc3 == SWIG_NEWOBJ) delete[] buf3;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_describe_index(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_describe_index(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_describe_index.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_describe_index.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_describe_index" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
@@ -1962,19 +2994,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_describe_index(const SwigV8Argum
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_search__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   char *arg2 = (char *) 0 ;
   long long arg3 ;
@@ -1994,23 +3026,23 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_0(const SwigV8Argum
   int alloc5 = 0 ;
   char *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_search" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_remote_search" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long_SS_long(args[1], &val3);
+  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long_SS_long(info[1], &val3);
   if (!SWIG_IsOK(ecode3)) {
     SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "ATIRE_API_remote_search" "', argument " "3"" of type '" "long long""'");
   } 
-  arg3 = static_cast< long long >(val3);ecode4 = SWIG_AsVal_long_SS_long(args[2], &val4);
+  arg3 = static_cast< long long >(val3);ecode4 = SWIG_AsVal_long_SS_long(info[2], &val4);
   if (!SWIG_IsOK(ecode4)) {
     SWIG_exception_fail(SWIG_ArgError(ecode4), "in method '" "ATIRE_API_remote_search" "', argument " "4"" of type '" "long long""'");
   } 
-  arg4 = static_cast< long long >(val4);res5 = SWIG_AsCharPtrAndSize(args[3], &buf5, NULL, &alloc5);
+  arg4 = static_cast< long long >(val4);res5 = SWIG_AsCharPtrAndSize(info[3], &buf5, NULL, &alloc5);
   if (!SWIG_IsOK(res5)) {
     SWIG_exception_fail(SWIG_ArgError(res5), "in method '" "ATIRE_API_remote_search" "', argument " "5"" of type '" "char *""'");
   }
@@ -2022,19 +3054,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_0(const SwigV8Argum
   
   if (alloc5 == SWIG_NEWOBJ) delete[] buf5;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_search__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   char *arg2 = (char *) 0 ;
   long long arg3 ;
@@ -2050,19 +3082,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_1(const SwigV8Argum
   int ecode4 = 0 ;
   char *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_search" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_remote_search" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long_SS_long(args[1], &val3);
+  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long_SS_long(info[1], &val3);
   if (!SWIG_IsOK(ecode3)) {
     SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "ATIRE_API_remote_search" "', argument " "3"" of type '" "long long""'");
   } 
-  arg3 = static_cast< long long >(val3);ecode4 = SWIG_AsVal_long_SS_long(args[2], &val4);
+  arg3 = static_cast< long long >(val3);ecode4 = SWIG_AsVal_long_SS_long(info[2], &val4);
   if (!SWIG_IsOK(ecode4)) {
     SWIG_exception_fail(SWIG_ArgError(ecode4), "in method '" "ATIRE_API_remote_search" "', argument " "4"" of type '" "long long""'");
   } 
@@ -2073,51 +3105,106 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_search__SWIG_1(const SwigV8Argum
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote__wrap_ATIRE_API_remote_search(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote__wrap_ATIRE_API_remote_search(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 4 && args.Length() <= 4) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_remote_search__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 4 && static_cast<int>(info.Length()) <= 4) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_remote_search__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_remote_search__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 3 && static_cast<int>(info.Length()) <= 3) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_remote_search__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_remote_search__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 3 && args.Length() <= 3) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_remote_search__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function search.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function search.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_get_document(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_get_document(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   long long arg2 ;
   long long *arg3 = (long long *) 0 ;
@@ -2129,17 +3216,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_get_document(const SwigV8Argumen
   int res3 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 2 || args.Length() > 2) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_get_document.");
+  if(static_cast<int>(info.Length()) < 2 || static_cast<int>(info.Length()) > 2) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_get_document.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_get_document" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);ecode2 = SWIG_AsVal_long_SS_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);ecode2 = SWIG_AsVal_long_SS_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_remote_get_document" "', argument " "2"" of type '" "long long""'");
   } 
-  arg2 = static_cast< long long >(val2);res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_long_long, 0 |  0 );
+  arg2 = static_cast< long long >(val2);res3 = SWIG_ConvertPtr(info[1], &argp3,SWIGTYPE_p_long_long, 0 |  0 );
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_remote_get_document" "', argument " "3"" of type '" "long long *""'"); 
   }
@@ -2149,18 +3238,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_get_document(const SwigV8Argumen
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_send_command(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_send_command(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -2170,13 +3260,15 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_send_command(const SwigV8Argumen
   int alloc2 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_send_command.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_send_command.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_send_command" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_remote_send_command" "', argument " "2"" of type '" "char *""'");
   }
@@ -2185,184 +3277,217 @@ static SwigV8ReturnValue _wrap_ATIRE_API_remote_send_command(const SwigV8Argumen
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_remote_exit(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_remote_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_remote_exit(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_remote *arg1 = (ATIRE_API_remote *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_exit.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_remote_exit.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_remote, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_remote_exit" "', argument " "1"" of type '" "ATIRE_API_remote *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_remote * >(argp1);(arg1)->exit();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
-}
-
-
-static SwigV8ReturnValue exports_ATIRE_API_server_CHANNEL_FILE_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
-  
-  jsresult = SWIG_From_int(static_cast< int >(ATIRE_API_server::CHANNEL_FILE));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ATIRE_API_server_CHANNEL_SOCKET_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_server_CHANNEL_FILE_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ATIRE_API_server::CHANNEL_FILE));
   
-  jsresult = SWIG_From_int(static_cast< int >(ATIRE_API_server::CHANNEL_SOCKET));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ATIRE_API_server_CHANNEL_MEMORY_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_server_CHANNEL_SOCKET_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ATIRE_API_server::CHANNEL_SOCKET));
   
-  jsresult = SWIG_From_int(static_cast< int >(ATIRE_API_server::CHANNEL_MEMORY));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ATIRE_API_server_XML_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_server_CHANNEL_MEMORY_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ATIRE_API_server::CHANNEL_MEMORY));
   
-  jsresult = SWIG_From_int(static_cast< int >(ATIRE_API_server::XML));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ATIRE_API_server_JSON_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_server_XML_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ATIRE_API_server::XML));
   
-  jsresult = SWIG_From_int(static_cast< int >(ATIRE_API_server::JSON));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_new_ATIRE_API_server(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_server_JSON_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_OBJECT self = args.Holder();
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ATIRE_API_server::JSON));
+  
+  return jsresult;
+  
+  goto fail;
+fail:
+  return Napi::Value();
+}
+
+
+template <typename SWIG_OBJ_WRAP>
+// js_ctor
+// This is the main constructor
+_exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_server_templ(const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  Napi::Env env = info.Env();
+  
+  this->info = SWIGTYPE_p_ATIRE_API_server;
+  if (info.Length() == 1 && info[0].IsExternal()) {
+    // This constructor has been called internally from C++/SWIG
+    // to wrap an already existing C++ object in JS
+    this->self = info[0].As<Napi::External<void>>().Data();
+    this->owned = false;
+    return;
+  }
+  this->owned = true;
+  
   ATIRE_API_server *result;
-  if(self->InternalFieldCount() < 1) SWIG_exception_fail(SWIG_ERROR, "Illegal call of constructor _wrap_new_ATIRE_API_server.");
-  if(args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_server.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_server.");
+  }
   result = (ATIRE_API_server *)new ATIRE_API_server();
   
   
-  
-  SWIGV8_SetPrivateData(self, result, SWIGTYPE_p_ATIRE_API_server, SWIG_POINTER_OWN);
-  SWIGV8_RETURN(self);
-  
+  this->self = result;
+  return;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return;
+}
+
+// This is the bypass constructor to be used from child classes
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_server_templ(bool, const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  
 }
 
 
-static void _wrap_delete_ATIRE_API_server(const v8::WeakCallbackInfo<SWIGV8_Proxy> &data) {
-  SWIGV8_Proxy *proxy = data.GetParameter();
-  
-  if(proxy->swigCMemOwn && proxy->swigCObject) {
-    ATIRE_API_server * arg1 = (ATIRE_API_server *)proxy->swigCObject;
+// js_dtoroverride
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::~_exports_ATIRE_API_server_templ() {
+  auto arg1 = reinterpret_cast<ATIRE_API_server *>(this->self);
+  if (this->owned && arg1) {
     delete arg1;
+    this->self = nullptr;
   }
-  delete proxy;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_initialize(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_initialize(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_initialize.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_initialize.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_initialize" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->initialize();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_atire(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_atire(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ATIRE_API *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_atire.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_atire.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_atire" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -2370,19 +3495,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_atire(const SwigV8Arguments 
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ATIRE_API, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_params__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_params__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   int arg2 ;
   char **arg3 = (char **) (char **)0 ;
@@ -2393,37 +3518,37 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_params__SWIG_0(const SwigV8A
   void *argp3 = 0 ;
   int res3 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_params" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_params" "', argument " "2"" of type '" "int""'");
   } 
-  arg2 = static_cast< int >(val2);res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
+  arg2 = static_cast< int >(val2);res3 = SWIG_ConvertPtr(info[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_API_server_set_params" "', argument " "3"" of type '" "char *[]""'"); 
   } 
   arg3 = reinterpret_cast< char ** >(argp3);(arg1)->set_params(arg2,arg3);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_params__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_params__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -2432,64 +3557,119 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_params__SWIG_1(const SwigV8A
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_params" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_set_params" "', argument " "2"" of type '" "char *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);(arg1)->set_params(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_set_params(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_set_params(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_set_params__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_set_params__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_set_params__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_set_params__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_set_params__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_set_params__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function set_params.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function set_params.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_param(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_param(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   int arg2 ;
   void *argp1 = 0 ;
@@ -2497,33 +3677,36 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_param(const SwigV8Arguments 
   int val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_param.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_param.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_param" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_param" "', argument " "2"" of type '" "int""'");
   } 
   arg2 = static_cast< int >(val2);(arg1)->set_param(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_ant_version(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_ant_version(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -2531,59 +3714,65 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_ant_version(const SwigV8Argu
   long val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_ant_version.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_ant_version.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_ant_version" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_ant_version" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);(arg1)->set_ant_version(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_start(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_start(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_start" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->start();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_open_from_indexer(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_open_from_indexer(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   ATIRE_indexer *arg2 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
@@ -2592,216 +3781,236 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_open_from_indexer(const SwigV8Ar
   int res2 = 0 ;
   long result;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_open_from_indexer.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_open_from_indexer.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_open_from_indexer" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_ConvertPtr(args[0], &argp2,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_ConvertPtr(info[0], &argp2,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_open_from_indexer" "', argument " "2"" of type '" "ATIRE_indexer *""'"); 
   }
   arg2 = reinterpret_cast< ATIRE_indexer * >(argp2);result = (long)(arg1)->open_from_indexer(arg2);
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_loop(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_loop(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_loop.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_loop.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_loop" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->loop();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_poll(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_poll(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_poll" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->poll();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_poll_and_process(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_poll_and_process(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll_and_process.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_poll_and_process.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_poll_and_process" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->poll_and_process();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_process_command(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_process_command(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_process_command.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_process_command.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_process_command" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->process_command();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_interrupt(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_interrupt(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_interrupt.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_interrupt.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_interrupt" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->interrupt();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_finish(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_finish(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_finish.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_finish.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_finish" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->finish();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_run__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_run__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   int result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_run" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (int)(arg1)->run();
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_run__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_run__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -2811,150 +4020,216 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_run__SWIG_1(const SwigV8Argument
   int alloc2 = 0 ;
   int result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_run" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_run" "', argument " "2"" of type '" "char *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);result = (int)(arg1)->run(arg2);
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_run(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_run(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 0 && args.Length() <= 0) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_run__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 0 && static_cast<int>(info.Length()) <= 0) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_run__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_run__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_run__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_run__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_run__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function run.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function run.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_ant(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_ant(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_ant.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_ant.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_ant" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->ant();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_start_stats(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_start_stats(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start_stats.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_start_stats.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_start_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->start_stats();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_end_stats(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_end_stats(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_end_stats.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_end_stats.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_end_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->end_stats();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_stats(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_stats(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ANT_stats *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_stats.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_stats.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_stats" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -2962,53 +4237,59 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_stats(const SwigV8Arguments 
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ANT_stats, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_search_time(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_search_time(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_search_time.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_search_time.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_search_time" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (long long)(arg1)->get_search_time();
-  jsresult = SWIG_From_long_SS_long(static_cast< long long >(result));
+  jsresult = SWIG_From_long_SS_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_version(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_version(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_version.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_version.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_version" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3016,71 +4297,78 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_version(const SwigV8Arguments &a
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_prompt(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_prompt(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_prompt.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_prompt.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_prompt" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->prompt();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_is_interrupted(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_is_interrupted(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   int result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_is_interrupted.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_is_interrupted.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_is_interrupted" "', argument " "1"" of type '" "ATIRE_API_server const *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (int)((ATIRE_API_server const *)arg1)->is_interrupted();
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_interrupted(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_interrupted(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   int arg2 ;
   void *argp1 = 0 ;
@@ -3088,60 +4376,66 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_interrupted(const SwigV8Argu
   int val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_interrupted.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_interrupted.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_interrupted" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_interrupted" "', argument " "2"" of type '" "int""'");
   } 
   arg2 = static_cast< int >(val2);(arg1)->set_interrupted(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_has_new_command(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_has_new_command(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   int result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_has_new_command.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_has_new_command.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_has_new_command" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (int)(arg1)->has_new_command();
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_insert_command(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_insert_command(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -3150,33 +4444,36 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_insert_command(const SwigV8Argum
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_insert_command.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_insert_command.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_insert_command" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_insert_command" "', argument " "2"" of type '" "char const *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);(arg1)->insert_command((char const *)arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_outchannel(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_outchannel(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3184,41 +4481,46 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_outchannel(const SwigV8Argum
   long val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_outchannel.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_outchannel.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_outchannel" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_outchannel" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);(arg1)->set_outchannel(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_outchannel_content(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_outchannel_content(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_outchannel_content.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_outchannel_content.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_outchannel_content" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3226,19 +4528,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_outchannel_content(const Swi
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_search__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_search__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -3248,90 +4550,145 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_search__SWIG_0(const SwigV8Argum
   int alloc2 = 0 ;
   long result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_search" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_search" "', argument " "2"" of type '" "char const *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);result = (long)(arg1)->search((char const *)arg2);
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_search__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_search__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_search" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (long)(arg1)->search();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
-}
-
-
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_search(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_search__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  if(args.Length() >= 0 && args.Length() <= 0) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_search__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function search.");
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_goto_result(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_search(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_search__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_search__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 0 && static_cast<int>(info.Length()) <= 0) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_search__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_search__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function search.");
+  
+  goto fail;
+fail:
+  return Napi::Value();
+}
+
+
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_goto_result(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3339,34 +4696,36 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_goto_result(const SwigV8Argument
   long val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_goto_result.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_goto_result.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_goto_result" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_goto_result" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);(arg1)->goto_result(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_list_term__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   long arg3 ;
@@ -3379,15 +4738,15 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_0(const SwigV8Ar
   int ecode3 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_list_term" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_list_term" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long(args[1], &val3);
+  arg2 = reinterpret_cast< char * >(buf2);ecode3 = SWIG_AsVal_long(info[1], &val3);
   if (!SWIG_IsOK(ecode3)) {
     SWIG_exception_fail(SWIG_ArgError(ecode3), "in method '" "ATIRE_API_server_list_term" "', argument " "3"" of type '" "long""'");
   } 
@@ -3397,19 +4756,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_0(const SwigV8Ar
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_list_term__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -3419,11 +4778,11 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_1(const SwigV8Ar
   int alloc2 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_list_term" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_API_server_list_term" "', argument " "2"" of type '" "char *""'");
   }
@@ -3432,52 +4791,106 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_list_term__SWIG_1(const SwigV8Ar
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_list_term(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_list_term(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_list_term__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_list_term__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_list_term__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_list_term__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_list_term__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_list_term__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function list_term.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function list_term.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_next_term__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_next_term__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3486,11 +4899,11 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_next_term__SWIG_0(const SwigV8Ar
   int ecode2 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_next_term" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_next_term" "', argument " "2"" of type '" "long""'");
   } 
@@ -3499,25 +4912,25 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_next_term__SWIG_0(const SwigV8Ar
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_next_term__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_next_term__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_next_term" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3525,51 +4938,106 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_next_term__SWIG_1(const SwigV8Ar
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_next_term(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_next_term(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_next_term__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_next_term__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_next_term__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 0 && static_cast<int>(info.Length()) <= 0) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_next_term__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_next_term__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 0 && args.Length() <= 0) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_next_term__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function next_term.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function next_term.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_goto_term(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_goto_term(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3578,13 +5046,15 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_goto_term(const SwigV8Arguments 
   int ecode2 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_goto_term.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_goto_term.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_goto_term" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_goto_term" "', argument " "2"" of type '" "long""'");
   } 
@@ -3593,26 +5063,29 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_goto_term(const SwigV8Arguments 
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_result_to_json(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_result_to_json(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_result_to_json.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_result_to_json.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_result_to_json" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3620,26 +5093,29 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_result_to_json(const SwigV8Argum
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_result(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_result(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ATIRE_API_result *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_result.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_result.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_result" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3647,46 +5123,49 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_result(const SwigV8Arguments
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_next_result(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_next_result(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_next_result.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_next_result.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_next_result" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (long)(arg1)->next_result();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3694,97 +5173,154 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(con
   long val2 ;
   int ecode2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_result_to_outchannel" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_result_to_outchannel" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);(arg1)->result_to_outchannel(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_result_to_outchannel" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);(arg1)->result_to_outchannel();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
-}
-
-
-static SwigV8ReturnValue _wrap_ATIRE_API_server__wrap_ATIRE_API_server_result_to_outchannel(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  if(args.Length() >= 0 && args.Length() <= 0) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function result_to_outchannel.");
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_load_document(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server__wrap_ATIRE_API_server_result_to_outchannel(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_result_to_outchannel__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 0 && static_cast<int>(info.Length()) <= 0) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_API_server_result_to_outchannel__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function result_to_outchannel.");
+  
+  goto fail;
+fail:
+  return Napi::Value();
+}
+
+
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_load_document(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_load_document.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_load_document.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_load_document" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3792,18 +5328,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_load_document(const SwigV8Argume
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_document(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_document(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3812,13 +5349,15 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_document(const SwigV8Argumen
   int ecode2 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_document.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_document.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_document" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_get_document" "', argument " "2"" of type '" "long""'");
   } 
@@ -3827,26 +5366,29 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_document(const SwigV8Argumen
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_current_document(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_current_document(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_current_document.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_current_document.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_current_document" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
@@ -3854,45 +5396,49 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_get_current_document(const SwigV
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_get_document_count(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_get_document_count(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_document_count.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_get_document_count.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_get_document_count" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);result = (long long)(arg1)->get_document_count();
-  jsresult = SWIG_From_long_SS_long(static_cast< long long >(result));
+  jsresult = SWIG_From_long_SS_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_page_size(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_page_size(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -3900,33 +5446,36 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_page_size(const SwigV8Argume
   long val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_page_size.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_page_size.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_page_size" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_long(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_page_size" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);(arg1)->set_page_size(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_server_set_output_format(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_server_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_server_set_output_format(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_server *arg1 = (ATIRE_API_server *) 0 ;
   int arg2 ;
   void *argp1 = 0 ;
@@ -3934,32 +5483,36 @@ static SwigV8ReturnValue _wrap_ATIRE_API_server_set_output_format(const SwigV8Ar
   int val2 ;
   int ecode2 = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_output_format.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_API_server_set_output_format.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_server, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_server_set_output_format" "', argument " "1"" of type '" "ATIRE_API_server *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_API_server * >(argp1);ecode2 = SWIG_AsVal_int(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_API_server_set_output_format" "', argument " "2"" of type '" "int""'");
   } 
   arg2 = static_cast< int >(val2);(arg1)->set_output_format(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_EMPTY_STRING_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_EMPTY_STRING_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *arg1 = (char *) 0 ;
   int res1 ;
   char *buf1 = 0 ;
@@ -3977,47 +5530,53 @@ static void _wrap_ATIRE_API_result_EMPTY_STRING_set(v8::Local<v8::Name> property
   }
   if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_EMPTY_STRING_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_EMPTY_STRING_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *result = 0 ;
   
   result = (char *)ATIRE_API_result::EMPTY_STRING;
   jsresult = SWIG_FromCharPtr((const char *)result);
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ATIRE_API_result_MAX_TITLE_LENGTH_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::exports_ATIRE_API_result_MAX_TITLE_LENGTH_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(ATIRE_API_result::MAX_TITLE_LENGTH));
   
-  jsresult = SWIG_From_long(static_cast< long >(ATIRE_API_result::MAX_TITLE_LENGTH));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_rank_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_rank_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   int arg2 ;
   void *argp1 = 0 ;
@@ -4025,7 +5584,7 @@ static void _wrap_ATIRE_API_result_rank_set(v8::Local<v8::Name> property, v8::Lo
   int val2 ;
   int ecode2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_rank_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4037,40 +5596,45 @@ static void _wrap_ATIRE_API_result_rank_set(v8::Local<v8::Name> property, v8::Lo
   
   
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_rank_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_rank_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   int result;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_rank_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_result * >(argp1);result = (int) ((arg1)->rank);
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_docid_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_docid_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   long arg2 ;
   void *argp1 = 0 ;
@@ -4078,7 +5642,7 @@ static void _wrap_ATIRE_API_result_docid_set(v8::Local<v8::Name> property, v8::L
   long val2 ;
   int ecode2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_docid_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4090,40 +5654,45 @@ static void _wrap_ATIRE_API_result_docid_set(v8::Local<v8::Name> property, v8::L
   
   
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_docid_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_docid_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_docid_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_result * >(argp1);result = (long) ((arg1)->docid);
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_rsv_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_rsv_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   float arg2 ;
   void *argp1 = 0 ;
@@ -4131,7 +5700,7 @@ static void _wrap_ATIRE_API_result_rsv_set(v8::Local<v8::Name> property, v8::Loc
   float val2 ;
   int ecode2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_rsv_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4143,40 +5712,45 @@ static void _wrap_ATIRE_API_result_rsv_set(v8::Local<v8::Name> property, v8::Loc
   
   
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_rsv_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_rsv_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   float result;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_rsv_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_API_result * >(argp1);result = (float) ((arg1)->rsv);
-  jsresult = SWIG_From_float(static_cast< float >(result));
+  jsresult = SWIG_From_float  SWIG_NAPI_FROM_CALL_ARGS(static_cast< float >(result));
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_title_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_title_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -4185,7 +5759,7 @@ static void _wrap_ATIRE_API_result_title_set(v8::Local<v8::Name> property, v8::L
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_title_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4203,22 +5777,25 @@ static void _wrap_ATIRE_API_result_title_set(v8::Local<v8::Name> property, v8::L
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_title_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_title_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_title_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4226,17 +5803,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_result_title_get(v8::Local<v8::Name> pr
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_snippet_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_snippet_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -4245,7 +5824,7 @@ static void _wrap_ATIRE_API_result_snippet_set(v8::Local<v8::Name> property, v8:
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_snippet_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4263,22 +5842,25 @@ static void _wrap_ATIRE_API_result_snippet_set(v8::Local<v8::Name> property, v8:
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_snippet_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_snippet_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_snippet_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4286,17 +5868,19 @@ static SwigV8ReturnValue _wrap_ATIRE_API_result_snippet_get(v8::Local<v8::Name> 
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_API_result_document_name_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_document_name_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -4305,7 +5889,7 @@ static void _wrap_ATIRE_API_result_document_name_set(v8::Local<v8::Name> propert
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_document_name_set" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4323,22 +5907,25 @@ static void _wrap_ATIRE_API_result_document_name_set(v8::Local<v8::Name> propert
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_API_result_document_name_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_API_result_document_name_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_API_result *arg1 = (ATIRE_API_result *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  res1 = SWIG_ConvertPtr(info.Holder(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_API_result, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_API_result_document_name_get" "', argument " "1"" of type '" "ATIRE_API_result *""'"); 
   }
@@ -4346,48 +5933,69 @@ static SwigV8ReturnValue _wrap_ATIRE_API_result_document_name_get(v8::Local<v8::
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_new_ATIRE_API_result(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+template <typename SWIG_OBJ_WRAP>
+// js_ctor
+// This is the main constructor
+_exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_result_templ(const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  Napi::Env env = info.Env();
   
-  SWIGV8_OBJECT self = args.Holder();
+  this->info = SWIGTYPE_p_ATIRE_API_result;
+  if (info.Length() == 1 && info[0].IsExternal()) {
+    // This constructor has been called internally from C++/SWIG
+    // to wrap an already existing C++ object in JS
+    this->self = info[0].As<Napi::External<void>>().Data();
+    this->owned = false;
+    return;
+  }
+  this->owned = true;
+  
   ATIRE_API_result *result;
-  if(self->InternalFieldCount() < 1) SWIG_exception_fail(SWIG_ERROR, "Illegal call of constructor _wrap_new_ATIRE_API_result.");
-  if(args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_result.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_API_result.");
+  }
   result = (ATIRE_API_result *)new ATIRE_API_result();
   
   
-  
-  SWIGV8_SetPrivateData(self, result, SWIGTYPE_p_ATIRE_API_result, SWIG_POINTER_OWN);
-  SWIGV8_RETURN(self);
-  
+  this->self = result;
+  return;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return;
+}
+
+// This is the bypass constructor to be used from child classes
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_API_result_templ(bool, const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  
 }
 
 
-static void _wrap_delete_ATIRE_API_result(const v8::WeakCallbackInfo<SWIGV8_Proxy> &data) {
-  SWIGV8_Proxy *proxy = data.GetParameter();
-  
-  if(proxy->swigCMemOwn && proxy->swigCObject) {
-    ATIRE_API_result * arg1 = (ATIRE_API_result *)proxy->swigCObject;
+// js_dtoroverride
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_API_result_templ<SWIG_OBJ_WRAP>::~_exports_ATIRE_API_result_templ() {
+  auto arg1 = reinterpret_cast<ATIRE_API_result *>(this->self);
+  if (this->owned && arg1) {
     delete arg1;
+    this->self = nullptr;
   }
-  delete proxy;
 }
 
 
-static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *arg1 = (char *) 0 ;
   int res1 ;
   char *buf1 = 0 ;
@@ -4405,32 +6013,37 @@ static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set(v8::Local<v8::Name> p
   }
   if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *result = 0 ;
   
   result = (char *)ATIRE_indexer::EMPTY_DOCUMENT_CONTENT;
   jsresult = SWIG_FromCharPtr((const char *)result);
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_setter
+template <typename SWIG_OBJ_WRAP>
+void _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set(const Napi::CallbackInfo &info, const Napi::Value &value) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *arg1 = (char *) 0 ;
   int res1 ;
   char *buf1 = 0 ;
@@ -4448,108 +6061,134 @@ static void _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set(v8::Local<v8::Name> 
   }
   if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *result = 0 ;
   
   result = (char *)ATIRE_indexer::EMPTY_DOCUMENT_FILENAME;
   jsresult = SWIG_FromCharPtr((const char *)result);
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_getter
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   int result;
   
   result = (int)(int)ATIRE_indexer::EMPTY_DOUCMENT_LENGTH;
-  jsresult = SWIG_From_int(static_cast< int >(result));
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(result));
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_new_ATIRE_indexer(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+template <typename SWIG_OBJ_WRAP>
+// js_ctor
+// This is the main constructor
+_exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_indexer_templ(const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  Napi::Env env = info.Env();
   
-  SWIGV8_OBJECT self = args.Holder();
+  this->info = SWIGTYPE_p_ATIRE_indexer;
+  if (info.Length() == 1 && info[0].IsExternal()) {
+    // This constructor has been called internally from C++/SWIG
+    // to wrap an already existing C++ object in JS
+    this->self = info[0].As<Napi::External<void>>().Data();
+    this->owned = false;
+    return;
+  }
+  this->owned = true;
+  
   ATIRE_indexer *result;
-  if(self->InternalFieldCount() < 1) SWIG_exception_fail(SWIG_ERROR, "Illegal call of constructor _wrap_new_ATIRE_indexer.");
-  if(args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_indexer.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_new_ATIRE_indexer.");
+  }
   result = (ATIRE_indexer *)new ATIRE_indexer();
   
   
-  
-  SWIGV8_SetPrivateData(self, result, SWIGTYPE_p_ATIRE_indexer, SWIG_POINTER_OWN);
-  SWIGV8_RETURN(self);
-  
+  this->self = result;
+  return;
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return;
+}
+
+// This is the bypass constructor to be used from child classes
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_exports_ATIRE_indexer_templ(bool, const Napi::CallbackInfo &info)
+:SWIG_NAPI_ObjectWrap_templ<SWIG_OBJ_WRAP>(true, info) {
+  
 }
 
 
-static void _wrap_delete_ATIRE_indexer(const v8::WeakCallbackInfo<SWIGV8_Proxy> &data) {
-  SWIGV8_Proxy *proxy = data.GetParameter();
-  
-  if(proxy->swigCMemOwn && proxy->swigCObject) {
-    ATIRE_indexer * arg1 = (ATIRE_indexer *)proxy->swigCObject;
+// js_dtoroverride
+template <typename SWIG_OBJ_WRAP>
+_exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::~_exports_ATIRE_indexer_templ() {
+  auto arg1 = reinterpret_cast<ATIRE_indexer *>(this->self);
+  if (this->owned && arg1) {
     delete arg1;
+    this->self = nullptr;
   }
-  delete proxy;
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_usage(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_usage(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_usage.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_usage.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_usage" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);(arg1)->usage();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_init__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_init__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   char *arg2 = (char *) 0 ;
   void *argp1 = 0 ;
@@ -4558,32 +6197,32 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_init__SWIG_0(const SwigV8Arguments 
   char *buf2 = 0 ;
   int alloc2 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_init" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_init" "', argument " "2"" of type '" "char *""'");
   }
   arg2 = reinterpret_cast< char * >(buf2);(arg1)->init(arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_init__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_init__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   int arg2 ;
   char **arg3 = (char **) (char **)0 ;
@@ -4594,97 +6233,154 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_init__SWIG_1(const SwigV8Arguments 
   void *argp3 = 0 ;
   int res3 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_init" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);ecode2 = SWIG_AsVal_int(args[0], &val2);
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);ecode2 = SWIG_AsVal_int(info[0], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ATIRE_indexer_init" "', argument " "2"" of type '" "int""'");
   } 
-  arg2 = static_cast< int >(val2);res3 = SWIG_ConvertPtr(args[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
+  arg2 = static_cast< int >(val2);res3 = SWIG_ConvertPtr(info[1], &argp3,SWIGTYPE_p_p_char, 0 |  0 );
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_init" "', argument " "3"" of type '" "char *[]""'"); 
   } 
   arg3 = reinterpret_cast< char ** >(argp3);(arg1)->init(arg2,arg3);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
   
   
-  SWIGV8_RETURN(jsresult);
-  
-  goto fail;
-fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
-}
-
-
-static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_init(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_init__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_init__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function init.");
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_finish(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer__wrap_ATIRE_indexer_init(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_init__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_init__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_init__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_init__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function init.");
+  
+  goto fail;
+fail:
+  return Napi::Value();
+}
+
+
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_finish(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_finish.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_finish.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_finish" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);result = (long)(arg1)->finish();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_index_document__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   ANT_directory_iterator_object *arg2 = (ANT_directory_iterator_object *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -4697,37 +6393,37 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_0(const SwigV8
   int alloc3 = 0 ;
   long long result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index_document" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(args[0], &argp2,SWIGTYPE_p_ANT_directory_iterator_object, 0 |  0 );
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(info[0], &argp2,SWIGTYPE_p_ANT_directory_iterator_object, 0 |  0 );
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "ANT_directory_iterator_object *""'"); 
   }
-  arg2 = reinterpret_cast< ANT_directory_iterator_object * >(argp2);res3 = SWIG_AsCharPtrAndSize(args[1], &buf3, NULL, &alloc3);
+  arg2 = reinterpret_cast< ANT_directory_iterator_object * >(argp2);res3 = SWIG_AsCharPtrAndSize(info[1], &buf3, NULL, &alloc3);
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "char *""'");
   }
   arg3 = reinterpret_cast< char * >(buf3);result = (long long)(arg1)->index_document(arg2,arg3);
-  jsresult = SWIG_From_long_SS_long(static_cast< long long >(result));
+  jsresult = SWIG_From_long_SS_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long long >(result));
   
   
   if (alloc3 == SWIG_NEWOBJ) delete[] buf3;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_index_document__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   ANT_directory_iterator_object *arg2 = (ANT_directory_iterator_object *) 0 ;
   void *argp1 = 0 ;
@@ -4736,32 +6432,32 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_1(const SwigV8
   int res2 = 0 ;
   long long result;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index_document" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(args[0], &argp2,SWIGTYPE_p_ANT_directory_iterator_object, 0 |  0 );
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(info[0], &argp2,SWIGTYPE_p_ANT_directory_iterator_object, 0 |  0 );
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "ANT_directory_iterator_object *""'"); 
   }
   arg2 = reinterpret_cast< ANT_directory_iterator_object * >(argp2);result = (long long)(arg1)->index_document(arg2);
-  jsresult = SWIG_From_long_SS_long(static_cast< long long >(result));
+  jsresult = SWIG_From_long_SS_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long long >(result));
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_2(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_index_document__SWIG_2(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -4778,42 +6474,42 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_2(const SwigV8
   char *buf4 = 0 ;
   int alloc4 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index_document" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(args[1], &buf3, NULL, &alloc3);
+  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(info[1], &buf3, NULL, &alloc3);
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "char *""'");
   }
-  arg3 = reinterpret_cast< char * >(buf3);res4 = SWIG_AsCharPtrAndSize(args[2], &buf4, NULL, &alloc4);
+  arg3 = reinterpret_cast< char * >(buf3);res4 = SWIG_AsCharPtrAndSize(info[2], &buf4, NULL, &alloc4);
   if (!SWIG_IsOK(res4)) {
     SWIG_exception_fail(SWIG_ArgError(res4), "in method '" "ATIRE_indexer_index_document" "', argument " "4"" of type '" "char *""'");
   }
   arg4 = reinterpret_cast< char * >(buf4);(arg1)->index_document(arg2,arg3,arg4);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   if (alloc3 == SWIG_NEWOBJ) delete[] buf3;
   if (alloc4 == SWIG_NEWOBJ) delete[] buf4;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_3(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_overloaded_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_index_document__SWIG_3(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   char *arg2 = (char *) 0 ;
   char *arg3 = (char *) 0 ;
@@ -4826,220 +6522,346 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_index_document__SWIG_3(const SwigV8
   char *buf3 = 0 ;
   int alloc3 = 0 ;
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index_document" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(args[0], &buf2, NULL, &alloc2);
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_AsCharPtrAndSize(info[0], &buf2, NULL, &alloc2);
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_index_document" "', argument " "2"" of type '" "char *""'");
   }
-  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(args[1], &buf3, NULL, &alloc3);
+  arg2 = reinterpret_cast< char * >(buf2);res3 = SWIG_AsCharPtrAndSize(info[1], &buf3, NULL, &alloc3);
   if (!SWIG_IsOK(res3)) {
     SWIG_exception_fail(SWIG_ArgError(res3), "in method '" "ATIRE_indexer_index_document" "', argument " "3"" of type '" "char *""'");
   }
   arg3 = reinterpret_cast< char * >(buf3);(arg1)->index_document(arg2,arg3);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   if (alloc2 == SWIG_NEWOBJ) delete[] buf2;
   if (alloc3 == SWIG_NEWOBJ) delete[] buf3;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_function_dispatcher
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_index_document__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_index_document__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_index_document__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_index_document__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_index_document__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 3 && static_cast<int>(info.Length()) <= 3) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_index_document__SWIG_2(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_index_document__SWIG_2(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ATIRE_indexer_index_document__SWIG_3(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ATIRE_indexer_index_document__SWIG_3(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_index_document__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  if(args.Length() >= 3 && args.Length() <= 3) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_index_document__SWIG_2(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ATIRE_indexer_index_document__SWIG_3(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function index_document.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function index_document.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_index(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_index(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_index.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_index.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_index" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);(arg1)->index();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_get_docno(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_get_docno(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_docno.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_docno.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_get_docno" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);result = (long)(arg1)->get_docno();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_enable_parallel_indexing(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_enable_parallel_indexing(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_enable_parallel_indexing.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_enable_parallel_indexing.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_enable_parallel_indexing" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);(arg1)->enable_parallel_indexing();
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_initialize(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_initialize(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   bool result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_initialize.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_initialize.");
+  }
   
   result = (bool)ATIRE_indexer::initialize();
-  jsresult = SWIG_From_bool(static_cast< bool >(result));
+  jsresult = SWIG_From_bool  SWIG_NAPI_FROM_CALL_ARGS(static_cast< bool >(result));
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_get_index_file_size(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_get_index_file_size(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   long result;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index_file_size.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index_file_size.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_get_index_file_size" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
   arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);result = (long)(arg1)->get_index_file_size();
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_get_index_file(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_get_index_file(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   char *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index_file.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index_file.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_get_index_file" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
@@ -5047,26 +6869,29 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_get_index_file(const SwigV8Argument
   jsresult = SWIG_FromCharPtr((const char *)result);
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_get_index(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_get_index(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ANT_memory_index *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_index.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_get_index" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
@@ -5074,26 +6899,29 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_get_index(const SwigV8Arguments &ar
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ANT_memory_index, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_release_index(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_release_index(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   void *argp1 = 0 ;
   int res1 = 0 ;
   ANT_memory_index *result = 0 ;
   
-  if (args.Length() < 0 || args.Length() > 0) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_release_index.");
+  if(static_cast<int>(info.Length()) < 0 || static_cast<int>(info.Length()) > 0) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_release_index.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_release_index" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
@@ -5101,18 +6929,19 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_release_index(const SwigV8Arguments
   jsresult = SWIG_NewPointerObj(SWIG_as_voidptr(result), SWIGTYPE_p_ANT_memory_index, 0 |  0 );
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ATIRE_indexer_get_doc_list(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_function
+template <typename SWIG_OBJ_WRAP>
+Napi::Value _exports_ATIRE_indexer_templ<SWIG_OBJ_WRAP>::_wrap_ATIRE_indexer_get_doc_list(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   ATIRE_indexer *arg1 = (ATIRE_indexer *) 0 ;
   long long *arg2 = (long long *) 0 ;
   void *argp1 = 0 ;
@@ -5121,13 +6950,15 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_get_doc_list(const SwigV8Arguments 
   int res2 = 0 ;
   char **result = 0 ;
   
-  if (args.Length() < 1 || args.Length() > 1) SWIG_exception_fail(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_doc_list.");
+  if(static_cast<int>(info.Length()) < 1 || static_cast<int>(info.Length()) > 1) {
+    SWIG_Error(SWIG_ERROR, "Illegal number of arguments for _wrap_ATIRE_indexer_get_doc_list.");
+  }
   
-  res1 = SWIG_ConvertPtr(args.Holder(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
+  res1 = SWIG_ConvertPtr(info.This(), &argp1,SWIGTYPE_p_ATIRE_indexer, 0 |  0 );
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ATIRE_indexer_get_doc_list" "', argument " "1"" of type '" "ATIRE_indexer *""'"); 
   }
-  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(args[0], &argp2,SWIGTYPE_p_long_long, 0 |  0 );
+  arg1 = reinterpret_cast< ATIRE_indexer * >(argp1);res2 = SWIG_ConvertPtr(info[0], &argp2,SWIGTYPE_p_long_long, 0 |  0 );
   if (!SWIG_IsOK(res2)) {
     SWIG_exception_fail(SWIG_ArgError(res2), "in method '" "ATIRE_indexer_get_doc_list" "', argument " "2"" of type '" "long long *""'"); 
   }
@@ -5136,137 +6967,139 @@ static SwigV8ReturnValue _wrap_ATIRE_indexer_get_doc_list(const SwigV8Arguments 
   
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_UNKNOWN_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_UNKNOWN_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_UNKNOWN));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_UNKNOWN));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_NONE_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_NONE_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_NONE));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_NONE));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_SIGNATURE_MISMATCH_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_SIGNATURE_MISMATCH_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_SIGNATURE_MISMATCH));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_SIGNATURE_MISMATCH));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_VERSION_MISMATH_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_VERSION_MISMATH_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_VERSION_MISMATH));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_VERSION_MISMATH));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_FILE_TYPE_MISMATCH_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_FILE_TYPE_MISMATCH_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_FILE_TYPE_MISMATCH));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_FILE_TYPE_MISMATCH));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_INDEX_READING_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_INDEX_READING_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_INDEX_READING));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_INDEX_READING));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_BAD_INDEX_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_BAD_INDEX_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_BAD_INDEX));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_BAD_INDEX));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue exports_ANT_ERROR_FAILED_TO_START_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
+// js_global_getter
+Napi::Value exports_ANT_ERROR_FAILED_TO_START_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
+  jsresult = SWIG_From_int  SWIG_NAPI_FROM_CALL_ARGS(static_cast< int >(ANT_ERROR_FAILED_TO_START));
   
-  jsresult = SWIG_From_int(static_cast< int >(ANT_ERROR_FAILED_TO_START));
-  
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static void _wrap_ANT_error_code_set(v8::Local<v8::Name> property, v8::Local<v8::Value> value, const SwigV8PropertyCallbackInfoVoid &info) {
-  SWIGV8_HANDLESCOPE();
-  
+// js_global_setter
+void _wrap_ANT_error_code_set(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value value = info.Length() > 0 ? info[0] : Napi::Value();
+  Napi::Value jsresult;
   long arg1 ;
   long val1 ;
   int ecode1 = 0 ;
@@ -5278,34 +7111,35 @@ static void _wrap_ANT_error_code_set(v8::Local<v8::Name> property, v8::Local<v8:
   arg1 = static_cast< long >(val1);ANT_error_code = arg1;
   
   
+  return;
+  
   goto fail;
 fail:
   return;
 }
 
 
-static SwigV8ReturnValue _wrap_ANT_error_code_get(v8::Local<v8::Name> property, const SwigV8PropertyCallbackInfo &info) {
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_global_getter
+Napi::Value _wrap_ANT_error_code_get(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   long result;
   
   result = (long)ANT_error_code;
-  jsresult = SWIG_From_long(static_cast< long >(result));
+  jsresult = SWIG_From_long  SWIG_NAPI_FROM_CALL_ARGS(static_cast< long >(result));
   
-  SWIGV8_RETURN_INFO(jsresult, info);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN_INFO(SWIGV8_UNDEFINED(), info);
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ANT_on_error__SWIG_0(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_global_overloaded_function
+Napi::Value _wrap_ANT_on_error__SWIG_0(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *arg1 = (char *) 0 ;
   long arg2 ;
   int res1 ;
@@ -5314,83 +7148,135 @@ static SwigV8ReturnValue _wrap_ANT_on_error__SWIG_0(const SwigV8Arguments &args,
   long val2 ;
   int ecode2 = 0 ;
   
-  res1 = SWIG_AsCharPtrAndSize(args[0], &buf1, NULL, &alloc1);
+  res1 = SWIG_AsCharPtrAndSize(info[0], &buf1, NULL, &alloc1);
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ANT_on_error" "', argument " "1"" of type '" "char const *""'");
   }
-  arg1 = reinterpret_cast< char * >(buf1);ecode2 = SWIG_AsVal_long(args[1], &val2);
+  arg1 = reinterpret_cast< char * >(buf1);ecode2 = SWIG_AsVal_long(info[1], &val2);
   if (!SWIG_IsOK(ecode2)) {
     SWIG_exception_fail(SWIG_ArgError(ecode2), "in method '" "ANT_on_error" "', argument " "2"" of type '" "long""'");
   } 
   arg2 = static_cast< long >(val2);ANT_on_error((char const *)arg1,arg2);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
   
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap_ANT_on_error__SWIG_1(const SwigV8Arguments &args, V8ErrorHandler &SWIGV8_ErrorHandler)
-{
-  SWIGV8_HANDLESCOPE();
-  
-  SWIGV8_VALUE jsresult;
+// js_global_overloaded_function
+Napi::Value _wrap_ANT_on_error__SWIG_1(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   char *arg1 = (char *) 0 ;
   int res1 ;
   char *buf1 = 0 ;
   int alloc1 = 0 ;
   
-  res1 = SWIG_AsCharPtrAndSize(args[0], &buf1, NULL, &alloc1);
+  res1 = SWIG_AsCharPtrAndSize(info[0], &buf1, NULL, &alloc1);
   if (!SWIG_IsOK(res1)) {
     SWIG_exception_fail(SWIG_ArgError(res1), "in method '" "ANT_on_error" "', argument " "1"" of type '" "char const *""'");
   }
   arg1 = reinterpret_cast< char * >(buf1);ANT_on_error((char const *)arg1);
-  jsresult = SWIGV8_UNDEFINED();
+  jsresult = env.Undefined();
   if (alloc1 == SWIG_NEWOBJ) delete[] buf1;
   
-  SWIGV8_RETURN(jsresult);
+  return jsresult;
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
-static SwigV8ReturnValue _wrap___wrap_ANT_on_error(const SwigV8Arguments &args) {
-  SWIGV8_HANDLESCOPE();
+// js_global_function_dispatcher
+Napi::Value _wrap___wrap_ANT_on_error(const Napi::CallbackInfo &info) {
+  Napi::Env env = info.Env();
+  Napi::Value jsresult;
   
-  SWIGV8_VALUE jsresult;
-  OverloadErrorHandler errorHandler;
-  
-  
-  if(args.Length() >= 2 && args.Length() <= 2) {
-    errorHandler.err.Clear();
-    _wrap_ANT_on_error__SWIG_0(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 2 && static_cast<int>(info.Length()) <= 2) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ANT_on_error__SWIG_0(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
     }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ANT_on_error__SWIG_0(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
+  }
+  
+  // js_function_dispatch_case
+  if(static_cast<int>(info.Length()) >= 1 && static_cast<int>(info.Length()) <= 1) {
+#ifdef NAPI_CPP_EXCEPTIONS
+    bool tryNext = false;
+    try {
+      jsresult = _wrap_ANT_on_error__SWIG_1(info);
+    } catch (const Napi::TypeError &) {
+      tryNext = true;
+    } catch (const Napi::Error &e) {
+      throw e;
+    }
+    if (!tryNext)
+    return jsresult;
+#else
+    _wrap_ANT_on_error__SWIG_1(info);
+    if (env.IsExceptionPending()) {
+      Napi::Error e = env.GetAndClearPendingException();
+      Napi::Value typeErrorValue;
+      bool isTypeError;
+      Napi::Function typeErrorCons;
+      // Yes, this is ugly
+      // TODO: Fix this in Node.js when the core team grows up
+      NAPI_CHECK_RESULT(env.Global().Get("TypeError"), typeErrorValue);
+      typeErrorCons = typeErrorValue.As<Napi::Function>();
+      NAPI_CHECK_RESULT(e.Value().InstanceOf(typeErrorCons), isTypeError);
+      if (!isTypeError) {
+        // This is not the error you are looking for
+        e.ThrowAsJavaScriptException();
+        SWIG_fail;
+      }
+    } else {
+      return jsresult;
+    }
+#endif
   }
   
   
-  if(args.Length() >= 1 && args.Length() <= 1) {
-    errorHandler.err.Clear();
-    _wrap_ANT_on_error__SWIG_1(args, errorHandler);
-    if(errorHandler.err.IsEmpty()) {
-      return;
-    }
-  }
-  
-  
-  SWIG_exception_fail(SWIG_ERROR, "Illegal arguments for function ANT_on_error.");
+  SWIG_Error(SWIG_ERROR, "Illegal arguments for function ANT_on_error.");
   
   goto fail;
 fail:
-  SWIGV8_RETURN(SWIGV8_UNDEFINED());
+  return Napi::Value();
 }
 
 
@@ -5458,47 +7344,40 @@ static swig_cast_info *swig_cast_initial[] = {
 
 
 
+EnvInstanceData::EnvInstanceData(Napi::Env env, swig_module_info *swig_module) :
+env(env), SWIG_NAPI_ObjectWrapCtor(nullptr), ctor(nullptr), swig_module(swig_module) {
+  ctor = new Napi::FunctionReference*[swig_module->size + 1];
+  for (size_t i = 0; i <= swig_module->size; i++) {
+    ctor[i] = nullptr;
+  }
+}
+
+EnvInstanceData::~EnvInstanceData() {
+  for (size_t i = 0; i <= swig_module->size; i++) {
+    if (ctor[i] != nullptr)
+      delete ctor[i];
+    ctor[i] = nullptr;
+  }
+  delete [] ctor;
+  delete SWIG_NAPI_ObjectWrapCtor;
+}
+
 SWIGRUNTIME void
-SWIG_V8_SetModule(v8::Local<v8::Context> context, swig_module_info *swig_module) {
-  v8::Local<v8::Object> global_obj = context->Global();
-  v8::Local<v8::External> mod = SWIGV8_EXTERNAL_NEW(swig_module);
-  assert(!mod.IsEmpty());
-  v8::Local<v8::Private> privateKey = v8::Private::ForApi(v8::Isolate::GetCurrent(), SWIGV8_STRING_NEW("swig_module_info_data"));
-  global_obj->SetPrivate(context, privateKey, mod);
+SWIG_NAPI_SetModule(Napi::Env env, swig_module_info *swig_module) {
+  auto data = new EnvInstanceData(env, swig_module);
+  env.SetInstanceData(data);
 }
 
 SWIGRUNTIME swig_module_info *
-SWIG_V8_GetModule(v8::Local<v8::Context> context) {
-  v8::Local<v8::Object> global_obj = context->Global();
-  v8::Local<v8::Private> privateKey = v8::Private::ForApi(v8::Isolate::GetCurrent(), SWIGV8_STRING_NEW("swig_module_info_data"));
-  v8::Local<v8::Value> moduleinfo;
-  if (!global_obj->GetPrivate(context, privateKey).ToLocal(&moduleinfo))
-    return 0;
-
-  if (moduleinfo.IsEmpty() || moduleinfo->IsNull() || moduleinfo->IsUndefined())
-  {
-    // It's not yet loaded
-    return 0;
-  }
-
-  v8::Local<v8::External> moduleinfo_extern = v8::Local<v8::External>::Cast(moduleinfo);
-
-  if (moduleinfo_extern.IsEmpty() || moduleinfo_extern->IsNull() || moduleinfo_extern->IsUndefined())
-  {
-    // Something's not right
-    return 0;
-  }
-
-  void *ptr = moduleinfo_extern->Value();
-  assert(ptr);
-  swig_module_info *retptr = static_cast<swig_module_info *>(ptr);
-  assert(retptr);
-  return retptr;
+SWIG_NAPI_GetModule(Napi::Env env) {
+  auto data = env.GetInstanceData<EnvInstanceData>();
+  if (data == nullptr) return nullptr;
+  return data->swig_module;
 }
 
-#define SWIG_GetModule(clientdata)                SWIG_V8_GetModule(clientdata)
-#define SWIG_SetModule(clientdata, pointer)       SWIG_V8_SetModule(clientdata, pointer)
-#define SWIG_INIT_CLIENT_DATA_TYPE                v8::Local<v8::Context>
+#define SWIG_GetModule(clientdata)                SWIG_NAPI_GetModule(clientdata)
+#define SWIG_SetModule(clientdata, pointer)       SWIG_NAPI_SetModule(clientdata, pointer)
+#define SWIG_INIT_CLIENT_DATA_TYPE                Napi::Env
 
 
 /* -----------------------------------------------------------------------------
@@ -5736,219 +7615,227 @@ SWIG_PropagateClientData(void) {
 #endif
 
 
-#if !defined(NODE_MODULE_VERSION) || (NODE_MODULE_VERSION < 12)
-// Note: 'extern "C"'' disables name mangling which makes it easier to load the symbol manually
-extern "C" void SWIGV8_INIT (SWIGV8_OBJECT exports_obj)
-#elif (NODE_MODULE_VERSION < 64)
-void SWIGV8_INIT (SWIGV8_OBJECT exports_obj, SWIGV8_VALUE /*module*/, void*)
-#else
-void SWIGV8_INIT (SWIGV8_OBJECT exports_obj, SWIGV8_VALUE /*module*/, v8::Local<v8::Context> context, void*)
-#endif
-{
-#if !defined(NODE_MODULE_VERSION) || NODE_MODULE_VERSION < 64
-  v8::Local<v8::Context> context = SWIGV8_CURRENT_CONTEXT();
-#endif
-
-  SWIG_InitializeModule(context);
+Napi::Object Init(Napi::Env env, Napi::Object exports) {
+  SWIG_InitializeModule(env);
 
 
-  // a class template for creating proxies of undefined types
-  SWIGV8_SET_CLASS_TEMPL(SWIGV8_SWIGTYPE_Proxy_class_templ, SWIGV8_CreateClassTemplate("SwigProxy"));
+  Napi::Function SWIG_NAPI_ObjectWrap_ctor = SWIG_NAPI_ObjectWrap_inst::GetClass(env);
+  Napi::FunctionReference *SWIG_NAPI_ObjectWrap_ctor_ref = new Napi::FunctionReference();
+  *SWIG_NAPI_ObjectWrap_ctor_ref = Napi::Persistent(SWIG_NAPI_ObjectWrap_ctor);
+  env.GetInstanceData<EnvInstanceData>()->SWIG_NAPI_ObjectWrapCtor = SWIG_NAPI_ObjectWrap_ctor_ref;
 
   /* create objects for namespaces */
   
 
-  /* create class templates */
-  /* Name: _exports_ATIRE_API_remote, Type: p_ATIRE_API_remote, Dtor: _wrap_delete_ATIRE_API_remote */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_remote_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_API_remote");
-SWIGV8_SET_CLASS_TEMPL(_exports_ATIRE_API_remote_clientData.class_templ, _exports_ATIRE_API_remote_class);
-_exports_ATIRE_API_remote_clientData.dtor = _wrap_delete_ATIRE_API_remote;
-if (SWIGTYPE_p_ATIRE_API_remote->clientdata == 0) {
-  SWIGTYPE_p_ATIRE_API_remote->clientdata = &_exports_ATIRE_API_remote_clientData;
+  /* register classes */
+  /* Class: ATIRE_API_remote (_exports_ATIRE_API_remote) */
+// jsnapi_registerclass
+Napi::Function _exports_ATIRE_API_remote_ctor = _exports_ATIRE_API_remote_inst::GetClass(env);
+exports.Set("ATIRE_API_remote", _exports_ATIRE_API_remote_ctor);
+if (SWIGTYPE_p_ATIRE_API_remote->clientdata == nullptr) {
+  SWIGTYPE_p_ATIRE_API_remote->clientdata = new size_t(0);
 }
-/* Name: _exports_ATIRE_API_server, Type: p_ATIRE_API_server, Dtor: _wrap_delete_ATIRE_API_server */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_server_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_API_server");
-SWIGV8_SET_CLASS_TEMPL(_exports_ATIRE_API_server_clientData.class_templ, _exports_ATIRE_API_server_class);
-_exports_ATIRE_API_server_clientData.dtor = _wrap_delete_ATIRE_API_server;
-if (SWIGTYPE_p_ATIRE_API_server->clientdata == 0) {
-  SWIGTYPE_p_ATIRE_API_server->clientdata = &_exports_ATIRE_API_server_clientData;
+Napi::FunctionReference *_exports_ATIRE_API_remote_ctor_ref = new Napi::FunctionReference();
+*_exports_ATIRE_API_remote_ctor_ref = Napi::Persistent(_exports_ATIRE_API_remote_ctor);
+env.GetInstanceData<EnvInstanceData>()->ctor[0] = _exports_ATIRE_API_remote_ctor_ref;
+/* Class: ATIRE_API_server (_exports_ATIRE_API_server) */
+// jsnapi_registerclass
+Napi::Function _exports_ATIRE_API_server_ctor = _exports_ATIRE_API_server_inst::GetClass(env);
+exports.Set("ATIRE_API_server", _exports_ATIRE_API_server_ctor);
+if (SWIGTYPE_p_ATIRE_API_server->clientdata == nullptr) {
+  SWIGTYPE_p_ATIRE_API_server->clientdata = new size_t(1);
 }
-/* Name: _exports_ATIRE_API_result, Type: p_ATIRE_API_result, Dtor: _wrap_delete_ATIRE_API_result */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_result_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_API_result");
-SWIGV8_SET_CLASS_TEMPL(_exports_ATIRE_API_result_clientData.class_templ, _exports_ATIRE_API_result_class);
-_exports_ATIRE_API_result_clientData.dtor = _wrap_delete_ATIRE_API_result;
-if (SWIGTYPE_p_ATIRE_API_result->clientdata == 0) {
-  SWIGTYPE_p_ATIRE_API_result->clientdata = &_exports_ATIRE_API_result_clientData;
+Napi::FunctionReference *_exports_ATIRE_API_server_ctor_ref = new Napi::FunctionReference();
+*_exports_ATIRE_API_server_ctor_ref = Napi::Persistent(_exports_ATIRE_API_server_ctor);
+env.GetInstanceData<EnvInstanceData>()->ctor[1] = _exports_ATIRE_API_server_ctor_ref;
+/* Class: ATIRE_API_result (_exports_ATIRE_API_result) */
+// jsnapi_registerclass
+Napi::Function _exports_ATIRE_API_result_ctor = _exports_ATIRE_API_result_inst::GetClass(env);
+exports.Set("ATIRE_API_result", _exports_ATIRE_API_result_ctor);
+if (SWIGTYPE_p_ATIRE_API_result->clientdata == nullptr) {
+  SWIGTYPE_p_ATIRE_API_result->clientdata = new size_t(2);
 }
-/* Name: _exports_ATIRE_indexer, Type: p_ATIRE_indexer, Dtor: _wrap_delete_ATIRE_indexer */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_indexer_class = SWIGV8_CreateClassTemplate("_exports_ATIRE_indexer");
-SWIGV8_SET_CLASS_TEMPL(_exports_ATIRE_indexer_clientData.class_templ, _exports_ATIRE_indexer_class);
-_exports_ATIRE_indexer_clientData.dtor = _wrap_delete_ATIRE_indexer;
-if (SWIGTYPE_p_ATIRE_indexer->clientdata == 0) {
-  SWIGTYPE_p_ATIRE_indexer->clientdata = &_exports_ATIRE_indexer_clientData;
+Napi::FunctionReference *_exports_ATIRE_API_result_ctor_ref = new Napi::FunctionReference();
+*_exports_ATIRE_API_result_ctor_ref = Napi::Persistent(_exports_ATIRE_API_result_ctor);
+env.GetInstanceData<EnvInstanceData>()->ctor[2] = _exports_ATIRE_API_result_ctor_ref;
+/* Class: ATIRE_indexer (_exports_ATIRE_indexer) */
+// jsnapi_registerclass
+Napi::Function _exports_ATIRE_indexer_ctor = _exports_ATIRE_indexer_inst::GetClass(env);
+exports.Set("ATIRE_indexer", _exports_ATIRE_indexer_ctor);
+if (SWIGTYPE_p_ATIRE_indexer->clientdata == nullptr) {
+  SWIGTYPE_p_ATIRE_indexer->clientdata = new size_t(3);
 }
+Napi::FunctionReference *_exports_ATIRE_indexer_ctor_ref = new Napi::FunctionReference();
+*_exports_ATIRE_indexer_ctor_ref = Napi::Persistent(_exports_ATIRE_indexer_ctor);
+env.GetInstanceData<EnvInstanceData>()->ctor[3] = _exports_ATIRE_indexer_ctor_ref;
 
 
-  /* register wrapper functions */
-  SWIGV8_AddStaticVariable(exports_obj, "FILENAME_INDEX", exports_FILENAME_INDEX_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "NULL", exports_NULL_get, JS_veto_set_variable, context);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "open", _wrap_ATIRE_API_remote_open);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "close", _wrap_ATIRE_API_remote_close);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "get_connect_string", _wrap_ATIRE_API_remote_get_connect_string);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "load_index", _wrap_ATIRE_API_remote_load_index);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "describe_index", _wrap_ATIRE_API_remote_describe_index);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "search", _wrap_ATIRE_API_remote__wrap_ATIRE_API_remote_search);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "get_document", _wrap_ATIRE_API_remote_get_document);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "send_command", _wrap_ATIRE_API_remote_send_command);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_remote_class, "exit", _wrap_ATIRE_API_remote_exit);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "initialize", _wrap_ATIRE_API_server_initialize);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_atire", _wrap_ATIRE_API_server_get_atire);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_params", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_set_params);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_param", _wrap_ATIRE_API_server_set_param);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_ant_version", _wrap_ATIRE_API_server_set_ant_version);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "start", _wrap_ATIRE_API_server_start);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "open_from_indexer", _wrap_ATIRE_API_server_open_from_indexer);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "loop", _wrap_ATIRE_API_server_loop);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "poll", _wrap_ATIRE_API_server_poll);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "poll_and_process", _wrap_ATIRE_API_server_poll_and_process);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "process_command", _wrap_ATIRE_API_server_process_command);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "interrupt", _wrap_ATIRE_API_server_interrupt);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "finish", _wrap_ATIRE_API_server_finish);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "run", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_run);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "ant", _wrap_ATIRE_API_server_ant);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "start_stats", _wrap_ATIRE_API_server_start_stats);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "end_stats", _wrap_ATIRE_API_server_end_stats);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_stats", _wrap_ATIRE_API_server_get_stats);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_search_time", _wrap_ATIRE_API_server_get_search_time);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "version", _wrap_ATIRE_API_server_version);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "prompt", _wrap_ATIRE_API_server_prompt);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "is_interrupted", _wrap_ATIRE_API_server_is_interrupted);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_interrupted", _wrap_ATIRE_API_server_set_interrupted);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "has_new_command", _wrap_ATIRE_API_server_has_new_command);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "insert_command", _wrap_ATIRE_API_server_insert_command);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_outchannel", _wrap_ATIRE_API_server_set_outchannel);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_outchannel_content", _wrap_ATIRE_API_server_get_outchannel_content);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "search", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_search);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "goto_result", _wrap_ATIRE_API_server_goto_result);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "list_term", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_list_term);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "next_term", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_next_term);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "goto_term", _wrap_ATIRE_API_server_goto_term);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "result_to_json", _wrap_ATIRE_API_server_result_to_json);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_result", _wrap_ATIRE_API_server_get_result);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "next_result", _wrap_ATIRE_API_server_next_result);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "result_to_outchannel", _wrap_ATIRE_API_server__wrap_ATIRE_API_server_result_to_outchannel);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "load_document", _wrap_ATIRE_API_server_load_document);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_document", _wrap_ATIRE_API_server_get_document);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_current_document", _wrap_ATIRE_API_server_get_current_document);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "get_document_count", _wrap_ATIRE_API_server_get_document_count);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_page_size", _wrap_ATIRE_API_server_set_page_size);
-SWIGV8_AddMemberFunction(_exports_ATIRE_API_server_class, "set_output_format", _wrap_ATIRE_API_server_set_output_format);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "rank", _wrap_ATIRE_API_result_rank_get, _wrap_ATIRE_API_result_rank_set);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "docid", _wrap_ATIRE_API_result_docid_get, _wrap_ATIRE_API_result_docid_set);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "rsv", _wrap_ATIRE_API_result_rsv_get, _wrap_ATIRE_API_result_rsv_set);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "title", _wrap_ATIRE_API_result_title_get, _wrap_ATIRE_API_result_title_set);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "snippet", _wrap_ATIRE_API_result_snippet_get, _wrap_ATIRE_API_result_snippet_set);
-SWIGV8_AddMemberVariable(_exports_ATIRE_API_result_class, "document_name", _wrap_ATIRE_API_result_document_name_get, _wrap_ATIRE_API_result_document_name_set);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "usage", _wrap_ATIRE_indexer_usage);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "init", _wrap_ATIRE_indexer__wrap_ATIRE_indexer_init);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "finish", _wrap_ATIRE_indexer_finish);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "index_document", _wrap_ATIRE_indexer__wrap_ATIRE_indexer_index_document);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "index", _wrap_ATIRE_indexer_index);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "get_docno", _wrap_ATIRE_indexer_get_docno);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "enable_parallel_indexing", _wrap_ATIRE_indexer_enable_parallel_indexing);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "get_index_file_size", _wrap_ATIRE_indexer_get_index_file_size);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "get_index_file", _wrap_ATIRE_indexer_get_index_file);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "get_index", _wrap_ATIRE_indexer_get_index);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "release_index", _wrap_ATIRE_indexer_release_index);
-SWIGV8_AddMemberFunction(_exports_ATIRE_indexer_class, "get_doc_list", _wrap_ATIRE_indexer_get_doc_list);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_UNKNOWN", exports_ANT_ERROR_UNKNOWN_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_NONE", exports_ANT_ERROR_NONE_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_SIGNATURE_MISMATCH", exports_ANT_ERROR_SIGNATURE_MISMATCH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_VERSION_MISMATH", exports_ANT_ERROR_VERSION_MISMATH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_FILE_TYPE_MISMATCH", exports_ANT_ERROR_FILE_TYPE_MISMATCH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_INDEX_READING", exports_ANT_ERROR_INDEX_READING_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_BAD_INDEX", exports_ANT_ERROR_BAD_INDEX_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_ERROR_FAILED_TO_START", exports_ANT_ERROR_FAILED_TO_START_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(exports_obj, "ANT_error_code", _wrap_ANT_error_code_get, _wrap_ANT_error_code_set, context);
+  /* enable inheritance */
+  
+Napi::Value jsObjectValue, jsSetProtoValue;
+Napi::Object jsObject;
+Napi::Function setProto;
+NAPI_CHECK_RESULT(env.Global().Get("Object"), jsObjectValue);
+NAPI_CHECK_RESULT(jsObjectValue.ToObject(), jsObject);
+NAPI_CHECK_RESULT(jsObject.Get("setPrototypeOf"), jsSetProtoValue);
+setProto = jsSetProtoValue.As<Napi::Function>();
+
 
 
   /* setup inheritances */
   
-
-  /* class instances */
-  /* Class: ATIRE_API_remote (_exports_ATIRE_API_remote) */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_remote_class_0 = SWIGV8_CreateClassTemplate("ATIRE_API_remote");
-_exports_ATIRE_API_remote_class_0->SetCallHandler(_wrap_new_ATIRE_API_remote);
-_exports_ATIRE_API_remote_class_0->Inherit(_exports_ATIRE_API_remote_class);
-#if (SWIG_V8_VERSION < 0x0704)
-_exports_ATIRE_API_remote_class_0->SetHiddenPrototype(true);
-v8::Local<v8::Object> _exports_ATIRE_API_remote_obj = _exports_ATIRE_API_remote_class_0->GetFunction();
-#else
-v8::Local<v8::Object> _exports_ATIRE_API_remote_obj = _exports_ATIRE_API_remote_class_0->GetFunction(context).ToLocalChecked();
-#endif
-/* Class: ATIRE_API_server (_exports_ATIRE_API_server) */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_server_class_0 = SWIGV8_CreateClassTemplate("ATIRE_API_server");
-_exports_ATIRE_API_server_class_0->SetCallHandler(_wrap_new_ATIRE_API_server);
-_exports_ATIRE_API_server_class_0->Inherit(_exports_ATIRE_API_server_class);
-#if (SWIG_V8_VERSION < 0x0704)
-_exports_ATIRE_API_server_class_0->SetHiddenPrototype(true);
-v8::Local<v8::Object> _exports_ATIRE_API_server_obj = _exports_ATIRE_API_server_class_0->GetFunction();
-#else
-v8::Local<v8::Object> _exports_ATIRE_API_server_obj = _exports_ATIRE_API_server_class_0->GetFunction(context).ToLocalChecked();
-#endif
-/* Class: ATIRE_API_result (_exports_ATIRE_API_result) */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_API_result_class_0 = SWIGV8_CreateClassTemplate("ATIRE_API_result");
-_exports_ATIRE_API_result_class_0->SetCallHandler(_wrap_new_ATIRE_API_result);
-_exports_ATIRE_API_result_class_0->Inherit(_exports_ATIRE_API_result_class);
-#if (SWIG_V8_VERSION < 0x0704)
-_exports_ATIRE_API_result_class_0->SetHiddenPrototype(true);
-v8::Local<v8::Object> _exports_ATIRE_API_result_obj = _exports_ATIRE_API_result_class_0->GetFunction();
-#else
-v8::Local<v8::Object> _exports_ATIRE_API_result_obj = _exports_ATIRE_API_result_class_0->GetFunction(context).ToLocalChecked();
-#endif
-/* Class: ATIRE_indexer (_exports_ATIRE_indexer) */
-SWIGV8_FUNCTION_TEMPLATE _exports_ATIRE_indexer_class_0 = SWIGV8_CreateClassTemplate("ATIRE_indexer");
-_exports_ATIRE_indexer_class_0->SetCallHandler(_wrap_new_ATIRE_indexer);
-_exports_ATIRE_indexer_class_0->Inherit(_exports_ATIRE_indexer_class);
-#if (SWIG_V8_VERSION < 0x0704)
-_exports_ATIRE_indexer_class_0->SetHiddenPrototype(true);
-v8::Local<v8::Object> _exports_ATIRE_indexer_obj = _exports_ATIRE_indexer_class_0->GetFunction();
-#else
-v8::Local<v8::Object> _exports_ATIRE_indexer_obj = _exports_ATIRE_indexer_class_0->GetFunction(context).ToLocalChecked();
-#endif
+// Inheritance for _exports_ATIRE_API_remote (ATIRE_API_remote) <- SWIG_NAPI_ObjectWrap
+// jsnapi_setup_inheritance
+do {
+  Napi::Value protoBase, protoSub;
+  NAPI_CHECK_RESULT(_exports_ATIRE_API_remote_ctor.Get("prototype"), protoSub);
+  NAPI_CHECK_RESULT(SWIG_NAPI_ObjectWrap_ctor.Get("prototype"), protoBase);
+  NAPI_CHECK_MAYBE(setProto.Call({
+    _exports_ATIRE_API_remote_ctor, SWIG_NAPI_ObjectWrap_ctor
+  }));
+  NAPI_CHECK_MAYBE(setProto.Call({
+    protoSub, protoBase
+  }));
+} while (0);
 
 
-  /* add static class functions and variables */
-  SWIGV8_AddStaticVariable(_exports_ATIRE_API_server_obj, "CHANNEL_FILE", exports_ATIRE_API_server_CHANNEL_FILE_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_server_obj, "CHANNEL_SOCKET", exports_ATIRE_API_server_CHANNEL_SOCKET_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_server_obj, "CHANNEL_MEMORY", exports_ATIRE_API_server_CHANNEL_MEMORY_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_server_obj, "XML", exports_ATIRE_API_server_XML_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_server_obj, "JSON", exports_ATIRE_API_server_JSON_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_result_obj, "EMPTY_STRING", _wrap_ATIRE_API_result_EMPTY_STRING_get, _wrap_ATIRE_API_result_EMPTY_STRING_set, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_result_obj, "MAX_TITLE_LENGTH", exports_ATIRE_API_result_MAX_TITLE_LENGTH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_API_result_obj, "MAX_TITLE_LENGTH", exports_ATIRE_API_result_MAX_TITLE_LENGTH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_CONTENT", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_CONTENT_set, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOCUMENT_FILENAME", _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_get, _wrap_ATIRE_indexer_EMPTY_DOCUMENT_FILENAME_set, context);
-SWIGV8_AddStaticVariable(_exports_ATIRE_indexer_obj, "EMPTY_DOUCMENT_LENGTH", _wrap_ATIRE_indexer_EMPTY_DOUCMENT_LENGTH_get, JS_veto_set_variable, context);
-SWIGV8_AddStaticFunction(_exports_ATIRE_indexer_obj, "initialize", _wrap_ATIRE_indexer_initialize, context);
-SWIGV8_AddStaticFunction(exports_obj, "ANT_on_error", _wrap___wrap_ANT_on_error, context);
+// Inheritance for _exports_ATIRE_API_server (ATIRE_API_server) <- SWIG_NAPI_ObjectWrap
+// jsnapi_setup_inheritance
+do {
+  Napi::Value protoBase, protoSub;
+  NAPI_CHECK_RESULT(_exports_ATIRE_API_server_ctor.Get("prototype"), protoSub);
+  NAPI_CHECK_RESULT(SWIG_NAPI_ObjectWrap_ctor.Get("prototype"), protoBase);
+  NAPI_CHECK_MAYBE(setProto.Call({
+    _exports_ATIRE_API_server_ctor, SWIG_NAPI_ObjectWrap_ctor
+  }));
+  NAPI_CHECK_MAYBE(setProto.Call({
+    protoSub, protoBase
+  }));
+} while (0);
 
 
-  /* register classes */
-  SWIGV8_MAYBE_CHECK(exports_obj->Set(context, SWIGV8_SYMBOL_NEW("ATIRE_API_remote"), _exports_ATIRE_API_remote_obj));
-SWIGV8_MAYBE_CHECK(exports_obj->Set(context, SWIGV8_SYMBOL_NEW("ATIRE_API_server"), _exports_ATIRE_API_server_obj));
-SWIGV8_MAYBE_CHECK(exports_obj->Set(context, SWIGV8_SYMBOL_NEW("ATIRE_API_result"), _exports_ATIRE_API_result_obj));
-SWIGV8_MAYBE_CHECK(exports_obj->Set(context, SWIGV8_SYMBOL_NEW("ATIRE_indexer"), _exports_ATIRE_indexer_obj));
+// Inheritance for _exports_ATIRE_API_result (ATIRE_API_result) <- SWIG_NAPI_ObjectWrap
+// jsnapi_setup_inheritance
+do {
+  Napi::Value protoBase, protoSub;
+  NAPI_CHECK_RESULT(_exports_ATIRE_API_result_ctor.Get("prototype"), protoSub);
+  NAPI_CHECK_RESULT(SWIG_NAPI_ObjectWrap_ctor.Get("prototype"), protoBase);
+  NAPI_CHECK_MAYBE(setProto.Call({
+    _exports_ATIRE_API_result_ctor, SWIG_NAPI_ObjectWrap_ctor
+  }));
+  NAPI_CHECK_MAYBE(setProto.Call({
+    protoSub, protoBase
+  }));
+} while (0);
+
+
+// Inheritance for _exports_ATIRE_indexer (ATIRE_indexer) <- SWIG_NAPI_ObjectWrap
+// jsnapi_setup_inheritance
+do {
+  Napi::Value protoBase, protoSub;
+  NAPI_CHECK_RESULT(_exports_ATIRE_indexer_ctor.Get("prototype"), protoSub);
+  NAPI_CHECK_RESULT(SWIG_NAPI_ObjectWrap_ctor.Get("prototype"), protoBase);
+  NAPI_CHECK_MAYBE(setProto.Call({
+    _exports_ATIRE_indexer_ctor, SWIG_NAPI_ObjectWrap_ctor
+  }));
+  NAPI_CHECK_MAYBE(setProto.Call({
+    protoSub, protoBase
+  }));
+} while (0);
+
 
 
   /* create and register namespace objects */
-  
+  // jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_FILENAME_INDEX_get, JS_veto_set_variable>("FILENAME_INDEX");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_NULL_get, JS_veto_set_variable>("NULL");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_UNKNOWN_get, JS_veto_set_variable>("ANT_ERROR_UNKNOWN");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_NONE_get, JS_veto_set_variable>("ANT_ERROR_NONE");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_SIGNATURE_MISMATCH_get, JS_veto_set_variable>("ANT_ERROR_SIGNATURE_MISMATCH");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_VERSION_MISMATH_get, JS_veto_set_variable>("ANT_ERROR_VERSION_MISMATH");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_FILE_TYPE_MISMATCH_get, JS_veto_set_variable>("ANT_ERROR_FILE_TYPE_MISMATCH");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_INDEX_READING_get, JS_veto_set_variable>("ANT_ERROR_INDEX_READING");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_BAD_INDEX_get, JS_veto_set_variable>("ANT_ERROR_BAD_INDEX");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<exports_ANT_ERROR_FAILED_TO_START_get, JS_veto_set_variable>("ANT_ERROR_FAILED_TO_START");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_variable
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Accessor<_wrap_ANT_error_code_get, _wrap_ANT_error_code_set>("ANT_error_code");
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+// jsnapi_register_global_function
+do {
+  Napi::PropertyDescriptor pd = Napi::PropertyDescriptor::Function("ANT_on_error", _wrap___wrap_ANT_on_error);
+  NAPI_CHECK_MAYBE(exports.DefineProperties({
+    pd
+  }));
+} while (0);
+
+
+  return exports;
+  goto fail;
+fail:
+  return Napi::Object();
 }
 
-#if defined(BUILDING_NODE_EXTENSION)
-#if (NODE_MODULE_VERSION < 64)
-NODE_MODULE(Antelope, Antelope_initialize)
-#else
-NODE_MODULE_CONTEXT_AWARE(Antelope, Antelope_initialize)
-#endif
-#endif
+NODE_API_MODULE(Antelope, Init)

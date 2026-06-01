@@ -36,9 +36,10 @@ delete index;
 	ANT_SEARCH_ENGINE_MEMORY_INDEX::OPEN()
 	--------------------------------------
 */
-int ANT_search_engine_memory_index::open(const char *filename)
+int ANT_search_engine_memory_index::open(const char *filename, unsigned long header_offset)
 {
 documents = index->largest_docno;
+max_header_block_size = 1024;
 memory->realign();
 special_compression_buffer = (unsigned char *)memory->malloc(1024);// must be long enough to store the worst case of two posintgs + impact_headers, etc.  1024 is probably way too large.
 memory->realign();
@@ -157,12 +158,24 @@ index->serialise_one_node(this, &duplicate_node);
 		leaf.global_document_frequency = leaf.local_document_frequency = duplicate_node.document_frequency;
 		leaf.postings_position_on_disk = duplicate_node.in_disk.docids_pos_on_disk;
 		leaf.impacted_length = duplicate_node.in_disk.impacted_length;
-		leaf.postings_length = duplicate_node.in_disk.end_pos_on_disk;
+		/*
+			end_pos_on_disk stores serialised_tfs[1] + docids_pos_on_disk (see serialise_one_node).
+			Subtracting docids_pos_on_disk recovers serialised_tfs[1], which get_postings uses
+			to distinguish same-tf vs different-tf for df <= 2 documents.
+		*/
+		leaf.postings_length = duplicate_node.in_disk.end_pos_on_disk - duplicate_node.in_disk.docids_pos_on_disk;
 		#ifdef TERM_LOCAL_MAX_IMPACT
 			leaf.local_max_impact = 128;
 		#endif
 		postings_buffer = (char *)ANT_search_engine::get_postings(&leaf, (unsigned char *)postings_buffer);
+		/*
+			Propagate the real impacted_length back so that read_and_decompress_for_one_term
+			knows how many postings to decompress (it was faked as 0 in get_postings_details).
+		*/
+		term_details->impacted_length = leaf.impacted_length;
 		}
+	else
+		term_details->impacted_length = duplicate_node.in_disk.impacted_length;
 #endif
 
 return (unsigned char *)postings_buffer;

@@ -29,7 +29,7 @@ public:
 
 	virtual unsigned char *get_postings(ANT_search_engine_btree_leaf *term_details, unsigned char *destination);
 	virtual ANT_search_engine_btree_leaf *get_postings_details(char *term, ANT_search_engine_btree_leaf *term_details);
-	virtual int open(const char *filename = "index.aspt");
+	virtual int open(const char *filename = "index.aspt", unsigned long header_offset = 0);
 	virtual long open(const char *filename, char *mode) { return open(filename); }
 	virtual long write(unsigned char *data, long long size);
 } ;
