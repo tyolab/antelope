@@ -29,7 +29,7 @@
     "bunyan": "^1.8.5",
     "death": "^1.0.0",
     "node-addon-api": "^8.8.0",
-    "node-gyp": "^7.0.0",
+    "node-gyp": "^12.3.0",
     "node-programmer": "0.0.11",
     "nopt": "^4.0.3",
     "restify": "^8.5.1",
