@@ -45,10 +45,10 @@ CHECK(!t->is_deleted(200));
 CHECK(t->count() == 3);
 
 /*
-	Save / load round trip
+	Save / load round trip (load with a small initial size so load()'s grow path is exercised)
 */
 CHECK(t->save(filename) == 0);
-ANT_index_tombstones *loaded = ANT_index_tombstones::load(filename, 300);
+ANT_index_tombstones *loaded = ANT_index_tombstones::load(filename, 1);
 CHECK(loaded != NULL);
 CHECK(loaded->is_deleted(7));
 CHECK(loaded->is_deleted(99));
@@ -66,6 +66,22 @@ CHECK(empty != NULL);
 CHECK(empty->count() == 0);
 
 /*
+	Loading a corrupted file (bogus header) yields an empty bitmap, not a crash
+*/
+char corrupt_name[1024];
+sprintf(corrupt_name, "%s/corrupt.del", dir);
+long long bad[2];
+bad[0] = 3;
+bad[1] = -4096;
+FILE *fp = fopen(corrupt_name, "wb");
+CHECK(fp != NULL);
+CHECK(fwrite(bad, sizeof(long long), 2, fp) == 2);
+fclose(fp);
+ANT_index_tombstones *corrupt = ANT_index_tombstones::load(corrupt_name, 100);
+CHECK(corrupt != NULL);
+CHECK(corrupt->count() == 0);
+
+/*
 	Save must not leave a temp file behind (atomic write-temp + rename)
 */
 char tmpname[1200];
@@ -75,6 +91,7 @@ CHECK(access(tmpname, F_OK) != 0);
 delete t;
 delete loaded;
 delete empty;
+delete corrupt;
 printf("PASSED\n");
 return 0;
 }

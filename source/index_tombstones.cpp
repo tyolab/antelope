@@ -82,7 +82,8 @@ long ANT_index_tombstones::save(const char *filename)
 char temp_name[4096];
 FILE *fp;
 
-sprintf(temp_name, "%s.tmp", filename);
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
+	return 1;
 if ((fp = fopen(temp_name, "wb")) == NULL)
 	return 1;
 if (fwrite(&deleted_documents, sizeof(deleted_documents), 1, fp) != 1
@@ -118,6 +119,11 @@ long long stored_count, stored_bytes;
 if (fread(&stored_count, sizeof(stored_count), 1, fp) == 1
 	&& fread(&stored_bytes, sizeof(stored_bytes), 1, fp) == 1)
 	{
+	if (stored_count < 0 || stored_bytes <= 0 || stored_bytes > (1LL << 40))
+		{
+		fclose(fp);
+		return result;		// corrupt header: treat as a segment with no deletions
+		}
 	result->grow_to(stored_bytes * 8 - 1);
 	if (fread(result->bitmap, 1, (size_t)stored_bytes, fp) == (size_t)stored_bytes)
 		result->deleted_documents = stored_count;
