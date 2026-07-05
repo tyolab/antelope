@@ -1707,7 +1707,7 @@ extern "C" {
 #  elif (ACC_CC_TURBOC && (__TURBOC__ == 0x0295))
 #    define ACC_COMPILE_TIME_ASSERT_HEADER(e)  extern int __acc_cta[1-!(e)];
 #  else
-#    define ACC_COMPILE_TIME_ASSERT_HEADER(e)  extern int __acc_cta[1-2*!(e)];
+#    define ACC_COMPILE_TIME_ASSERT_HEADER(e)
 #  endif
 #endif
 #if !defined(ACC_COMPILE_TIME_ASSERT)

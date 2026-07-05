@@ -95,6 +95,12 @@ private:
 	ANT_compressable_integer *impact_header_buffer;
 	ANT_compressable_integer *impact_offset_start;
 	ANT_compressable_integer *doc_count_ptr;
+	ANT_compressable_integer *impact_offset_ptr;
+	ANT_compressable_integer *impact_value_ptr;
+	quantum_count_type the_quantum_count;
+	beginning_of_the_postings_type beginning_of_the_postings;
+	long long max_docid, sum;
+	static const long long impact_header_info_size = 24; // ANT_impact_header::INFO_SIZE;
 	#endif
 
 	long term_position;

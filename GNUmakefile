@@ -298,12 +298,13 @@ TESTS_DIR = tests
 IGNORE_LIST := $(SRC_DIR)/stem_paice_husk.cpp
 
 MAIN_FILES := $(ATIRE_DIR)/atire.cpp \
-              $(ATIRE_DIR)/index.cpp \
-              $(ATIRE_DIR)/atire_client.cpp \
-              $(ATIRE_DIR)/atire_broker.cpp \
-              $(ATIRE_DIR)/atire_merge.cpp \
-              $(ATIRE_DIR)/atire_doclist.cpp \
-              $(ATIRE_DIR)/atire_dictionary.cpp
+               $(ATIRE_DIR)/index.cpp \
+               $(ATIRE_DIR)/atire_client.cpp \
+               $(ATIRE_DIR)/atire_broker.cpp \
+               $(ATIRE_DIR)/atire_merge.cpp \
+               $(ATIRE_DIR)/atire_doclist.cpp \
+               $(ATIRE_DIR)/atire_dictionary.cpp \
+               $(ATIRE_DIR)/antelope.cpp
 
 ALL_SOURCES := $(shell ls $(ATIRE_DIR)/*.cpp $(SRC_DIR)/*.cpp)
 SOURCES := $(filter-out $(MAIN_FILES) $(IGNORE_LIST), $(ALL_SOURCES))
@@ -348,10 +349,13 @@ TESTS_EXES := $(basename $(TESTS_SOURCES))
 TESTS_OBJECTS := $(addprefix $(OBJ_DIR)/, $(subst .cpp,.o, $(TESTS_SOURCES)))
 
 
-all: $(EXTRA_OBJS) GNUmakefile index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
+all: directories $(EXTRA_OBJS) GNUmakefile index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
+
+directories:
+	@mkdir -p $(OBJ_DIR) $(BIN_DIR)
 
 # faster compilation without considering extra objects, useful for repeated make for testing
-internal: index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
+internal: directories index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
 
 index: $(BIN_DIR)/index
 atire: $(BIN_DIR)/atire
