@@ -168,6 +168,52 @@ map_empty->add("", 1, 0);	// should be rejected: no-op
 CHECK(!map_empty->find("", &generation, &docid));	// not found
 delete map_empty;
 
+/*
+	HARDENING TEST 7: Malformed docid field (non-numeric) must skip the record.
+	atoll would silently parse "abc" as 0, and 0 is a valid docid, so a strict
+	parser must reject the record; the valid record after it must still load.
+*/
+char baddoc_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *baddoc_dir = mkdtemp(baddoc_dir_template);
+CHECK(baddoc_dir != NULL);
+char baddoc_log[1200];
+snprintf(baddoc_log, sizeof(baddoc_log), "%s/keymap.log", baddoc_dir);
+fp = fopen(baddoc_log, "w");
+CHECK(fp != NULL);
+fputs("A\t5\tabc\tdoc-x\n", fp);		// malformed docid: must be skipped, not read as docid 0
+fputs("A\t5\t20\tdoc-ok\n", fp);		// valid record after it
+fclose(fp);
+ANT_index_keymap *map_baddoc = ANT_index_keymap::load(baddoc_dir);
+CHECK(map_baddoc != NULL);
+CHECK(!map_baddoc->find("doc-x", &generation, &docid));
+CHECK(map_baddoc->find("doc-ok", &generation, &docid) && generation == 5 && docid == 20);
+delete map_baddoc;
+
+/*
+	Same-key toggle: add, remove, re-add with new (generation, docid);
+	find must return the newest values (covers slot reuse after removal)
+*/
+char toggle_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *toggle_dir = mkdtemp(toggle_dir_template);
+CHECK(toggle_dir != NULL);
+ANT_index_keymap *map_toggle = ANT_index_keymap::load(toggle_dir);
+CHECK(map_toggle != NULL);
+map_toggle->add("toggle-key", 1, 3);
+CHECK(map_toggle->find("toggle-key", &generation, &docid) && generation == 1 && docid == 3);
+map_toggle->remove("toggle-key");
+CHECK(!map_toggle->find("toggle-key", &generation, &docid));
+map_toggle->add("toggle-key", 4, 9);
+CHECK(map_toggle->find("toggle-key", &generation, &docid) && generation == 4 && docid == 9);
+delete map_toggle;
+
+/*
+	The toggle sequence must also replay correctly from the log
+*/
+ANT_index_keymap *map_toggle2 = ANT_index_keymap::load(toggle_dir);
+CHECK(map_toggle2 != NULL);
+CHECK(map_toggle2->find("toggle-key", &generation, &docid) && generation == 4 && docid == 9);
+delete map_toggle2;
+
 printf("PASSED\n");
 return 0;
 }

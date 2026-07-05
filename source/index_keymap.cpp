@@ -231,23 +231,22 @@ while ((status = read_keymap_line(fp, line, sizeof(line))) != 0)
 		{
 		/*
 			Add record: A<TAB>generation<TAB>docid<TAB>key
-			Parse generation and docid; bounds-check them
+			Parse generation and docid strictly: strtoll must consume at
+			least one digit and stop exactly at the field's tab terminator,
+			otherwise the record is malformed and skipped (atoll would
+			silently turn garbage into 0, and 0 is a valid docid).
 		*/
 		char *gen_str = line + 2;
-		char *gen_end = strchr(gen_str, '\t');
-		if (gen_end == NULL)
-			continue;		// malformed: missing docid and key
-		*gen_end = '\0';
-		long long generation = atoll(gen_str);
-		*gen_end = '\t';
+		char *gen_end;
+		long long generation = strtoll(gen_str, &gen_end, 10);
+		if (gen_end == gen_str || *gen_end != '\t')
+			continue;		// malformed generation field: skip record
 
 		char *docid_str = gen_end + 1;
-		char *docid_end = strchr(docid_str, '\t');
-		if (docid_end == NULL)
-			continue;		// malformed: missing key
-		*docid_end = '\0';
-		long long docid = atoll(docid_str);
-		*docid_end = '\t';
+		char *docid_end;
+		long long docid = strtoll(docid_str, &docid_end, 10);
+		if (docid_end == docid_str || *docid_end != '\t')
+			continue;		// malformed docid field: skip record
 
 		/*
 			Bound-check generation and docid

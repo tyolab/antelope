@@ -16,6 +16,9 @@
 	Keys must be non-empty and must not contain tab or newline characters
 	(they could not round-trip through the log format); such keys are
 	rejected: add()/remove() become no-ops and find() reports not-found.
+
+	Only one live ANT_index_keymap per directory: two concurrently-open
+	instances do not see each other's writes.
 */
 #ifndef INDEX_KEYMAP_H_
 #define INDEX_KEYMAP_H_
