@@ -187,6 +187,14 @@ long long before, docid;
 if (key == NULL || document == NULL)
 	return -1;
 
+/*
+	No live writer: a previous flush() failed after tearing the writer down
+	(see flush()).  The index is read-only over its open segments until a
+	successful flush()/reopen.
+*/
+if (writer == NULL)
+	return -1;
+
 key_copy = new char[strlen(key) + 1];
 strcpy(key_copy, key);
 
@@ -265,6 +273,12 @@ return 1;
 	start_new_writer() creates the next generation's files.  A crash at any
 	point leaves either the old state (nothing changed) or the new state
 	(fully written) -- never a manifest pointing at a half-written segment.
+
+	On failure the index degrades to read-only over the already-open segments:
+	once the writer has been torn down (writer == NULL, writer_documents == 0)
+	add_document() returns -1 until a successful flush()/reopen, and search()
+	keeps serving the disk segments (plus, before the writer teardown point,
+	nothing has changed so the memory segment is still searchable).
 */
 long ATIRE_segment_index::flush(void)
 {
@@ -295,17 +309,26 @@ if (writer_tombstones->count() > 0)
 
 flushed_generation = writer_generation;
 
+/*
+	The writer is gone from here on.  Zero writer_documents (and mark the
+	engine not-stale: there is nothing to rebuild) so that if a later step
+	fails and we return early, add_document() and rebuild_writer_engine()
+	see a consistent "no writer" state instead of NULL-dereferencing --
+	graceful degradation to read-only over the already-open segments.
+*/
 delete writer;
 writer = NULL;
 delete writer_tombstones;
 writer_tombstones = NULL;
+writer_documents = 0;
+writer_engine_stale = 0;
 
 /*
 	The segment's files are now complete on disk.  Open it for searching and
 	append it to segments[] before touching the manifest.
 */
 if (append_segment(flushed_generation) != 0)
-	return 1;
+	return 1;			// degraded: read-only until a successful flush()/reopen
 
 /*
 	Register the now-open segment in the manifest.  Only after this save()
@@ -313,7 +336,7 @@ if (append_segment(flushed_generation) != 0)
 */
 manifest->add_segment(flushed_generation);
 if (manifest->save() != 0)
-	return 1;
+	return 1;			// degraded: read-only until a successful flush()/reopen
 
 return start_new_writer();
 }
@@ -406,6 +429,16 @@ if (!writer_engine_stale && writer_engine != NULL)
 
 delete writer_engine;
 writer_engine = NULL;
+
+/*
+	No live writer (a previous flush() failed after tearing it down): nothing
+	to wrap; search() serves only the open disk segments.
+*/
+if (writer == NULL)
+	{
+	writer_engine_stale = 0;
+	return;
+	}
 
 if (writer_documents == 0)
 	{

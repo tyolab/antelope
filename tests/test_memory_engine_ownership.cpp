@@ -24,8 +24,14 @@ char name_one[] = "doc-1", doc_one[] = "<DOC>aardvark zebra</DOC>";
 char name_two[] = "doc-2", doc_two[] = "<DOC>zebra quokka</DOC>";
 char name_three[] = "doc-3", doc_three[] = "<DOC>aardvark wombat</DOC>";
 
+/*
+	ATIRE_indexer::init(char *options) tokenises on '+', not spaces; a
+	space-separated options string is silently ignored and the indexer falls
+	back to its compiled-in defaults ("index.aspt" in the current working
+	directory -- i.e. a stray file in the repo root when run from there).
+*/
 ATIRE_indexer *indexer = new ATIRE_indexer();
-indexer->init((char *)"atire_test -nologo -findex /tmp/unused_task5.aspt -fdoclist /tmp/unused_task5_doclist.aspt");
+indexer->init((char *)"-nologo+-findex+/tmp/unused_task5.aspt+-fdoclist+/tmp/unused_task5_doclist.aspt");
 indexer->index_document(name_one, doc_one);
 indexer->index_document(name_two, doc_two);
 

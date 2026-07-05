@@ -148,6 +148,14 @@ topsig_negative_ranking_function = NULL;
 processing_strategy = ANT_ANT_param_block::TERM_AT_A_TIME;
 impact_header_buffers = NULL;
 number_of_impact_headers = 0;
+
+/*
+	ANT_VX = "auto-detect the version from the index header at open()".
+	Callers that know the version can still override with set_ant_version();
+	without this default the member was uninitialised and open() could
+	spuriously fail its version-mismatch check.
+*/
+ant_version = ANT_VX;
 }
 
 /*
