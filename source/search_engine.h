@@ -127,6 +127,7 @@ public:
 #endif
 	long long get_is_quantized() { return is_quantized; }
 	long long get_postings_buffer_length() { return postings_buffer_length; }
+	long get_memory_model(void) { return memory_model; }		// true (nonzero) for INDEX_IN_MEMORY readers; see get_postings()/ANT_file_memory::read_return_ptr()
 
 	virtual ANT_search_engine_btree_leaf *process_one_term(char *term, ANT_search_engine_btree_leaf *term_details);
 	virtual ANT_search_engine_btree_leaf *get_collection_frequency(char *base_term, ANT_stem *stem_maker, ANT_search_engine_btree_leaf *stemmed_term_details);

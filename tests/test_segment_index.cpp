@@ -1000,6 +1000,229 @@ delete [] dir;
 printf("test_merger_no_tombstones OK\n");
 }
 
+/*
+	TEST_MERGER_DROPS_TOMBSTONES()
+	-------------------------------
+	Merge two segments with deletions; the output must contain exactly the
+	live documents, densely renumbered, with corrected df/cf.
+*/
+static void test_merger_drops_tombstones(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16], seg_a[4096], seg_b[4096], merged[4096], del_a[4096];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 6; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	if (i == 2)
+		CHECK(index->flush() == 0);
+	}
+CHECK(index->flush() == 0);
+/*
+	Delete doc-1 (segment 1, docid 1) and doc-4 (segment 2, docid 1)
+	through the API so the .del files are written for us
+*/
+CHECK(index->delete_document("doc-1") == 0);
+CHECK(index->delete_document("doc-4") == 0);
+delete index;
+
+snprintf(seg_a, sizeof(seg_a), "%s/seg_000001.aspt", dir);
+snprintf(seg_b, sizeof(seg_b), "%s/seg_000002.aspt", dir);
+snprintf(del_a, sizeof(del_a), "%s/seg_000001.del", dir);
+snprintf(merged, sizeof(merged), "%s/seg_000009.aspt", dir);
+
+ATIRE_API *engine_a = open_segment_engine(seg_a);
+ATIRE_API *engine_b = open_segment_engine(seg_b);
+ANT_search_engine *engines[2];
+engines[0] = engine_a->get_search_engine();
+engines[1] = engine_b->get_search_engine();
+ANT_index_tombstones *stones[2];
+char del_b[4096];
+snprintf(del_b, sizeof(del_b), "%s/seg_000002.del", dir);
+stones[0] = ANT_index_tombstones::load(del_a, engine_a->get_document_count());
+stones[1] = ANT_index_tombstones::load(del_b, engine_b->get_document_count());
+CHECK(stones[0]->count() == 1);
+CHECK(stones[1]->count() == 1);
+
+ANT_index_merger *merger = new ANT_index_merger();
+CHECK(merger->merge(engines, stones, 2, merged) == 0);
+delete merger;
+
+ATIRE_API *out = open_segment_engine(merged);
+
+/*
+	4 live docs; df of "common" corrected from 6 to 4
+*/
+CHECK(out->get_document_count() == 4);
+ANT_search_engine_btree_leaf leaf;
+CHECK(out->get_search_engine()->get_postings_details((char *)"common", &leaf) != NULL);
+CHECK(leaf.local_document_frequency == 4);
+
+/*
+	Deleted docs' unique terms are GONE from the vocabulary (df would be 0)
+*/
+unique_term(letters, 1);
+CHECK(out->get_search_engine()->get_postings_details(letters, &leaf) == NULL);
+unique_term(letters, 4);
+CHECK(out->get_search_engine()->get_postings_details(letters, &leaf) == NULL);
+
+/*
+	Survivors searchable; dense renumbering: doc-0,2,3,5 -> 0,1,2,3
+*/
+strcpy(query, "common");
+CHECK(out->search(query, 10) == 4);
+char filename_buffer[4096];
+CHECK(strcmp(out->get_document_filename(filename_buffer, 0), "doc-0") == 0);
+CHECK(strcmp(out->get_document_filename(filename_buffer, 1), "doc-2") == 0);
+CHECK(strcmp(out->get_document_filename(filename_buffer, 2), "doc-3") == 0);
+CHECK(strcmp(out->get_document_filename(filename_buffer, 3), "doc-5") == 0);
+
+delete out;
+delete engine_a;
+delete engine_b;
+delete stones[0];
+delete stones[1];
+delete [] dir;
+printf("test_merger_drops_tombstones OK\n");
+}
+
+/*
+	TEST_MERGER_REPEATED_MERGE()
+	-----------------------------
+	Hardening item 3/4 (Task 2 review): a single ANT_index_merger instance
+	must be able to drive a second merge after the first, proving both
+	re-entrancy (no leaked/stale per-merge state) and merge-of-merged
+	composability.  Builds three segments A, B, C (with a deletion each in
+	A and B before the first merge), merges A+B -> out1 with one instance,
+	then reuses the SAME instance to merge out1+C -> out2, and checks that
+	out2's live document count equals live(A) + live(B) + live(C).
+*/
+static void test_merger_repeated_merge(void)
+{
+char *dir = make_index_dir();
+char key[256], doc[256], letters[16];
+char seg_a[4096], seg_b[4096], seg_c[4096];
+char del_a[4096], del_b[4096];
+char out1[4096], out2[4096];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+/*
+	Segment A: doc-0..2
+*/
+for (i = 0; i < 3; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+CHECK(index->flush() == 0);
+/*
+	Segment B: doc-3..5
+*/
+for (i = 3; i < 6; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+CHECK(index->flush() == 0);
+/*
+	Delete one document each from A and B before the first merge
+*/
+CHECK(index->delete_document("doc-0") == 0);
+CHECK(index->delete_document("doc-4") == 0);
+/*
+	Segment C: doc-6..7, flushed AFTER the deletions above so it carries
+	no tombstones of its own
+*/
+for (i = 6; i < 8; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+CHECK(index->flush() == 0);
+delete index;
+
+snprintf(seg_a, sizeof(seg_a), "%s/seg_000001.aspt", dir);
+snprintf(seg_b, sizeof(seg_b), "%s/seg_000002.aspt", dir);
+snprintf(seg_c, sizeof(seg_c), "%s/seg_000003.aspt", dir);
+snprintf(del_a, sizeof(del_a), "%s/seg_000001.del", dir);
+snprintf(del_b, sizeof(del_b), "%s/seg_000002.del", dir);
+snprintf(out1, sizeof(out1), "%s/seg_000009.aspt", dir);
+snprintf(out2, sizeof(out2), "%s/seg_000010.aspt", dir);
+
+ATIRE_API *engine_a = open_segment_engine(seg_a);
+ATIRE_API *engine_b = open_segment_engine(seg_b);
+ANT_search_engine *ab_engines[2];
+ab_engines[0] = engine_a->get_search_engine();
+ab_engines[1] = engine_b->get_search_engine();
+ANT_index_tombstones *ab_stones[2];
+ab_stones[0] = ANT_index_tombstones::load(del_a, engine_a->get_document_count());
+ab_stones[1] = ANT_index_tombstones::load(del_b, engine_b->get_document_count());
+CHECK(ab_stones[0]->count() == 1);
+CHECK(ab_stones[1]->count() == 1);
+
+/*
+	ONE merger instance drives BOTH merges
+*/
+ANT_index_merger *merger = new ANT_index_merger();
+CHECK(merger->merge(ab_engines, ab_stones, 2, out1) == 0);
+
+delete engine_a;
+delete engine_b;
+delete ab_stones[0];
+delete ab_stones[1];
+
+/*
+	Second merge, same instance: out1 (already-merged, tombstone-free) + C
+*/
+ATIRE_API *engine_out1 = open_segment_engine(out1);
+ATIRE_API *engine_c = open_segment_engine(seg_c);
+ANT_search_engine *final_engines[2];
+final_engines[0] = engine_out1->get_search_engine();
+final_engines[1] = engine_c->get_search_engine();
+ANT_index_tombstones *final_stones[2];
+final_stones[0] = new ANT_index_tombstones(engine_out1->get_document_count());
+final_stones[1] = new ANT_index_tombstones(engine_c->get_document_count());
+
+CHECK(merger->merge(final_engines, final_stones, 2, out2) == 0);
+delete merger;
+
+/*
+	live(A) = 2, live(B) = 2, live(C) = 2 -> 6 total
+*/
+ATIRE_API *out = open_segment_engine(out2);
+CHECK(out->get_document_count() == 6);
+
+ANT_search_engine_btree_leaf leaf;
+CHECK(out->get_search_engine()->get_postings_details((char *)"common", &leaf) != NULL);
+CHECK(leaf.local_document_frequency == 6);
+
+char query[64];
+strcpy(query, "common");
+CHECK(out->search(query, 10) == 6);
+
+delete out;
+delete engine_out1;
+delete engine_c;
+delete final_stones[0];
+delete final_stones[1];
+delete [] dir;
+printf("test_merger_repeated_merge OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1017,6 +1240,8 @@ test_keymap_recovery();
 test_keymap_recovery_compound_loss();
 test_equivalence_with_oneshot();
 test_merger_no_tombstones();
+test_merger_drops_tombstones();
+test_merger_repeated_merge();
 printf("PASSED\n");
 return 0;
 }

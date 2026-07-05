@@ -487,6 +487,25 @@ for (engine = 0; engine < number_engines; engine++)
 		return 1;
 
 /*
+	This class's contract is INDEX_IN_MEMORY inputs only.  The shared
+	get_postings() destination buffer below (raw[number_engines], reused
+	across every contributing engine in a term's quantum loop) is only safe
+	because an in-memory reader's ANT_file_memory::read_return_ptr() ignores
+	the destination it is given and returns a pointer straight into its own
+	buffer instead (search_engine.cpp: ANT_file_memory::read_return_ptr(),
+	and the SPECIAL_COMPRESSION df<=2 path at search_engine.cpp:678-679,
+	which redirects through special_compression_buffer -- non-NULL only for
+	memory_model engines, set at search_engine.cpp:223).  A disk-backed
+	engine would instead decode into our shared buffer, and a second
+	contributing engine processed in the same iteration would clobber the
+	first's data before it is consumed.  Reject non-memory-model engines
+	before that assumption is ever relied on.
+*/
+for (engine = 0; engine < number_engines; engine++)
+	if (!engines[engine]->get_memory_model())
+		goto cleanup;
+
+/*
 	Build the renumbering table and the output/raw document counts.
 	  combined_docs      = live documents in the output (drives the output count)
 	  raw_combined_docs  = summed input document counts (drives buffer sizes: a
@@ -520,7 +539,18 @@ for (engine = 0; engine < number_engines; engine++)
 leaves[number_engines] = new ANT_search_engine_btree_leaf;
 raw[number_engines] = new ANT_compressable_integer[510 + raw_combined_docs];
 
-term_list = new ANT_memory_index_hash_node *[maximum_terms + 1];
+/*
+	+16 slack: unique_term_count() only bounds the per-engine vocabulary
+	walked below, but before that loop we unconditionally push up to 8 '~'
+	variable nodes (~documentfilenamesstart/finish,
+	~documentfilenamesindexstart/finish, ~length, ~documentlongest,
+	~trimpoint, ~stemmer) onto term_list, and none of those writes are
+	bounds-checked -- the in-loop growth check further down only guards
+	pushes made from inside the main term walk.  16 is double the current
+	count of pre-loop writes, so there is room to add a couple more without
+	revisiting this again.
+*/
+term_list = new ANT_memory_index_hash_node *[maximum_terms + 16 + 1];
 
 decompress_buffer = new ANT_compressable_integer[raw_combined_docs + ANT_COMPRESSION_FACTORY_END_PADDING];
 impact_headers = new ANT_compressable_integer *[number_engines + 1];
@@ -694,8 +724,17 @@ if (stemmer)
 
 			/*
 				Preload each contributing input's raw postings block and impact
-				header (get_postings returns a pointer into the in-memory index;
-				the destination we pass is ignored for INDEX_IN_MEMORY segments).
+				header.  The same scratch buffer (raw[number_engines]) is passed
+				as "destination" for every engine here; that is only safe
+				because every engine was verified memory-model at the top of
+				merge() -- get_postings() on an in-memory reader ignores the
+				destination argument and returns a pointer into the engine's
+				OWN buffer instead (ANT_file_memory::read_return_ptr(), and
+				special_compression_buffer for the SPECIAL_COMPRESSION df<=2
+				path), so passing the same scratch pointer to N engines never
+				aliases their outputs.  A disk-backed engine would decode
+				through this shared destination and corrupt/overwrite a
+				previous engine's still-unconsumed postings.
 			*/
 			for (engine = 0; engine < number_engines; engine++)
 				if (strcmp_results[engine] == 0)
