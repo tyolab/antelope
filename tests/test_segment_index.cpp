@@ -1300,6 +1300,85 @@ delete [] dir;
 printf("test_compact_basic OK\n");
 }
 
+/*
+	TEST_COMPACT_SUBSET_LEAVES_OTHER_SEGMENT()
+	------------------------------------------
+	Compact only a subset of the disk segments (here segment 1 of {1,2});
+	the untouched segment's file, documents and keymap entries must all
+	survive: its docs stay searchable and delete/update by its keys still
+	hit the right documents afterwards.
+*/
+static void test_compact_subset_leaves_other_segment(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16], path[4096];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 8; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	if (i == 3)
+		CHECK(index->flush() == 0);
+	}
+CHECK(index->flush() == 0);
+
+/*
+	Compact segment 1 alone (a single-input rewrite); segment 2 is not
+	part of the merge and must come through untouched
+*/
+long long inputs[1];
+inputs[0] = 1;
+CHECK(index->compact(inputs, 1) == 0);
+
+/*
+	Nothing was deleted, so all 8 docs survive; segment 2's docs are
+	still individually findable by their unique terms
+*/
+CHECK(index->get_document_count() == 8);
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 8);
+for (i = 4; i < 8; i++)
+	{
+	unique_term(letters, i);
+	strcpy(query, letters);
+	CHECK(index->search(query, 10) == 1);
+	}
+
+/*
+	Segment 1's file was replaced by the compaction output; segment 2's
+	file was left alone
+*/
+snprintf(path, sizeof(path), "%s/seg_000001.aspt", dir);
+CHECK(access(path, F_OK) != 0);
+snprintf(path, sizeof(path), "%s/seg_000002.aspt", dir);
+CHECK(access(path, F_OK) == 0);
+
+/*
+	Keymap entries for segment 2's keys were never touched: delete and
+	update by key still resolve to the right documents
+*/
+CHECK(index->delete_document("doc-5") == 0);
+CHECK(index->get_document_count() == 7);
+unique_term(letters, 5);
+strcpy(query, letters);
+CHECK(index->search(query, 10) == 0);
+
+unique_term(letters, 6);
+sprintf(doc, "<DOC>common replacement %s</DOC>", letters);
+CHECK(index->update_document("doc-6", doc) >= 0);
+strcpy(query, letters);
+CHECK(index->search(query, 10) == 1);		// only the replacement's copy of the unique term
+
+delete index;
+delete [] dir;
+printf("test_compact_subset_leaves_other_segment OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1320,6 +1399,7 @@ test_merger_no_tombstones();
 test_merger_drops_tombstones();
 test_merger_repeated_merge();
 test_compact_basic();
+test_compact_subset_leaves_other_segment();
 printf("PASSED\n");
 return 0;
 }
