@@ -157,7 +157,7 @@ return 0;
 long long ATIRE_segment_index::add_document(const char *key, const char *document)
 {
 char *key_copy, *doc_copy;
-long long docid;
+long long before, docid;
 
 if (key == NULL || document == NULL)
 	return -1;
@@ -168,7 +168,22 @@ strcpy(key_copy, key);
 doc_copy = new char[strlen(document) + 1];
 strcpy(doc_copy, document);
 
+before = writer->get_docno();
 writer->index_document(key_copy, doc_copy);
+docid = writer->get_docno();
+
+delete [] key_copy;
+delete [] doc_copy;
+
+/*
+	A document that parses to zero terms makes the indexer roll docno back
+	(docno--; WITH_EMPTY_DOCUMENT is not defined in this build) and index
+	nothing: without this guard we would return a handle aliasing the
+	PREVIOUS document, add a colliding keymap entry, and inflate
+	writer_documents.
+*/
+if (docid == before)		// zero terms -> indexer rolled docno back; nothing was indexed
+	return -1;
 
 /*
 	ATIRE_indexer::get_docno() is 1-based (docno is pre-incremented before
@@ -179,10 +194,7 @@ writer->index_document(key_copy, doc_copy);
 	0-based).  Subtract 1 here so make_handle()'s docid matches what
 	search_one_segment() will report for the same document.
 */
-docid = writer->get_docno() - 1;
-
-delete [] key_copy;
-delete [] doc_copy;
+docid -= 1;
 
 writer_documents++;
 writer_engine_stale = 1;
@@ -197,8 +209,6 @@ return make_handle(writer_generation, docid);
 	-----------------------------------------
 	TASK 9: upsert (tombstone the old (generation, docid) via the keymap,
 	then add_document() the new content).
-	note: empty documents roll back docno in the indexer -- add_document
-	handle aliasing guard needed.
 */
 long long ATIRE_segment_index::update_document(const char *key, const char *document)
 {
@@ -211,8 +221,6 @@ return -1;
 	TASK 9: look the key up in the keymap, mark it deleted in the owning
 	segment's tombstones (writer_tombstones or segments[which].tombstones),
 	and remove it from the keymap.
-	note: empty documents roll back docno in the indexer -- add_document
-	handle aliasing guard needed.
 */
 long ATIRE_segment_index::delete_document(const char *key)
 {

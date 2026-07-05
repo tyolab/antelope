@@ -59,6 +59,23 @@ index->add_document("doc-3", "<DOC>aardvark wombat</DOC>");
 strcpy(query, "aardvark");
 CHECK(index->search(query, 10) == 2);
 
+/*
+	A zero-term document is rejected (the indexer rolls docno back and
+	indexes nothing): -1 handle, no change to the document count, and a
+	subsequent real add still works and searches correctly.
+*/
+CHECK(index->get_document_count() == 3);
+CHECK(index->add_document("empty-1", "<DOC></DOC>") == -1);
+CHECK(index->get_document_count() == 3);
+
+long long h4 = index->add_document("doc-4", "<DOC>numbat quokka</DOC>");
+CHECK(h4 >= 0);
+CHECK(index->get_document_count() == 4);
+strcpy(query, "numbat");
+CHECK(index->search(query, 10) == 1);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-4") == 0);
+CHECK(ATIRE_segment_index::make_handle(index->get_hit(0)->generation, index->get_hit(0)->docid) == h4);
+
 delete index;
 delete [] dir;
 printf("test_nrt_add_and_search OK\n");
