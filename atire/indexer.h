@@ -80,7 +80,7 @@ public:
 	long finish();
 
 	long long index_document(ANT_directory_iterator_object *current_file, char *doc_to_store = 0x0);
-	void index_document(char *file_name, char *file, char *doc_to_store = 0x0);
+	void index_document(char *file_name, char *file, char *doc_to_store = 0x0);		// file_name and file must be WRITABLE buffers and may be modified by the call (the parser normalises tokens in place; string literals will fault)
 	void index();
 
 	long get_docno() { return docno; }

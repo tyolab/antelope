@@ -23,6 +23,7 @@ protected:
 	char *postings_buffer, *postings_buffer_location;
 	size_t postings_buffer_length;
 	long owns_index;			// if false, the destructor leaves the shared ANT_memory_index alone
+	long long saved_quantization_bits;	// the index's quantization_bits before the constructor overwrote it (restored by the destructor)
 
 public:
 	ANT_search_engine_memory_index(ANT_memory_index *index, ANT_memory *memory);

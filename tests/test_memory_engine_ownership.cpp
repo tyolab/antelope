@@ -30,6 +30,14 @@ indexer->index_document(name_one, doc_one);
 indexer->index_document(name_two, doc_two);
 
 /*
+	The wrapper's constructor forces quantization_bits = 8 on the shared
+	index for searching; its destructor must restore the original value or a
+	later serialise() by the indexer would skip the automatic bit-count
+	computation (which requires -1) and write a mis-quantized on-disk index.
+*/
+long long original_qbits = indexer->get_index()->get_quantization_bits();
+
+/*
 	First wrapper: non-owning.  get_index(), not release_index() -- the
 	indexer keeps its pointer and can continue indexing afterwards.
 */
@@ -51,6 +59,12 @@ CHECK(engine_two->search(query, 10) == 2);
 strcpy(query, "wombat");
 CHECK(engine_two->search(query, 10) == 1);
 delete engine_two;
+
+/*
+	Both wrappers gone: the shared index's quantization_bits must be back to
+	its pre-wrapper value.
+*/
+CHECK(indexer->get_index()->get_quantization_bits() == original_qbits);
 
 delete indexer;
 printf("PASSED\n");
