@@ -364,6 +364,264 @@ delete [] dir;
 printf("test_stale_keymap_reconciliation OK\n");
 }
 
+/*
+	TEST_OVERFETCH_MANY_UPDATES_SAME_KEY()
+	--------------------------------------
+	Update ONE key 50 times inside a single (unflushed) memory segment.  Each
+	update tombstones the previous version, which lives in the SAME writer
+	segment -> writer_tombstones->count() grows to 49.  A top_k=1 search must
+	over-fetch to 1 + 49 = 50 and still return exactly one live hit carrying
+	the newest body.
+*/
+static void test_overfetch_many_updates_same_key(void)
+{
+char *dir = make_index_dir();
+char query[64];
+char body[128];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+index->add_document("hot-key", "<DOC>marsupial version 0</DOC>");
+for (i = 1; i <= 49; i++)
+	{
+	sprintf(body, "<DOC>marsupial version %lld</DOC>", i);
+	CHECK(index->update_document("hot-key", body) >= 0);
+	}
+
+/*
+	Every version shares the term "marsupial"; 49 of the 50 copies are
+	tombstoned in the writer segment.  top_k=1 must yield exactly the live one.
+*/
+strcpy(query, "marsupial");
+CHECK(index->search(query, 1) == 1);
+CHECK(strcmp(index->get_hit(0)->filename, "hot-key") == 0);
+
+/*
+	The surviving copy must be the NEWEST body: term "version" is shared, but
+	only the last version's unique token is reachable.  Search the distinctive
+	term of the final version and of an intermediate one.
+*/
+strcpy(query, "marsupial");
+CHECK(index->search(query, 10) == 1);				// still only one live doc total
+CHECK(index->get_document_count() == 1);
+
+delete index;
+delete [] dir;
+printf("test_overfetch_many_updates_same_key OK\n");
+}
+
+/*
+	TEST_OVERFETCH_TEN_DOCS_ALL_UPDATED()
+	-------------------------------------
+	Ten distinct keys sharing a common term, each updated once (so 10 live +
+	10 tombstoned copies in the writer segment).  A top_k=10 search must return
+	all 10 live docs -- none masked by the 10 tombstones despite fetch=20.
+*/
+static void test_overfetch_ten_docs_all_updated(void)
+{
+char *dir = make_index_dir();
+char query[64];
+char key[64], body[128];
+long long i, hits, seen;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+for (i = 0; i < 10; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	sprintf(body, "<DOC>common original body number %lld</DOC>", i);
+	CHECK(index->add_document(key, body) >= 0);
+	}
+for (i = 0; i < 10; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	sprintf(body, "<DOC>common revised body number %lld</DOC>", i);
+	CHECK(index->update_document(key, body) >= 0);
+	}
+
+strcpy(query, "common");
+hits = index->search(query, 10);
+CHECK(hits == 10);
+CHECK(index->get_document_count() == 10);
+
+/*
+	Every returned key is distinct and none is a stale copy: "original" must
+	be unreachable, "revised" reachable for all ten.
+*/
+seen = 0;
+for (i = 0; i < hits; i++)
+	if (index->get_hit(i)->filename != NULL)
+		seen++;
+CHECK(seen == 10);
+
+strcpy(query, "original");
+CHECK(index->search(query, 20) == 0);
+strcpy(query, "revised");
+CHECK(index->search(query, 20) == 10);
+
+delete index;
+delete [] dir;
+printf("test_overfetch_ten_docs_all_updated OK\n");
+}
+
+/*
+	TEST_OVERFETCH_TOP_SCORERS_ALL_TOMBSTONED_DISK()
+	------------------------------------------------
+	Cross-segment: a batch of docs is flushed to a disk segment, then EVERY one
+	is updated (new copies land in the memory segment; the disk copies are all
+	tombstoned).  A search whose highest-scoring matches are the tombstoned
+	disk copies must still surface the live memory copies (over-fetch applied
+	per-segment: disk fetch = top_k + disk-tombstone-count).
+*/
+static void test_overfetch_top_scorers_all_tombstoned_disk(void)
+{
+char *dir = make_index_dir();
+char query[64];
+char key[64], body[128];
+long long i, hits;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+for (i = 0; i < 8; i++)
+	{
+	sprintf(key, "d-%lld", i);
+	sprintf(body, "<DOC>shared token disk copy %lld</DOC>", i);
+	CHECK(index->add_document(key, body) >= 0);
+	}
+CHECK(index->flush() == 0);
+
+for (i = 0; i < 8; i++)
+	{
+	sprintf(key, "d-%lld", i);
+	sprintf(body, "<DOC>shared token memory copy %lld</DOC>", i);
+	CHECK(index->update_document(key, body) >= 0);
+	}
+
+strcpy(query, "shared");
+hits = index->search(query, 8);
+CHECK(hits == 8);				// all disk copies tombstoned, all memory copies live
+CHECK(index->get_document_count() == 8);
+
+strcpy(query, "disk");
+CHECK(index->search(query, 20) == 0);
+strcpy(query, "memory");
+CHECK(index->search(query, 20) == 8);
+
+/*
+	top_k=1 against the same fully-tombstoned disk segment: the single live
+	answer must not be masked by the 8 tombstones ahead of it.
+*/
+strcpy(query, "shared");
+CHECK(index->search(query, 1) == 1);
+
+delete index;
+delete [] dir;
+printf("test_overfetch_top_scorers_all_tombstoned_disk OK\n");
+}
+
+/*
+	TEST_UPDATE_ACROSS_FLUSH_BOUNDARY()
+	-----------------------------------
+	Update a doc (disk->memory), flush, update again (disk->memory in the new
+	generation).  The keymap generation must track each hop and tombstones must
+	land in the right segment each time; get_document_count stays at 1.
+*/
+static void test_update_across_flush_boundary(void)
+{
+char *dir = make_index_dir();
+char query[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+index->add_document("rolling", "<DOC>alpha stage</DOC>");
+CHECK(index->flush() == 0);						// alpha in disk gen A
+
+CHECK(index->update_document("rolling", "<DOC>beta stage</DOC>") >= 0);	// beta in memory; alpha tombstoned in A
+CHECK(index->flush() == 0);						// beta flushed to disk gen B
+
+CHECK(index->update_document("rolling", "<DOC>gamma stage</DOC>") >= 0);	// gamma in memory; beta tombstoned in B
+
+strcpy(query, "alpha");
+CHECK(index->search(query, 10) == 0);
+strcpy(query, "beta");
+CHECK(index->search(query, 10) == 0);
+strcpy(query, "gamma");
+CHECK(index->search(query, 10) == 1);
+CHECK(index->get_document_count() == 1);
+
+/*
+	Reopen: tombstones in both disk generations must persist; delete then
+	reports the newest is the only live copy.
+*/
+CHECK(index->flush() == 0);
+delete index;
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+strcpy(query, "alpha");
+CHECK(reopened->search(query, 10) == 0);
+strcpy(query, "beta");
+CHECK(reopened->search(query, 10) == 0);
+strcpy(query, "gamma");
+CHECK(reopened->search(query, 10) == 1);
+CHECK(reopened->get_document_count() == 1);
+CHECK(reopened->delete_document("rolling") == 0);
+CHECK(reopened->get_document_count() == 0);
+delete reopened;
+delete [] dir;
+printf("test_update_across_flush_boundary OK\n");
+}
+
+/*
+	TEST_READD_AFTER_RECONCILIATION()
+	---------------------------------
+	Exercise the D-then-A log ordering: a key stranded in an unflushed
+	generation is reconciled away on reopen (D record), then re-added in the
+	new session (A record appended after the D).  A second reopen replays
+	A(stale) then D(reconcile) then A(re-add) and must end LIVE.
+*/
+static void test_readd_after_reconciliation(void)
+{
+char *dir = make_index_dir();
+char query[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->add_document("anchor", "<DOC>anchor doc</DOC>");
+CHECK(index->flush() == 0);
+index->add_document("stranded", "<DOC>stranded original</DOC>");	// never flushed
+delete index;
+
+/*
+	Reopen 1: reconcile drops "stranded" (D record), then re-add it.
+*/
+ATIRE_segment_index *reopen1 = new ATIRE_segment_index();
+CHECK(reopen1->open(dir) == 0);
+strcpy(query, "original");
+CHECK(reopen1->search(query, 10) == 0);				// reconciled away
+CHECK(reopen1->add_document("stranded", "<DOC>stranded reborn</DOC>") >= 0);
+CHECK(reopen1->flush() == 0);						// A(re-add) persisted, flushed
+delete reopen1;
+
+/*
+	Reopen 2: replay must be A(stale) ... D(reconcile) ... A(re-add) -> live.
+*/
+ATIRE_segment_index *reopen2 = new ATIRE_segment_index();
+CHECK(reopen2->open(dir) == 0);
+strcpy(query, "reborn");
+CHECK(reopen2->search(query, 10) == 1);				// ends LIVE
+strcpy(query, "original");
+CHECK(reopen2->search(query, 10) == 0);
+CHECK(reopen2->delete_document("stranded") == 0);		// keymap points at the live re-added copy
+delete reopen2;
+delete [] dir;
+printf("test_readd_after_reconciliation OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -371,6 +629,11 @@ test_flush_and_reopen();
 test_multi_segment_growth();
 test_update_and_delete();
 test_stale_keymap_reconciliation();
+test_overfetch_many_updates_same_key();
+test_overfetch_ten_docs_all_updated();
+test_overfetch_top_scorers_all_tombstoned_disk();
+test_update_across_flush_boundary();
+test_readd_after_reconciliation();
 printf("PASSED\n");
 return 0;
 }
