@@ -61,7 +61,7 @@ private:
 	long long results_count, results_allocated;
 
 private:
-	void start_new_writer(void);
+	long start_new_writer(void);		// 0 on success, 1 if the manifest cannot be saved
 	void rebuild_writer_engine(void);
 	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k);
 	long append_segment(long long generation);

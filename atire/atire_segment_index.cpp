@@ -86,8 +86,11 @@ snprintf(buffer, (size_t)buffer_size, "%s/seg_%06lld.%s", directory, generation,
 	------------------------------------------
 	Take the next generation number, persist the manifest (before creating any
 	file named with that generation), then open a fresh in-memory writer.
+	Returns 0 on success, 1 if the manifest cannot be saved (in which case no
+	writer is started: the crash-safety guarantee -- generation persisted
+	before any file named with it exists -- would otherwise be lost).
 */
-void ATIRE_segment_index::start_new_writer(void)
+long ATIRE_segment_index::start_new_writer(void)
 {
 char index_filename[1024], doclist_filename[1024], options[2200];
 
@@ -98,7 +101,8 @@ writer_generation = manifest->take_generation();
 	created (see index_manifest.h): the writer's init() below creates the
 	doclist file.
 */
-manifest->save();
+if (manifest->save() != 0)
+	return 1;
 
 segment_filename(index_filename, sizeof(index_filename), writer_generation, "aspt");
 segment_filename(doclist_filename, sizeof(doclist_filename), writer_generation, "doclist");
@@ -115,6 +119,8 @@ writer_tombstones = new ANT_index_tombstones(1024);
 delete writer_engine;
 writer_engine = NULL;
 writer_engine_stale = 1;
+
+return 0;
 }
 
 /*
@@ -134,7 +140,8 @@ keymap = ANT_index_keymap::load(this->directory);
 	an ATIRE_API + ANT_index_tombstones per segment, populate segments[]).
 */
 
-start_new_writer();
+if (start_new_writer() != 0)
+	return 1;
 
 return 0;
 }
@@ -190,6 +197,8 @@ return make_handle(writer_generation, docid);
 	-----------------------------------------
 	TASK 9: upsert (tombstone the old (generation, docid) via the keymap,
 	then add_document() the new content).
+	note: empty documents roll back docno in the indexer -- add_document
+	handle aliasing guard needed.
 */
 long long ATIRE_segment_index::update_document(const char *key, const char *document)
 {
@@ -202,6 +211,8 @@ return -1;
 	TASK 9: look the key up in the keymap, mark it deleted in the owning
 	segment's tombstones (writer_tombstones or segments[which].tombstones),
 	and remove it from the keymap.
+	note: empty documents roll back docno in the indexer -- add_document
+	handle aliasing guard needed.
 */
 long ATIRE_segment_index::delete_document(const char *key)
 {
@@ -371,7 +382,16 @@ if (writer_engine != NULL)
 qsort(results, (size_t)results_count, sizeof(*results), ATIRE_segment_index_hit_cmp);
 
 if (results_count > top_k)
+	{
+	/*
+		Free the filenames of the entries the truncation cuts: both the
+		free loop at the top of this method and the destructor only walk
+		[0, results_count), so anything past top_k would otherwise leak.
+	*/
+	for (which = top_k; which < results_count; which++)
+		delete [] results[which].filename;
 	results_count = top_k;
+	}
 
 return results_count;
 }
