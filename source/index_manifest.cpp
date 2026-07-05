@@ -148,11 +148,15 @@ return 1;
 	ANT_INDEX_MANIFEST::LOAD()
 	--------------------------
 	Open "<dir>/manifest"; if missing return fresh manifest at generation 1.
-	Read first line -> generation via atoll; if parsed generation < 1 (or the
-	line is truncated garbage), keep 1.  Remaining lines: atoll each; only add
-	values > 0 as segments; skip overlong lines entirely.  Finally clamp the
-	generation above the largest loaded segment so an inconsistent manifest
-	can never hand out a generation that collides with an existing segment.
+	Read first line -> generation via atoll; if out of range (or the line is
+	truncated garbage), keep 1.  Remaining lines: atoll each; only add
+	in-range values as segments; skip overlong lines entirely.  All values
+	are bounded to (0, 1 << 40): make_handle() packs generation << 40 so
+	anything near that is meaningless, and an atoll() saturated to LLONG_MAX
+	would otherwise overflow the clamp below (signed overflow UB).  Finally
+	clamp the generation above the largest loaded segment so an inconsistent
+	manifest can never hand out a generation that collides with an existing
+	segment.
 */
 ANT_index_manifest *ANT_index_manifest::load(const char *directory)
 {
@@ -174,19 +178,19 @@ if ((fp = fopen(manifest_path, "r")) == NULL)
 if (read_manifest_line(fp, line, sizeof(line)) == 1)
 	{
 	long long parsed_gen = atoll(line);
-	if (parsed_gen >= 1)
+	if (parsed_gen >= 1 && parsed_gen < (1LL << 40))
 		result->generation = parsed_gen;
 	}
 
 /*
-	Read segments (remaining lines); ignore truncated fragments and non-positive values
+	Read segments (remaining lines); ignore truncated fragments and out-of-range values
 */
 while ((status = read_manifest_line(fp, line, sizeof(line))) != 0)
 	{
 	if (status != 1)
 		continue;		// overlong line: fragment discarded, parse nothing from it
 	long long seg_gen = atoll(line);
-	if (seg_gen > 0)
+	if (seg_gen > 0 && seg_gen < (1LL << 40))
 		result->add_segment(seg_gen);
 	}
 

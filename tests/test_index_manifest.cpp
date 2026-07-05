@@ -111,6 +111,29 @@ CHECK(m5->segment_count() == 2);
 CHECK(m5->take_generation() == 11);
 
 /*
+	An over-range number (atoll saturates to LLONG_MAX) must be rejected at
+	parse time, never reach the generation clamp (signed overflow UB), and
+	never turn the generation negative
+*/
+char range_dir_template[] = "/tmp/ant_manifest_XXXXXX";
+char *range_dir = mkdtemp(range_dir_template);
+CHECK(range_dir != NULL);
+char range_name[1200];
+snprintf(range_name, sizeof(range_name), "%s/manifest", range_dir);
+fp = fopen(range_name, "wb");
+CHECK(fp != NULL);
+fputs("500\n", fp);
+fputs("999999999999999999999999999999\n", fp);
+fputs("7\n", fp);
+fclose(fp);
+ANT_index_manifest *m6 = ANT_index_manifest::load(range_dir);
+CHECK(m6 != NULL);
+CHECK(m6->segment_count() == 1);
+CHECK(m6->get_segment(0) == 7);
+CHECK(m6->get_generation() == 500);
+CHECK(m6->take_generation() == 500);
+
+/*
 	Atomic save: no temp file left behind
 */
 char tmpname[1200];
@@ -122,6 +145,7 @@ delete m2;
 delete m3;
 delete m4;
 delete m5;
+delete m6;
 printf("PASSED\n");
 return 0;
 }
