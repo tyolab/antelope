@@ -294,10 +294,15 @@ long long handle = make_handle(writer_generation, docid);
 /*
 	Auto-flush: bound the live segment's size (and so the NRT rebuild cost,
 	see set_flush_threshold()'s doc comment).  Best-effort -- a failed
-	auto-flush leaves the writer degraded per flush()'s own contract (index
-	becomes read-only over the already-open segments until a successful
-	flush()/reopen); we do not surface that failure here since the document
-	just added is already durable in the (still searchable) writer.
+	auto-flush degrades per flush()'s contract: depending on the failure
+	point the just-added document is either still in the live writer
+	(finish()/tombstone-save fail before the writer teardown), or
+	flushed-but-not-durable (append_segment/manifest-save/start_new_writer
+	fail after teardown: the batch may remain searchable in-session, but
+	its segment was never manifested, so the orphan sweep deletes it on the
+	next open() and the handle we return below then names a lost document).
+	Callers needing certainty must call flush() themselves and check its
+	return.
 */
 if (flush_after_documents > 0 && writer_documents >= flush_after_documents)
 	flush();

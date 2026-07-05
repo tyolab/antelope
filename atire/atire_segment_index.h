@@ -98,6 +98,12 @@ public:
 		quadratically until the writer is flushed, so an unbounded live
 		segment is a real memory-growth hazard for long-running sessions that
 		never call flush() themselves.
+
+		Auto-flush is best-effort: a failed auto-flush degrades per flush()'s
+		contract -- depending on the failure point the just-added document is
+		either still in the live writer, or flushed-but-not-durable (lost to
+		the orphan sweep on next open()).  Callers needing certainty must call
+		flush() themselves and check its return.
 	*/
 	void set_flush_threshold(long long documents) { flush_after_documents = documents; }
 
