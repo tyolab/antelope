@@ -63,7 +63,17 @@ private:
 private:
 	long start_new_writer(void);		// 0 on success, 1 if the manifest cannot be saved
 	void rebuild_writer_engine(void);
-	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k);
+	/*
+		use_filename_index selects the accessor used to fetch each hit's external
+		key: disk segments are reopened as ANT_V5 (this build always serialises
+		FILENAME_INDEX-style, see atire_segment_index.cpp/append_segment) so they
+		must be read with ATIRE_API::get_document_filename() (the filename-index
+		accessor, into a caller-supplied buffer); the writer's NRT view is wired
+		up via open_from_memory_index(), which forces ant_version = ANT_V3, so it
+		must be read with get_document_filename_from_doclist() (the in-memory
+		doc_list accessor) instead.
+	*/
+	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index);
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
 

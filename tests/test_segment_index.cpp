@@ -81,9 +81,61 @@ delete [] dir;
 printf("test_nrt_add_and_search OK\n");
 }
 
+/*
+	TEST_FLUSH_AND_REOPEN()
+	-----------------------
+*/
+static void test_flush_and_reopen(void)
+{
+char *dir = make_index_dir();
+char query[64];
+
+/*
+	Build, flush, keep searching in the same session
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+long long h1 = index->add_document("doc-1", "<DOC>aardvark zebra</DOC>");
+index->add_document("doc-2", "<DOC>zebra quokka</DOC>");
+CHECK(index->flush() == 0);
+
+/*
+	After flush: same results, now served from the disk segment
+*/
+strcpy(query, "zebra");
+CHECK(index->search(query, 10) == 2);
+
+/*
+	Keep writing into the fresh memory segment; search spans disk + memory
+*/
+index->add_document("doc-3", "<DOC>zebra wombat</DOC>");
+strcpy(query, "zebra");
+CHECK(index->search(query, 10) == 3);
+strcpy(query, "aardvark");
+CHECK(index->search(query, 10) == 1);
+CHECK(ATIRE_segment_index::make_handle(index->get_hit(0)->generation, index->get_hit(0)->docid) == h1);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-1") == 0);
+delete index;			// doc-3 not flushed: relaxed durability, lost on close without flush
+
+/*
+	Reopen from disk: the flushed segment is there, the unflushed doc is gone
+*/
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+strcpy(query, "zebra");
+CHECK(reopened->search(query, 10) == 2);
+strcpy(query, "wombat");
+CHECK(reopened->search(query, 10) == 0);
+CHECK(reopened->get_document_count() == 2);
+delete reopened;
+delete [] dir;
+printf("test_flush_and_reopen OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
+test_flush_and_reopen();
 printf("PASSED\n");
 return 0;
 }

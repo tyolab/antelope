@@ -15,6 +15,7 @@
 #include "../source/search_engine.h"
 #include "../source/search_engine_result.h"
 #include "../source/search_engine_accumulator.h"
+#include "../source/version.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -107,7 +108,16 @@ if (manifest->save() != 0)
 segment_filename(index_filename, sizeof(index_filename), writer_generation, "aspt");
 segment_filename(doclist_filename, sizeof(doclist_filename), writer_generation, "doclist");
 
-snprintf(options, sizeof(options), "atire_segment_writer -nologo -findex %s -fdoclist %s", index_filename, doclist_filename);
+/*
+	ATIRE_indexer::init(char *options) tokenises on '+', not spaces (it
+	prepends "index+" and strtok()s the result on "+" alone -- see
+	nodejs/index.js's createOptionsString(), which builds its options strings
+	the same way): each flag and each flag's value must be its own '+'
+	separated token, or ANT_indexer_param_block::parse() never sees them and
+	silently falls back to its compiled-in defaults ("index.aspt" /
+	"doclist.aspt", relative to the current working directory).
+*/
+snprintf(options, sizeof(options), "-nologo+-findex+%s+-fdoclist+%s", index_filename, doclist_filename);
 
 writer = new ATIRE_indexer();
 writer->init(options);
@@ -129,6 +139,8 @@ return 0;
 */
 long ATIRE_segment_index::open(const char *directory)
 {
+long long which;
+
 this->directory = new char[strlen(directory) + 1];
 strcpy(this->directory, directory);
 
@@ -136,8 +148,21 @@ manifest = ANT_index_manifest::load(this->directory);
 keymap = ANT_index_keymap::load(this->directory);
 
 /*
-	TASK 7: reopen existing disk segments listed in the manifest here (build
-	an ATIRE_API + ANT_index_tombstones per segment, populate segments[]).
+	Reopen every disk segment the manifest still lists as live.  The manifest
+	only ever records FLUSHED segments (start_new_writer() persists the
+	generation *before* creating the writer's files, but add_segment() only
+	happens after a successful flush), so a stray, unflushed writer file left
+	behind by a session that exited without flushing is simply not in this
+	list and is never opened here.
+*/
+for (which = 0; which < manifest->segment_count(); which++)
+	if (append_segment(manifest->get_segment(which)) != 0)
+		return 1;
+
+/*
+	TASK 10: sweep the directory for segment files not referenced by the
+	manifest (orphaned by a writer session that exited without flushing) and
+	delete them.
 */
 
 if (start_new_writer() != 0)
@@ -230,24 +255,138 @@ return 1;
 /*
 	ATIRE_SEGMENT_INDEX::FLUSH()
 	-------------------------------
-	TASK 7: serialise the writer's memory index + tombstones to disk as an
-	immutable segment, register it in the manifest, append it to segments[],
-	then start_new_writer() for the next generation.
+	Serialise the writer's memory index + tombstones to disk as an immutable
+	segment, register it in the manifest, append it to segments[], then
+	start_new_writer() for the next generation.
+
+	Ordering is deliberate for crash safety: the segment's files (.aspt, and
+	.del if there are any tombstones) are complete on disk BEFORE the manifest
+	is updated to reference that generation, and the manifest is saved BEFORE
+	start_new_writer() creates the next generation's files.  A crash at any
+	point leaves either the old state (nothing changed) or the new state
+	(fully written) -- never a manifest pointing at a half-written segment.
 */
 long ATIRE_segment_index::flush(void)
 {
-return 1;
+long long flushed_generation;
+char del_filename[1024];
+
+if (writer_documents == 0)
+	return 0;
+
+/*
+	The writer_engine is a non-owning NRT wrapper around the writer's memory
+	index (rebuild_writer_engine(), take_ownership = 0).  It must be torn
+	down before writer->finish() touches the memory index (finish() calls
+	ANT_memory_index::serialise(), which -- via the Task 5 quantization_bits
+	save/restore -- expects to be the sole owner at that point).
+*/
+delete writer_engine;
+writer_engine = NULL;
+writer_engine_stale = 1;
+
+if (writer->finish() == 0)		// docno <= 0 (shouldn't happen: writer_documents > 0 above) or serialise() failed
+	return 1;
+
+segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");
+if (writer_tombstones->count() > 0)
+	if (writer_tombstones->save(del_filename) != 0)
+		return 1;
+
+flushed_generation = writer_generation;
+
+delete writer;
+writer = NULL;
+delete writer_tombstones;
+writer_tombstones = NULL;
+
+/*
+	The segment's files are now complete on disk.  Open it for searching and
+	append it to segments[] before touching the manifest.
+*/
+if (append_segment(flushed_generation) != 0)
+	return 1;
+
+/*
+	Register the now-open segment in the manifest.  Only after this save()
+	succeeds is the segment considered part of the durable index.
+*/
+manifest->add_segment(flushed_generation);
+if (manifest->save() != 0)
+	return 1;
+
+return start_new_writer();
 }
 
 /*
 	ATIRE_SEGMENT_INDEX::APPEND_SEGMENT()
 	----------------------------------------
-	TASK 7: open a disk segment (generation) for searching and append it to
-	the segments[] array (growing it if necessary).
+	Open a disk segment (generation) for searching and append it to the
+	segments[] array (growing it if necessary).
+
+	The segment is opened INDEX_IN_MEMORY (loads the whole segment into RAM,
+	matching the NRT writer engine's cost model) and unquantized (quantize =
+	0; quantization_bits = -1 is the indexer's own default and is irrelevant
+	here since ATIRE_API::open() ignores it once the index reports itself
+	quantized -- it isn't, since flush() never asks the writer to quantize).
+
+	This build always defines FILENAME_INDEX, so ANT_memory_index::serialise()
+	(called by writer->finish() in flush()) unconditionally writes the
+	~documentfilenames* variables and ANT_version is compiled as ANT_V5
+	(source/version.cpp).  ATIRE_API::open() / ANT_search_engine::open()
+	auto-detect this from the header (ant_version starts as ANT_VX) and skip
+	reading a doclist file entirely for ANT_V5 indexes -- so doclist_filename
+	below is passed only because ATIRE_API::open() requires the parameter; the
+	seg_G.doclist file is never created (ATIRE_indexer::finish() only closes
+	id_list, and id_list itself is never opened, under #ifndef FILENAME_INDEX)
+	and is never read back.  Filenames must instead be fetched with
+	get_document_filename() (see search_one_segment()).
 */
 long ATIRE_segment_index::append_segment(long long generation)
 {
-return 1;
+char index_filename[1024], doclist_filename[1024], del_filename[1024];
+ATIRE_API *engine;
+long long which;
+
+segment_filename(index_filename, sizeof(index_filename), generation, "aspt");
+segment_filename(doclist_filename, sizeof(doclist_filename), generation, "doclist");
+segment_filename(del_filename, sizeof(del_filename), generation, "del");
+
+engine = new ATIRE_API();
+
+/*
+	ATIRE_API::ant_version is not initialised by its constructor -- callers
+	are expected to set it (see ATIRE_API_server::init(), atire.cpp) before
+	open().  ANT_VX (-1) means "auto-detect from the index header", which is
+	what ANT_search_engine::open() does when it sees ANT_VX: it reads the
+	version byte written by serialise() (always ANT_V5 in this build) instead
+	of demanding a match.  Without this call ant_version is garbage and
+	open() spuriously fails a version-mismatch check.
+*/
+engine->set_ant_version(ANT_VX);
+if (engine->open(ATIRE_API::INDEX_IN_MEMORY, index_filename, doclist_filename, /*quantize=*/0, /*quantization_bits=*/-1) != 0)
+	{
+	delete engine;
+	return 1;
+	}
+
+if (segment_count >= segments_allocated)
+	{
+	long long new_cap = segments_allocated == 0 ? 4 : segments_allocated * 2;
+	segment *new_segments = new segment[new_cap];
+	for (which = 0; which < segment_count; which++)
+		new_segments[which] = segments[which];
+	delete [] segments;
+	segments = new_segments;
+	segments_allocated = new_cap;
+	}
+
+segments[segment_count].generation = generation;
+segments[segment_count].engine = engine;
+segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
+segment_count++;
+
+return 0;
 }
 
 /*
@@ -289,7 +428,7 @@ writer_engine_stale = 0;
 	generation, docid, filename) results into the shared results[] array,
 	skipping any docid that segment's tombstones mark deleted.
 */
-void ATIRE_segment_index::search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k)
+void ATIRE_segment_index::search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index)
 {
 char query_copy[MAX_TERM_LENGTH];
 long long fetch, hits, which, docid, list_len;
@@ -297,6 +436,7 @@ ANT_search_engine *se;
 ANT_search_engine_result *list;
 ANT_search_engine_accumulator *accumulator;
 char *filename;
+char filename_index_buffer[4096];		// used only when use_filename_index (disk segments)
 
 fetch = top_k + (tombstones ? tombstones->count() : 0);
 
@@ -329,7 +469,17 @@ for (which = 0; which < hits && which < fetch && which < list_len; which++)
 		results_allocated = new_cap;
 		}
 
-	filename = engine->get_document_filename_from_doclist(docid);
+	/*
+		Disk segments are reopened via ATIRE_API::open() as ANT_V5 (this build's
+		serialise() always writes the FILENAME_INDEX filename table); the memory
+		writer's NRT view is wired up via open_from_memory_index(), which forces
+		ant_version = ANT_V3 and never populates the filename-index tables.  Use
+		the accessor that matches which one this engine actually is.
+	*/
+	if (use_filename_index)
+		filename = engine->get_document_filename(filename_index_buffer, docid);
+	else
+		filename = engine->get_document_filename_from_doclist(docid);
 
 	results[results_count].generation = generation;
 	results[results_count].docid = docid;
@@ -378,14 +528,12 @@ for (which = 0; which < results_count; which++)
 	delete [] results[which].filename;
 results_count = 0;
 
-/*
-	TASK 7: search each open disk segment (segments[0..segment_count)) here,
-	same as the writer engine below.
-*/
+for (which = 0; which < segment_count; which++)
+	search_one_segment(segments[which].engine, segments[which].tombstones, segments[which].generation, query, top_k, /*use_filename_index=*/1);
 
 rebuild_writer_engine();
 if (writer_engine != NULL)
-	search_one_segment(writer_engine, writer_tombstones, writer_generation, query, top_k);
+	search_one_segment(writer_engine, writer_tombstones, writer_generation, query, top_k, /*use_filename_index=*/0);
 
 qsort(results, (size_t)results_count, sizeof(*results), ATIRE_segment_index_hit_cmp);
 
@@ -414,12 +562,8 @@ long long total, which;
 
 total = writer_documents - (writer_tombstones ? writer_tombstones->count() : 0);
 
-/*
-	TASK 7: add each disk segment's live document count (writer_documents
-	equivalent - tombstones->count()) once segments[] is populated.
-*/
 for (which = 0; which < segment_count; which++)
-	;
+	total += segments[which].engine->get_document_count() - segments[which].tombstones->count();
 
 return total;
 }
