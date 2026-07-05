@@ -960,11 +960,9 @@ else
 
 //			long metaphone, print_wide, print_postings, one_postings_per_line;
 #ifdef IMPACT_HEADER
-		quantum_count_type the_quantum_count;
-		beginning_of_the_postings_type beginning_of_the_postings;
-		static long long impact_header_info_size = ANT_impact_header::INFO_SIZE;
-		static long long impact_header_size = ANT_impact_header::NUM_OF_QUANTUMS * sizeof(ANT_compressable_integer) * 3;
-		ANT_compressable_integer *impact_header_buffer = (ANT_compressable_integer *)malloc(impact_header_size);
+		the_quantum_count = 0;
+		beginning_of_the_postings = 0;
+		impact_header_buffer = (ANT_compressable_integer *)malloc(ANT_impact_header::NUM_OF_QUANTUMS * sizeof(ANT_compressable_integer) * 3);
 #endif
 
 term = iterator->first(first_term);
@@ -990,7 +988,6 @@ return next_term(position);
 */
 ATIRE_API_result *ATIRE_API_server::next_term(long start_position)
 {
-long long tf = 0;
 ANT_search_engine *search_engine = atire->get_search_engine();
 static ANT_compression_factory factory;
 
@@ -1017,11 +1014,8 @@ else
 			the implement for IMPACT_HEADER
 			*/
 			// decompress the header
-			long long max_docid, sum;
 			//ANT_compressable_integer *current;
-			ANT_compressable_integer *end;
 			//ANT_compressable_integer *doc_count_ptr;
-			ANT_compressable_integer *impact_value_ptr, *impact_offset_ptr;
 			if (!doc_count_ptr)
 				{
 				the_quantum_count = ANT_impact_header::get_quantum_count(postings_list);
@@ -1045,40 +1039,33 @@ else
 					factory.decompress(raw, postings_list + *impact_offset_ptr, *doc_count_ptr);
 					current = raw;
 					end = raw + *doc_count_ptr;
-					lookup_term_docid == -1;
+					lookup_term_docid = -1;
 					}
 				
-				while (current < end_record_cache)
+				while (current < end)
 					{
 					lookup_term_docid += *current++;
 
 					if (lookup_term_docid < 0)
 						continue;
-						// why return?
-						// return; // continue;
 
-					++termp_position;
-					if (termp_position >= next_position) 
+					++term_position;
+					if (term_position >= start_position) 
 						{
-						result_document.docid = docid;
+						result_document.docid = lookup_term_docid;
 						if (ant_version == ANT_V5) 
 							{
-	// #ifdef FILENAME_INDEX
 							static char filename[1024*1024];
-							result_document.title = atire->get_document_filename(filename, docid);
-	// #endif
+							result_document.title = atire->get_document_filename(filename, lookup_term_docid);
 							}
 						else 
 							{
-							// #else
-							result_document.title = atire->get_document_filename_from_doclist(docid);
-							// #endif
+							result_document.title = atire->get_document_filename_from_doclist(lookup_term_docid);
 							}
-						if (docid > max_docid)
-							max_docid = docid;
+						if (lookup_term_docid > max_docid)
+							max_docid = lookup_term_docid;
 
-						// if (count >= last_to_list)
-						// 	break;
+						return get_result();
 						}
 
 					sum += *doc_count_ptr;
@@ -1089,6 +1076,7 @@ else
 					impact_offset_ptr++;
 					doc_count_ptr++;
 					}
+				}
 
 #else
 				if (!raw)

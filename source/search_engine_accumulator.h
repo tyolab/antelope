@@ -62,7 +62,7 @@ private:
 
 	static struct compare_rev cmp;
 
-	static inline void swap(ANT_search_engine_accumulator **a, ANT_search_engine_accumulator **b) { register ANT_search_engine_accumulator *tmp; tmp = *a; *a = *b; *b = tmp; }
+	static inline void swap(ANT_search_engine_accumulator **a, ANT_search_engine_accumulator **b) { ANT_search_engine_accumulator *tmp; tmp = *a; *a = *b; *b = tmp; }
 
 	static inline ANT_search_engine_accumulator **med3(ANT_search_engine_accumulator **a, ANT_search_engine_accumulator **b, ANT_search_engine_accumulator **c);
 	static inline long long min(long long a, long long b);

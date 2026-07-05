@@ -104,9 +104,9 @@ ATIRE_indexer::ATIRE_indexer()
 {
 pregen = NULL;
 
-//#ifndef PARALLEL_INDEXING_DOCUMENTS
+#ifndef PARALLEL_INDEXING_DOCUMENTS
 stemmer = NULL;
-//#endif
+#endif
 
 parallel_indexing = 0;
 docno = -1;
@@ -226,6 +226,7 @@ bool ATIRE_indexer::initialize()
 {
 //	strcpy(EMPTY_DOCUMENT_CONTENT, "<ERROR>EMPTYDOCUMENT</ERROR>");
 //	strcpy(EMPTY_DOCUMENT_FILENAME, "EMPTY DOCUMEN TTITLE");
+return true;
 }
 
 /*
