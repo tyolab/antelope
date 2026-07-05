@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <unistd.h>
 
 #include "atire_segment_index.h"
 #include "atire_api.h"
@@ -263,6 +264,7 @@ return failed;
 long ATIRE_segment_index::open(const char *directory)
 {
 long long which;
+char marker_name[4096];
 
 this->directory = new char[strlen(directory) + 1];
 strcpy(this->directory, directory);
@@ -275,9 +277,36 @@ manifest = ANT_index_manifest::load(this->directory);
 	of preparing to append (see index_keymap.cpp's load()).  After that call
 	the file always exists, so this is the only point at which "was there
 	really a keymap.log going into this open()" can still be asked.
+
+	The "compacting" marker is checked here for the same reason: its mere
+	presence means a compact() (see compact()'s banner) died somewhere
+	between writing the merge output and finishing the swap, so the log
+	about to be loaded may lie -- it can hold remap records for a segment
+	that never became live, or be missing records for one that did.  The
+	decision to distrust it is recorded now, before load() gives it any
+	chance to be trusted.
 */
 long had_keymap_log = ANT_index_keymap::log_exists(this->directory);
+snprintf(marker_name, sizeof(marker_name), "%s/compacting", this->directory);
+long compaction_died = access(marker_name, F_OK) == 0;
 keymap = ANT_index_keymap::load(this->directory);
+
+/*
+	A compaction died mid-swap: the keymap.log just loaded cannot be
+	trusted (see above).  Discard it entirely -- delete the in-memory
+	keymap, remove the log file, and reload fresh/empty (load() recreates
+	the file for appending) -- rather than reconcile it piecemeal.  The
+	segments below are rebuilt from scratch into this empty keymap.
+*/
+if (compaction_died)
+	{
+	char keymap_log_name[4096];
+
+	snprintf(keymap_log_name, sizeof(keymap_log_name), "%s/keymap.log", this->directory);
+	delete keymap;
+	remove(keymap_log_name);
+	keymap = ANT_index_keymap::load(this->directory);		// fresh, empty; recreates the log file
+	}
 
 /*
 	Reopen every disk segment the manifest still lists as live.  The manifest
@@ -292,41 +321,27 @@ for (which = 0; which < manifest->segment_count(); which++)
 		return 1;
 
 /*
-	Reconcile the keymap against the manifest BEFORE the new writer's
-	generation exists: keymap entries can reference generations that were
-	added to but never flushed (a session that exited without flush()ing
-	its memory segment).  On reopen those entries are lies -- the segment
-	they point at does not exist and never will -- so any live keymap
-	entry whose generation is not one of the manifest's segments must be
-	dropped now, or delete_document() would fail confusingly and
-	update_document() would tombstone into nothing.  Only manifest
-	generations are valid at this point; the current session's writer
-	generation is handed out (and starts collecting keymap entries) below,
-	after this check.
-*/
-long long *manifest_generations = new long long[manifest->segment_count()];
-for (which = 0; which < manifest->segment_count(); which++)
-	manifest_generations[which] = manifest->get_segment(which);
-keymap->retain_generations(manifest_generations, manifest->segment_count());
-delete [] manifest_generations;
-
-/*
 	ORPHAN SWEEP
 	------------
 	Remove seg_* files whose generation the manifest does not reference.
 	These arise from: (a) a session that died with an unflushed writer (its
 	.aspt/.doclist were created by start_new_writer()'s init() but the
 	generation was never added to the manifest, since add_segment() only
-	happens after a successful flush()); or (b) a crash/I-O failure between
-	flush() writing the segment's files and flush() saving the manifest.
+	happens after a successful flush()); (b) a crash/I-O failure between
+	flush() writing the segment's files and flush() saving the manifest; or
+	(c) a compact() that died after writing its merge output but before that
+	output was manifested (its own crash is what left the "compacting"
+	marker checked above).
 
-	In case (b) the segment is COMPLETE on disk -- but flush()'s durability
-	contract is that a flush is durable only once the manifest save
-	succeeds, so a segment the manifest never came to reference is, by
-	definition, not durable: this sweep deletes it, and any documents that
-	were only in it are lost BY DESIGN.  This must run before
-	start_new_writer() below claims the next generation, so it can never
-	touch the new writer's own (not-yet-manifested) files.
+	In cases (b)/(c) the segment is COMPLETE on disk -- but the durability
+	contract is that a segment is durable only once the manifest save that
+	references it succeeds, so a segment the manifest never came to
+	reference is, by definition, not durable: this sweep deletes it, and any
+	documents that were only in it are lost BY DESIGN.  This must run before
+	start_new_writer() below claims the next generation (so it can never
+	touch the new writer's own not-yet-manifested files) and before the
+	keymap-consistency decision below (so a marker-triggered rebuild only
+	ever scans manifested, durable segments).
 */
 DIR *directory_handle = opendir(this->directory);
 if (directory_handle != NULL)
@@ -347,24 +362,56 @@ if (directory_handle != NULL)
 	}
 
 /*
-	Keymap recovery: if there was no keymap.log going into this
-	open(), the keymap loaded above is empty (retain_generations() just ran
-	against it and had nothing to do) and every already-open segment is a
-	source of ground truth for it -- rebuild by scanning their stored
-	filenames.  Runs after the orphan sweep (segments[] must reflect only
-	the segments that are actually durable) and before start_new_writer()
-	claims the next generation (rebuild only concerns already-flushed
-	segments; the new writer starts with nothing to rebuild anyway).  The
-	rebuilt entries are appended through keymap->add(), whose log handle
-	load() already opened for append, so the rebuild itself persists for
-	the next open().  A nonzero return means some segment's re-raised
-	tombstones could not be persisted -- the keymap would then disagree
-	with what the next open() sees on disk (dead duplicates resurrected),
-	so refuse to open rather than serve an index we know is inconsistent.
+	Keymap consistency.  Two mutually exclusive cases:
+
+	1. compaction_died, or there was no keymap.log going into this open():
+	   the keymap loaded above is empty (either freshly discarded, above, or
+	   never existed) and every already-open segment is ground truth for it
+	   -- rebuild by scanning their stored filenames.  Runs after the
+	   append_segment loop (rebuild_keymap() needs segments[] populated) and
+	   after the orphan sweep (so it only ever sees manifested segments --
+	   in particular, a dead, unmanifested compaction OUTPUT left behind by
+	   the very crash that left the marker has already been swept away, so
+	   the rebuild cannot resurrect it).  The rebuilt entries are appended
+	   through keymap->add(), whose log handle load() already opened for
+	   append, so the rebuild persists for the next open().  A nonzero
+	   return means some segment's re-raised tombstones could not be
+	   persisted -- the keymap would then disagree with what the next
+	   open() sees on disk (dead duplicates resurrected), so refuse to open
+	   rather than serve an index we know is inconsistent.  The marker (if
+	   any) is removed only once the rebuild has succeeded; on failure it is
+	   left in place so the next open() retries the same recovery.  An empty
+	   index (segment_count == 0) has nothing to rebuild, so the marker is
+	   simply removed.
+
+	2. Normal case: reconcile the keymap against the manifest BEFORE the new
+	   writer's generation exists -- keymap entries can reference
+	   generations that were added to but never flushed (a session that
+	   exited without flush()ing its memory segment).  On reopen those
+	   entries are lies -- the segment they point at does not exist and
+	   never will -- so any live keymap entry whose generation is not one
+	   of the manifest's segments must be dropped now, or delete_document()
+	   would fail confusingly and update_document() would tombstone into
+	   nothing.  retain_generations() must NOT run on the rebuild path
+	   above: rebuild_keymap() only ever produces manifest generations by
+	   construction, so there would be nothing for it to do, and the whole
+	   point of discarding the log is to not trust anything about it that
+	   load() handed back.
 */
-if (!had_keymap_log && segment_count > 0)
-	if (rebuild_keymap() != 0)
+if (compaction_died || (!had_keymap_log && segment_count > 0))
+	{
+	if (segment_count > 0 && rebuild_keymap() != 0)
 		return 1;
+	remove(marker_name);
+	}
+else
+	{
+	long long *manifest_generations = new long long[manifest->segment_count()];
+	for (which = 0; which < manifest->segment_count(); which++)
+		manifest_generations[which] = manifest->get_segment(which);
+	keymap->retain_generations(manifest_generations, manifest->segment_count());
+	delete [] manifest_generations;
+	}
 
 if (start_new_writer() != 0)
 	return 1;

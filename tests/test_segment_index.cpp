@@ -1379,6 +1379,147 @@ delete [] dir;
 printf("test_compact_subset_leaves_other_segment OK\n");
 }
 
+/*
+	TEST_COMPACTION_CRASH_WINDOWS()
+	-------------------------------
+	Construct the on-disk states a crash can leave at each compact() boundary
+	and assert open() recovers each one: no lost live docs, no resurrected
+	dead docs, update/delete by key still work.
+*/
+static void test_compaction_crash_windows(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16], path[4096];
+long long i;
+
+/*
+	Common fixture: two flushed segments (gens 1,2), doc-1 deleted
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 4; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	if (i == 1)
+		CHECK(index->flush() == 0);
+	}
+CHECK(index->flush() == 0);
+CHECK(index->delete_document("doc-1") == 0);
+delete index;
+
+/*
+	Window A: crash after merge output written, before marker/manifest --
+	an unmanifested seg file.  Simulate with a garbage orphan.
+*/
+snprintf(path, sizeof(path), "%s/seg_000042.aspt", dir);
+FILE *fp = fopen(path, "wb");
+fputs("partial merge output", fp);
+fclose(fp);
+ATIRE_segment_index *a = new ATIRE_segment_index();
+CHECK(a->open(dir) == 0);
+CHECK(access(path, F_OK) != 0);				// orphan swept
+CHECK(a->get_document_count() == 3);
+strcpy(query, "common");
+CHECK(a->search(query, 10) == 3);
+delete a;
+
+/*
+	Window B: crash after marker created (keymap possibly half-remapped).
+	Simulate: plant the marker; scramble the keymap by pointing doc-0 at a
+	nonsense generation (writing a raw A-record to the log).
+*/
+snprintf(path, sizeof(path), "%s/compacting", dir);
+fp = fopen(path, "wb");
+fclose(fp);
+char keymap_log[4096];
+snprintf(keymap_log, sizeof(keymap_log), "%s/keymap.log", dir);
+fp = fopen(keymap_log, "ab");
+fprintf(fp, "A\t77\t0\tdoc-0\n");
+fclose(fp);
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+snprintf(path, sizeof(path), "%s/compacting", dir);
+CHECK(access(path, F_OK) != 0);				// marker consumed
+/*
+	Rebuilt keymap points doc-0 back at its real copy: update works and
+	tombstones the real doc, not generation 77
+*/
+unique_term(letters, 0);
+sprintf(doc, "<DOC>common recovered %s</DOC>", letters);
+CHECK(b->update_document("doc-0", doc) >= 0);
+strcpy(query, letters);
+CHECK(b->search(query, 10) == 1);
+CHECK(b->get_document_count() == 3);
+delete b;
+
+/*
+	Window C: marker present AND the manifest already fully swapped --
+	simulating a crash after step 5 (manifest save) but before step 6
+	(marker removal / input file deletion) of a compact() that otherwise
+	completed.  Construct deterministically: run a REAL, successful
+	compact() (which removes the marker itself as part of a clean finish),
+	then manually recreate the marker and reopen.  Since the manifest and
+	segments are already in their final compacted state, the
+	marker-triggered rebuild has nothing to reconcile -- it must reproduce
+	the identical keymap state harmlessly (idempotence): update/delete by
+	key still resolve to the right document and counts are unchanged.
+*/
+char *dir2 = make_index_dir();
+ATIRE_segment_index *c_index = new ATIRE_segment_index();
+CHECK(c_index->open(dir2) == 0);
+for (i = 0; i < 4; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(c_index->add_document(key, doc) >= 0);
+	if (i == 1)
+		CHECK(c_index->flush() == 0);
+	}
+CHECK(c_index->flush() == 0);
+CHECK(c_index->delete_document("doc-1") == 0);
+
+long long c_inputs[2];
+c_inputs[0] = 1;
+c_inputs[1] = 2;
+CHECK(c_index->compact(c_inputs, 2) == 0);
+CHECK(c_index->get_document_count() == 3);
+delete c_index;
+
+/*
+	Recreate the marker manually to simulate the post-swap crash window
+*/
+snprintf(path, sizeof(path), "%s/compacting", dir2);
+fp = fopen(path, "wb");
+fclose(fp);
+
+ATIRE_segment_index *c = new ATIRE_segment_index();
+CHECK(c->open(dir2) == 0);
+snprintf(path, sizeof(path), "%s/compacting", dir2);
+CHECK(access(path, F_OK) != 0);				// marker consumed again, harmlessly
+CHECK(c->get_document_count() == 3);
+strcpy(query, "common");
+CHECK(c->search(query, 10) == 3);
+
+unique_term(letters, 0);
+sprintf(doc, "<DOC>common recovered %s</DOC>", letters);
+CHECK(c->update_document("doc-0", doc) >= 0);
+strcpy(query, letters);
+CHECK(c->search(query, 10) == 1);
+CHECK(c->get_document_count() == 3);
+CHECK(c->delete_document("doc-2") == 0);
+CHECK(c->get_document_count() == 2);
+
+delete c;
+delete [] dir2;
+
+delete [] dir;
+printf("test_compaction_crash_windows OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1400,6 +1541,7 @@ test_merger_drops_tombstones();
 test_merger_repeated_merge();
 test_compact_basic();
 test_compact_subset_leaves_other_segment();
+test_compaction_crash_windows();
 printf("PASSED\n");
 return 0;
 }
