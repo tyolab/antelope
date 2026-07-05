@@ -509,6 +509,27 @@ ANT_directory_iterator_object current_file;
 current_file.file = file;
 current_file.filename = file_name;
 current_file.length = strlen(file);
+current_file.compressed = NULL;
+current_file.compressed_length = 0;
+
+#ifdef PARALLEL_INDEXING_DOCUMENTS
+	/*
+		Under PARALLEL_INDEXING_DOCUMENTS the object-based index_document()
+		does not parse the document itself: it expects a pre-built per-document
+		index in current_file.index (normally produced by
+		ANT_directory_iterator_preindex::work_one() on a worker thread).  Do
+		that same pre-indexing step here so this convenience overload works
+		under the parallel build too, instead of dereferencing the
+		uninitialised current_file.index.
+	*/
+	ANT_stem *core_stemmer;
+
+	core_stemmer = (param_block == NULL || param_block->stemmer == 0) ? NULL : ANT_stemmer_factory::get_core_stemmer(param_block->stemmer);
+	readability->set_current_file(&current_file);
+	current_file.index = new ANT_memory_index_one(new ANT_memory(1024 * 1024), memory_index);
+	current_file.terms = document_indexer->index_document(current_file.index, core_stemmer, segmentation, readability, 1, file);
+	delete core_stemmer;
+#endif
 
 index_document(&current_file, doc_to_store);
 }
