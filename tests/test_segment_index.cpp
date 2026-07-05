@@ -802,6 +802,87 @@ delete [] dir;
 printf("test_keymap_recovery_compound_loss OK\n");
 }
 
+/*
+	TEST_EQUIVALENCE_WITH_ONESHOT()
+	-------------------------------
+	Final state after a messy history must match the logical collection:
+	docs 0..19 added; evens 0..8 updated; docs 15..19 deleted.
+	Surviving logical collection: 15 docs, with evens 0..8 revised.
+*/
+static void test_equivalence_with_oneshot(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->set_flush_threshold(7);				// force segment boundaries in awkward places
+
+for (i = 0; i < 20; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common body%s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+for (i = 0; i < 10; i += 2)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common revised%s</DOC>", letters);
+	CHECK(index->update_document(key, doc) >= 0);
+	}
+for (i = 15; i < 20; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	CHECK(index->delete_document(key) == 0);
+	}
+CHECK(index->flush() == 0);
+
+CHECK(index->get_document_count() == 15);
+
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 15);
+
+for (i = 0; i < 15; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	if (i < 10 && i % 2 == 0)
+		sprintf(query, "revised%s", letters);
+	else
+		sprintf(query, "body%s", letters);
+	CHECK(index->search(query, 10) == 1);
+	CHECK(strcmp(index->get_hit(0)->filename, key) == 0);
+	}
+for (i = 0; i < 10; i += 2)
+	{
+	unique_term(letters, i);
+	sprintf(query, "body%s", letters);		// pre-update bodies unreachable
+	CHECK(index->search(query, 10) == 0);
+	}
+for (i = 15; i < 20; i++)
+	{
+	unique_term(letters, i);
+	sprintf(query, "body%s", letters);		// deleted docs unreachable
+	CHECK(index->search(query, 10) == 0);
+	}
+
+/*
+	And all of it survives a reopen
+*/
+delete index;
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->get_document_count() == 15);
+strcpy(query, "common");
+CHECK(reopened->search(query, 100) == 15);
+delete reopened;
+delete [] dir;
+printf("test_equivalence_with_oneshot OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -817,6 +898,7 @@ test_readd_after_reconciliation();
 test_autoflush_and_orphan_cleanup();
 test_keymap_recovery();
 test_keymap_recovery_compound_loss();
+test_equivalence_with_oneshot();
 printf("PASSED\n");
 return 0;
 }
