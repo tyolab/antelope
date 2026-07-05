@@ -37,3 +37,6 @@ bin/*
 *.exe
 *.out
 *.app
+
+# git worktrees for isolated feature work
+.worktrees/
