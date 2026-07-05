@@ -9,6 +9,12 @@
 #include <string.h>
 #include <unistd.h>
 #include "../atire/atire_segment_index.h"
+#include "../source/index_merge.h"
+#include "../source/index_tombstones.h"
+#include "../atire/atire_api.h"
+#include "../source/search_engine.h"
+#include "../source/search_engine_btree_leaf.h"
+#include "../source/version.h"
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
 
@@ -883,6 +889,117 @@ delete [] dir;
 printf("test_equivalence_with_oneshot OK\n");
 }
 
+/*
+	OPEN_SEGMENT_ENGINE()
+	---------------------
+	Open a flushed segment file exactly the way append_segment() does: ANT_VX
+	auto-detects the (V5) version from the header, and the doclist argument is
+	unread for V5 so NULL is fine.
+*/
+static ATIRE_API *open_segment_engine(char *filename)
+{
+ATIRE_API *engine = new ATIRE_API();
+engine->set_ant_version(ANT_VX);
+CHECK(engine->open(ATIRE_API::INDEX_IN_MEMORY, filename, NULL, 0, -1) == 0);
+return engine;
+}
+
+/*
+	TEST_MERGER_NO_TOMBSTONES()
+	---------------------------
+	Merge two flushed segments (no deletions) and verify the output opens
+	as a normal index whose contents equal the union: same document count,
+	same per-term df/cf, same search membership.
+*/
+static void test_merger_no_tombstones(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16], seg_a[4096], seg_b[4096], merged[4096];
+long long i;
+
+/*
+	Build two segments through the normal write path
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 6; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common shared%s %s</DOC>", i % 2 == 0 ? "even" : "odd", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	if (i == 2)
+		CHECK(index->flush() == 0);
+	}
+CHECK(index->flush() == 0);
+delete index;
+
+snprintf(seg_a, sizeof(seg_a), "%s/seg_000001.aspt", dir);
+snprintf(seg_b, sizeof(seg_b), "%s/seg_000002.aspt", dir);
+snprintf(merged, sizeof(merged), "%s/seg_000009.aspt", dir);
+
+/*
+	Open the inputs and merge
+*/
+ATIRE_API *engine_a = open_segment_engine(seg_a);
+ATIRE_API *engine_b = open_segment_engine(seg_b);
+
+ANT_search_engine *engines[2];
+engines[0] = engine_a->get_search_engine();
+engines[1] = engine_b->get_search_engine();
+ANT_index_tombstones *no_deletes[2];
+no_deletes[0] = new ANT_index_tombstones(engine_a->get_document_count());
+no_deletes[1] = new ANT_index_tombstones(engine_b->get_document_count());
+
+ANT_index_merger *merger = new ANT_index_merger();
+CHECK(merger->merge(engines, no_deletes, 2, merged) == 0);
+delete merger;
+
+/*
+	Open the output and compare against the union
+*/
+ATIRE_API *out = open_segment_engine(merged);
+CHECK(out->get_document_count() == 6);
+
+/*
+	Per-term stats must equal the sum of the inputs'
+*/
+ANT_search_engine_btree_leaf leaf;
+CHECK(out->get_search_engine()->get_postings_details((char *)"common", &leaf) != NULL);
+CHECK(leaf.local_document_frequency == 6);
+CHECK(out->get_search_engine()->get_postings_details((char *)"sharedeven", &leaf) != NULL);
+CHECK(leaf.local_document_frequency == 3);
+CHECK(out->get_search_engine()->get_postings_details((char *)"sharedodd", &leaf) != NULL);
+CHECK(leaf.local_document_frequency == 3);
+
+/*
+	Search membership: every doc findable by its unique term, filenames intact
+*/
+strcpy(query, "common");
+CHECK(out->search(query, 10) == 6);
+for (i = 0; i < 6; i++)
+	{
+	unique_term(letters, i);
+	strcpy(query, letters);
+	CHECK(out->search(query, 10) == 1);
+	}
+
+/*
+	Filename index survived: docid 0 is seg_a's first doc
+*/
+char filename_buffer[4096];
+CHECK(strcmp(out->get_document_filename(filename_buffer, 0), "doc-0") == 0);
+CHECK(strcmp(out->get_document_filename(filename_buffer, 3), "doc-3") == 0);
+
+delete out;
+delete engine_a;
+delete engine_b;
+delete no_deletes[0];
+delete no_deletes[1];
+delete [] dir;
+printf("test_merger_no_tombstones OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -899,6 +1016,7 @@ test_autoflush_and_orphan_cleanup();
 test_keymap_recovery();
 test_keymap_recovery_compound_loss();
 test_equivalence_with_oneshot();
+test_merger_no_tombstones();
 printf("PASSED\n");
 return 0;
 }
