@@ -249,6 +249,27 @@ CHECK(map_retain2->find("kept-2", &generation, &docid) && generation == 2 && doc
 CHECK(!map_retain2->find("stale-1", &generation, &docid));
 delete map_retain2;
 
+/*
+	LOG_EXISTS: missing directory/file -> 0; after load()+add() -> 1
+*/
+char exists_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *exists_dir = mkdtemp(exists_dir_template);
+CHECK(exists_dir != NULL);
+CHECK(ANT_index_keymap::log_exists(exists_dir) == 0);		// dir exists, but no keymap.log yet
+CHECK(ANT_index_keymap::log_exists("/tmp/ant_keymap_no_such_dir_xyz") == 0);	// dir does not exist
+
+ANT_index_keymap *map_exists = ANT_index_keymap::load(exists_dir);
+CHECK(map_exists != NULL);
+/*
+	load()'s no-log-file branch fopen()s the path with mode "a", which
+	creates the (empty) file immediately -- not lazily on first write -- so
+	the log already exists on disk at this point, before add() is ever called.
+*/
+CHECK(ANT_index_keymap::log_exists(exists_dir) == 1);
+map_exists->add("some-key", 1, 0);
+CHECK(ANT_index_keymap::log_exists(exists_dir) == 1);
+delete map_exists;
+
 printf("PASSED\n");
 return 0;
 }

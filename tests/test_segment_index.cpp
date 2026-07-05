@@ -671,6 +671,72 @@ delete [] dir;
 printf("test_autoflush_and_orphan_cleanup OK\n");
 }
 
+/*
+	TEST_KEYMAP_RECOVERY()
+	----------------------
+	Delete keymap.log; on reopen it is rebuilt from the segments' stored
+	filenames (newest segment wins for duplicate keys) and updates still work.
+*/
+static void test_keymap_recovery(void)
+{
+char *dir = make_index_dir();
+char query[64], victim[4096];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->add_document("doc-1", "<DOC>aardvark original</DOC>");
+CHECK(index->flush() == 0);
+index->update_document("doc-1", "<DOC>aardvark revised</DOC>");	// newer copy in second segment
+index->add_document("doc-2", "<DOC>quokka</DOC>");
+CHECK(index->flush() == 0);
+delete index;
+
+snprintf(victim, sizeof(victim), "%s/keymap.log", dir);
+CHECK(remove(victim) == 0);
+
+ATIRE_segment_index *recovered = new ATIRE_segment_index();
+CHECK(recovered->open(dir) == 0);
+
+/*
+	The rebuilt keymap must point doc-1 at the NEWER copy: an update through
+	it tombstones the revised version, not the (already dead) original.
+*/
+CHECK(recovered->update_document("doc-1", "<DOC>aardvark final</DOC>") >= 0);
+strcpy(query, "aardvark");
+CHECK(recovered->search(query, 10) == 1);
+strcpy(query, "revised");
+CHECK(recovered->search(query, 10) == 0);
+strcpy(query, "final");
+CHECK(recovered->search(query, 10) == 1);
+CHECK(recovered->delete_document("doc-2") == 0);
+strcpy(query, "quokka");
+CHECK(recovered->search(query, 10) == 0);
+
+/*
+	Flush so the "final" copy (so far only in this session's in-memory
+	writer) becomes durable: without this, deleting `recovered` below
+	discards it -- an unflushed writer segment is lost on process exit by
+	design (see test_stale_keymap_reconciliation), so the checks just below,
+	which require "final" to survive into a THIRD session, would otherwise
+	be unsatisfiable regardless of how the keymap is rebuilt.
+*/
+CHECK(recovered->flush() == 0);
+
+/*
+	And the rebuilt state persists: reopen again (log now present, no rebuild)
+*/
+delete recovered;
+ATIRE_segment_index *again = new ATIRE_segment_index();
+CHECK(again->open(dir) == 0);
+strcpy(query, "final");
+CHECK(again->search(query, 10) == 1);
+strcpy(query, "revised");
+CHECK(again->search(query, 10) == 0);
+delete again;
+delete [] dir;
+printf("test_keymap_recovery OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -684,6 +750,7 @@ test_overfetch_top_scorers_all_tombstoned_disk();
 test_update_across_flush_boundary();
 test_readd_after_reconciliation();
 test_autoflush_and_orphan_cleanup();
+test_keymap_recovery();
 printf("PASSED\n");
 return 0;
 }

@@ -53,6 +53,18 @@ public:
 	~ANT_index_keymap();
 
 	static ANT_index_keymap *load(const char *directory);
+
+	/*
+		ANT_INDEX_KEYMAP::LOG_EXISTS()
+		------------------------------
+		Check (before calling load(), which creates the log file for
+		append if it is missing) whether "<directory>/keymap.log" already
+		exists.  Callers use this to decide whether the keymap needs to be
+		rebuilt from the segments' own stored filenames -- see
+		ATIRE_segment_index::rebuild_keymap().
+	*/
+	static long log_exists(const char *directory);
+
 	void add(const char *key, long long generation, long long docid);
 	void remove(const char *key);
 	long find(const char *key, long long *generation, long long *docid);

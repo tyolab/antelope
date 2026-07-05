@@ -311,6 +311,28 @@ return result;
 }
 
 /*
+	ANT_INDEX_KEYMAP::LOG_EXISTS()
+	------------------------------
+	Build path with snprintf (truncation -> report "does not exist" rather
+	than risk probing a mangled path); fopen "rb" to test existence without
+	side effects (unlike load(), this must NOT create the file).
+*/
+long ANT_index_keymap::log_exists(const char *directory)
+{
+char keymap_path[4096];
+FILE *fp;
+
+if (snprintf(keymap_path, sizeof(keymap_path), "%s/keymap.log", directory) >= (int)sizeof(keymap_path))
+	return 0;		// path too long: treat as "does not exist"
+
+if ((fp = fopen(keymap_path, "rb")) == NULL)
+	return 0;		// does not exist
+
+fclose(fp);
+return 1;			// exists
+}
+
+/*
 	ANT_INDEX_KEYMAP::ADD()
 	----------------------
 	Validate key; insert via insert_no_log; write to log if open.

@@ -135,6 +135,71 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::REBUILD_KEYMAP()
+	-----------------------------------------
+	TASK 11: the keymap is, by design, a CACHE over information the segments
+	already carry themselves -- each segment stores its documents' filenames
+	internally (this build always serialises FILENAME_INDEX-style, ANT_V5;
+	see append_segment()'s banner) -- so if keymap.log is lost, the map can
+	be reconstructed by scanning every open disk segment's stored filenames
+	rather than losing the ability to look documents up by key.
+
+	segments[] is in manifest order, which is the order generations were
+	added (= append/flush order), i.e. OLDEST first.  Walking it in that
+	order and simply calling keymap->add() for every live document means a
+	key that appears in two segments (an update whose tombstone was itself
+	recorded only in the lost keymap.log) ends up pointing at the segment
+	processed LAST -- the newest one -- exactly the "newer copy wins"
+	semantics an update provides.  But that leaves the OLDER copy silently
+	still reachable through the segment's own doclist / accumulator scan
+	(search_one_segment() does not consult the keymap, only tombstones), so
+	it must also be explicitly tombstoned: it was already dead before the
+	log was lost (its update is the very reason it is being superseded now),
+	and a live-looking stale duplicate would otherwise resurface in search
+	results and could later be resurrected by update_document()/
+	delete_document() acting on it via a keymap collision.
+*/
+void ATIRE_segment_index::rebuild_keymap(void)
+{
+long long which, docid, doc_count;
+long long old_generation, old_docid;
+char filename_buffer[4096];
+char *filename;
+
+for (which = 0; which < segment_count; which++)
+	{
+	doc_count = segments[which].engine->get_document_count();
+	for (docid = 0; docid < doc_count; docid++)
+		{
+		if (segments[which].tombstones->is_deleted(docid))
+			continue;		// already dead: never enters the map
+
+		/*
+			ATIRE_API::get_document_filename() writes into a caller-supplied
+			buffer with no bounds checking (see atire_segment_index.h's
+			use_filename_index comment / atire_api.cpp) -- 4096 bytes matches
+			the buffer used everywhere else in this file for the same call.
+		*/
+		filename = segments[which].engine->get_document_filename(filename_buffer, docid);
+		if (filename == NULL || filename[0] == '\0')
+			continue;		// nothing to key on: skip
+
+		/*
+			If this key is already in the (partially rebuilt) map, the
+			earlier segment's copy is the OLDER one -- it was superseded by
+			an update whose tombstone lived only in the log we just lost.
+			Tombstone it now (persists a .del immediately) so it stops
+			showing up in search() and cannot be resurrected via the keymap.
+		*/
+		if (keymap->find(filename, &old_generation, &old_docid))
+			tombstone(old_generation, old_docid);
+
+		keymap->add(filename, segments[which].generation, docid);
+		}
+	}
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::OPEN()
 	------------------------------
 */
@@ -146,6 +211,15 @@ this->directory = new char[strlen(directory) + 1];
 strcpy(this->directory, directory);
 
 manifest = ANT_index_manifest::load(this->directory);
+
+/*
+	Must be captured BEFORE ANT_index_keymap::load(), which -- when the log
+	file does not exist -- fopen("ab")s it into existence as a side effect
+	of preparing to append (see index_keymap.cpp's load()).  After that call
+	the file always exists, so this is the only point at which "was there
+	really a keymap.log going into this open()" can still be asked.
+*/
+long had_keymap_log = ANT_index_keymap::log_exists(this->directory);
 keymap = ANT_index_keymap::load(this->directory);
 
 /*
@@ -214,6 +288,22 @@ if (directory_handle != NULL)
 			}
 	closedir(directory_handle);
 	}
+
+/*
+	Keymap recovery (Task 11): if there was no keymap.log going into this
+	open(), the keymap loaded above is empty (retain_generations() just ran
+	against it and had nothing to do) and every already-open segment is a
+	source of ground truth for it -- rebuild by scanning their stored
+	filenames.  Runs after the orphan sweep (segments[] must reflect only
+	the segments that are actually durable) and before start_new_writer()
+	claims the next generation (rebuild only concerns already-flushed
+	segments; the new writer starts with nothing to rebuild anyway).  The
+	rebuilt entries are appended through keymap->add()/tombstone(), whose
+	log handle load() already opened for append, so the rebuild itself
+	persists for the next open().
+*/
+if (!had_keymap_log && segment_count > 0)
+	rebuild_keymap();
 
 if (start_new_writer() != 0)
 	return 1;
