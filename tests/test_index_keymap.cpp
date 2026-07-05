@@ -1,0 +1,173 @@
+/*
+	TEST_INDEX_KEYMAP.CPP
+	---------------------
+*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include "index_keymap.h"
+
+#define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
+
+int main(void)
+{
+char dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *dir = mkdtemp(dir_template);
+CHECK(dir != NULL);
+long long generation, docid;
+
+/*
+	Empty map
+*/
+ANT_index_keymap *map = ANT_index_keymap::load(dir);
+CHECK(map != NULL);
+CHECK(!map->find("doc-1", &generation, &docid));
+
+/*
+	add / find / overwrite (newest wins) / remove
+*/
+map->add("doc-1", 1, 0);
+map->add("doc-2", 1, 1);
+CHECK(map->find("doc-1", &generation, &docid) && generation == 1 && docid == 0);
+CHECK(map->find("doc-2", &generation, &docid) && generation == 1 && docid == 1);
+
+map->add("doc-1", 2, 5);		// updated version lives in segment 2
+CHECK(map->find("doc-1", &generation, &docid) && generation == 2 && docid == 5);
+
+map->remove("doc-2");
+CHECK(!map->find("doc-2", &generation, &docid));
+
+/*
+	Growth: many keys must survive table resize
+*/
+char key[64];
+long long i;
+for (i = 0; i < 5000; i++)
+	{
+	sprintf(key, "bulk-%lld", i);
+	map->add(key, 3, i);
+	}
+for (i = 0; i < 5000; i++)
+	{
+	sprintf(key, "bulk-%lld", i);
+	CHECK(map->find(key, &generation, &docid) && generation == 3 && docid == i);
+	}
+CHECK(map->find("doc-1", &generation, &docid) && generation == 2 && docid == 5);
+
+/*
+	Persistence: the append-only log replays to the same state
+*/
+delete map;
+ANT_index_keymap *reloaded = ANT_index_keymap::load(dir);
+CHECK(reloaded->find("doc-1", &generation, &docid) && generation == 2 && docid == 5);
+CHECK(!reloaded->find("doc-2", &generation, &docid));
+sprintf(key, "bulk-%lld", (long long)4999);
+CHECK(reloaded->find(key, &generation, &docid) && generation == 3 && docid == 4999);
+
+delete reloaded;
+
+/*
+	HARDENING TEST 1: Corrupt log line (A\tgarbage\n) followed by valid record
+	The corrupt line should be skipped, and the valid record after it should load
+*/
+char corrupt_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *corrupt_dir = mkdtemp(corrupt_dir_template);
+CHECK(corrupt_dir != NULL);
+char corrupt_log[1200];
+snprintf(corrupt_log, sizeof(corrupt_log), "%s/keymap.log", corrupt_dir);
+FILE *fp = fopen(corrupt_log, "w");
+CHECK(fp != NULL);
+fputs("A\tgarbage\n", fp);			// corrupt: too few fields
+fputs("A\t5\t10\tdoc-x\n", fp);		// valid record after corruption
+fclose(fp);
+ANT_index_keymap *map_corrupt = ANT_index_keymap::load(corrupt_dir);
+CHECK(map_corrupt != NULL);
+// The corrupt line (A\tgarbage) is malformed and should be skipped
+// The valid line (A\t5\t10\tdoc-x) should load successfully
+CHECK(map_corrupt->find("doc-x", &generation, &docid) && generation == 5 && docid == 10);
+delete map_corrupt;
+
+/*
+	HARDENING TEST 2: Over-range generation record (generation > (1LL << 40))
+	Record should be skipped entirely; next valid record should load
+*/
+char range_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *range_dir = mkdtemp(range_dir_template);
+CHECK(range_dir != NULL);
+char range_log[1200];
+snprintf(range_log, sizeof(range_log), "%s/keymap.log", range_dir);
+fp = fopen(range_log, "w");
+CHECK(fp != NULL);
+fprintf(fp, "A\t%lld\t7\tdoc-over\n", (1LL << 41));		// generation way out of range
+fputs("A\t5\t20\tdoc-valid\n", fp);					// valid record after out-of-range
+fclose(fp);
+ANT_index_keymap *map_range = ANT_index_keymap::load(range_dir);
+CHECK(map_range != NULL);
+CHECK(!map_range->find("doc-over", &generation, &docid));		// out-of-range record skipped
+CHECK(map_range->find("doc-valid", &generation, &docid) && generation == 5 && docid == 20);
+delete map_range;
+
+/*
+	HARDENING TEST 3: Over-long log line (10000 chars, no newline before truncation)
+	Line should be drained; next valid record should load
+*/
+char long_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *long_dir = mkdtemp(long_dir_template);
+CHECK(long_dir != NULL);
+char long_log[1200];
+snprintf(long_log, sizeof(long_log), "%s/keymap.log", long_dir);
+fp = fopen(long_log, "w");
+CHECK(fp != NULL);
+fputs("A\t3\t100\t", fp);
+for (int j = 0; j < 10000; j++)
+	fputc('x', fp);
+fputs("\nA\t6\t30\tdoc-after-long\n", fp);
+fclose(fp);
+ANT_index_keymap *map_long = ANT_index_keymap::load(long_dir);
+CHECK(map_long != NULL);
+// The long line (10000 chars) exceeds the read buffer (8192 bytes)
+// so it should be drained and skipped
+CHECK(!map_long->find("doc-x", &generation, &docid));		// if the long line had a key, it would fail here
+CHECK(map_long->find("doc-after-long", &generation, &docid) && generation == 6 && docid == 30);
+delete map_long;
+
+/*
+	HARDENING TEST 4: add() with a key containing '\t' is a no-op (find fails)
+*/
+char tab_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *tab_dir = mkdtemp(tab_dir_template);
+CHECK(tab_dir != NULL);
+ANT_index_keymap *map_tab = ANT_index_keymap::load(tab_dir);
+CHECK(map_tab != NULL);
+map_tab->add("doc\twithtab", 1, 0);	// should be rejected: no-op
+CHECK(!map_tab->find("doc\twithtab", &generation, &docid));	// not found
+delete map_tab;
+
+/*
+	HARDENING TEST 5: add() with a key containing '\n' is a no-op (find fails)
+*/
+char newline_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *newline_dir = mkdtemp(newline_dir_template);
+CHECK(newline_dir != NULL);
+ANT_index_keymap *map_newline = ANT_index_keymap::load(newline_dir);
+CHECK(map_newline != NULL);
+map_newline->add("doc\nwithnewline", 1, 0);	// should be rejected: no-op
+CHECK(!map_newline->find("doc\nwithnewline", &generation, &docid));	// not found
+delete map_newline;
+
+/*
+	HARDENING TEST 6: add() with empty key is a no-op (find fails)
+*/
+char empty_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *empty_dir = mkdtemp(empty_dir_template);
+CHECK(empty_dir != NULL);
+ANT_index_keymap *map_empty = ANT_index_keymap::load(empty_dir);
+CHECK(map_empty != NULL);
+map_empty->add("", 1, 0);	// should be rejected: no-op
+CHECK(!map_empty->find("", &generation, &docid));	// not found
+delete map_empty;
+
+printf("PASSED\n");
+return 0;
+}
