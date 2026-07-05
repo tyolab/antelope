@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
 
 #include "atire_segment_index.h"
 #include "atire_api.h"
@@ -38,7 +39,7 @@ writer_tombstones = NULL;
 writer_engine = NULL;
 writer_engine_stale = 1;
 
-flush_after_documents = 0;
+flush_after_documents = 10000;		// 0 = manual flush only; bounds NRT arena growth of the live segment
 
 results = NULL;
 results_count = 0;
@@ -179,10 +180,40 @@ keymap->retain_generations(manifest_generations, manifest->segment_count());
 delete [] manifest_generations;
 
 /*
-	TASK 10: sweep the directory for segment files not referenced by the
-	manifest (orphaned by a writer session that exited without flushing) and
-	delete them.
+	ORPHAN SWEEP
+	------------
+	Remove seg_* files whose generation the manifest does not reference.
+	These arise from: (a) a session that died with an unflushed writer (its
+	.aspt/.doclist were created by start_new_writer()'s init() but the
+	generation was never added to the manifest, since add_segment() only
+	happens after a successful flush()); or (b) a crash/I-O failure between
+	flush() writing the segment's files and flush() saving the manifest.
+
+	In case (b) the segment is COMPLETE on disk -- but flush()'s durability
+	contract is that a flush is durable only once the manifest save
+	succeeds, so a segment the manifest never came to reference is, by
+	definition, not durable: this sweep deletes it, and any documents that
+	were only in it are lost BY DESIGN.  This must run before
+	start_new_writer() below claims the next generation, so it can never
+	touch the new writer's own (not-yet-manifested) files.
 */
+DIR *directory_handle = opendir(this->directory);
+if (directory_handle != NULL)
+	{
+	struct dirent *entry;
+	while ((entry = readdir(directory_handle)) != NULL)
+		if (strncmp(entry->d_name, "seg_", 4) == 0)
+			{
+			long long file_generation = atoll(entry->d_name + 4);
+			if (file_generation > 0 && !manifest->contains(file_generation))
+				{
+				char victim[4096];
+				snprintf(victim, sizeof(victim), "%s/%s", this->directory, entry->d_name);
+				remove(victim);
+				}
+			}
+	closedir(directory_handle);
+	}
 
 if (start_new_writer() != 0)
 	return 1;
@@ -253,7 +284,25 @@ writer_engine_stale = 1;
 
 keymap->add(key, writer_generation, docid);
 
-return make_handle(writer_generation, docid);
+/*
+	Handle must be computed BEFORE any auto-flush below: flush() hands the
+	writer a new generation (start_new_writer()), so writer_generation would
+	no longer match the document we just indexed once flush() returns.
+*/
+long long handle = make_handle(writer_generation, docid);
+
+/*
+	Auto-flush: bound the live segment's size (and so the NRT rebuild cost,
+	see set_flush_threshold()'s doc comment).  Best-effort -- a failed
+	auto-flush leaves the writer degraded per flush()'s own contract (index
+	becomes read-only over the already-open segments until a successful
+	flush()/reopen); we do not surface that failure here since the document
+	just added is already durable in the (still searchable) writer.
+*/
+if (flush_after_documents > 0 && writer_documents >= flush_after_documents)
+	flush();
+
+return handle;
 }
 
 /*

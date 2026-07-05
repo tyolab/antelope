@@ -55,7 +55,7 @@ private:
 	ATIRE_API *writer_engine;			// NRT view over writer's memory index; rebuilt when stale
 	long writer_engine_stale;
 
-	long long flush_after_documents;	// 0 = only flush manually
+	long long flush_after_documents;	// 0 = manual flush only; default 10000 bounds memory growth of the live segment
 
 	hit *results;
 	long long results_count, results_allocated;
@@ -89,6 +89,16 @@ public:
 	long delete_document(const char *key);								// 0 on success, 1 if key unknown (Task 9)
 
 	long flush(void);										// memory segment -> disk segment; 0 on success (Task 7)
+
+	/*
+		Set the auto-flush threshold: add_document() calls flush() once the
+		writer holds at least this many documents.  0 disables auto-flush
+		(manual flush() only).  The constructor default (10000) exists because
+		NRT rebuilds (rebuild_writer_engine()) grow the writer's arena
+		quadratically until the writer is flushed, so an unbounded live
+		segment is a real memory-growth hazard for long-running sessions that
+		never call flush() themselves.
+	*/
 	void set_flush_threshold(long long documents) { flush_after_documents = documents; }
 
 	long long search(char *query, long long top_k);			// returns number of hits stored

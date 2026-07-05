@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include "../atire/atire_segment_index.h"
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
@@ -622,6 +623,54 @@ delete [] dir;
 printf("test_readd_after_reconciliation OK\n");
 }
 
+/*
+	TEST_AUTOFLUSH_AND_ORPHAN_CLEANUP()
+	-----------------------------------
+*/
+static void test_autoflush_and_orphan_cleanup(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[128], term[32], orphan[4096];
+long long i;
+
+/*
+	Auto-flush: threshold 5, add 12 docs -> at least 2 disk segments,
+	everything still searchable
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->set_flush_threshold(5);
+for (i = 0; i < 12; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(term, i);
+	sprintf(doc, "<DOC>common %s</DOC>", term);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 12);
+delete index;
+
+/*
+	Orphan cleanup: a seg file not referenced by the manifest (as left by a
+	crash mid-flush) is removed at open
+*/
+snprintf(orphan, sizeof(orphan), "%s/seg_999999.aspt", dir);
+FILE *fp = fopen(orphan, "wb");
+fputs("torn segment from a crash", fp);
+fclose(fp);
+
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(access(orphan, F_OK) != 0);		// cleaned up
+strcpy(query, "common");
+long long hits = reopened->search(query, 100);
+CHECK(hits >= 10);						// flushed docs survive (unflushed remainder lost: relaxed durability)
+delete reopened;
+delete [] dir;
+printf("test_autoflush_and_orphan_cleanup OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -634,6 +683,7 @@ test_overfetch_ten_docs_all_updated();
 test_overfetch_top_scorers_all_tombstoned_disk();
 test_update_across_flush_boundary();
 test_readd_after_reconciliation();
+test_autoflush_and_orphan_cleanup();
 printf("PASSED\n");
 return 0;
 }
