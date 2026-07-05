@@ -72,6 +72,45 @@ CHECK(m3->segment_count() == 0);
 CHECK(m3->get_generation() >= 1);
 
 /*
+	An overlong line (longer than any sane parse buffer) must be discarded
+	whole: its tail must never be parsed as extra segment entries
+*/
+char long_dir_template[] = "/tmp/ant_manifest_XXXXXX";
+char *long_dir = mkdtemp(long_dir_template);
+CHECK(long_dir != NULL);
+char long_name[1200];
+snprintf(long_name, sizeof(long_name), "%s/manifest", long_dir);
+fp = fopen(long_name, "wb");
+CHECK(fp != NULL);
+fputs("7\n", fp);
+for (int i = 0; i < 400; i++)
+	fputc('x', fp);
+fputs("\n42\n", fp);
+fclose(fp);
+ANT_index_manifest *m4 = ANT_index_manifest::load(long_dir);
+CHECK(m4 != NULL);
+CHECK(m4->segment_count() == 1);
+CHECK(m4->get_segment(0) == 42);
+
+/*
+	A manifest whose generation collides with a live segment must be clamped
+	above the largest segment so take_generation() can never reuse a number
+*/
+char collide_dir_template[] = "/tmp/ant_manifest_XXXXXX";
+char *collide_dir = mkdtemp(collide_dir_template);
+CHECK(collide_dir != NULL);
+char collide_name[1200];
+snprintf(collide_name, sizeof(collide_name), "%s/manifest", collide_dir);
+fp = fopen(collide_name, "wb");
+CHECK(fp != NULL);
+fputs("5\n5\n10\n", fp);
+fclose(fp);
+ANT_index_manifest *m5 = ANT_index_manifest::load(collide_dir);
+CHECK(m5 != NULL);
+CHECK(m5->segment_count() == 2);
+CHECK(m5->take_generation() == 11);
+
+/*
 	Atomic save: no temp file left behind
 */
 char tmpname[1200];
@@ -81,6 +120,8 @@ CHECK(access(tmpname, F_OK) != 0);
 delete m;
 delete m2;
 delete m3;
+delete m4;
+delete m5;
 printf("PASSED\n");
 return 0;
 }

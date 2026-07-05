@@ -30,6 +30,11 @@ public:
 	static ANT_index_manifest *load(const char *directory);	// missing/corrupt file -> fresh manifest, generation 1
 	long save(void);											// 0 on success
 
+	/*
+		Callers must save() before creating any file named with the taken
+		number: a crash between take_generation() and save() would otherwise
+		cause the same number to be handed out again after reload.
+	*/
 	long long take_generation(void) { return generation++; }
 	long long get_generation(void) { return generation; }
 
