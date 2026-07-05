@@ -60,9 +60,13 @@ segment).
 
 ### 2.2 Live memory segment
 An `ANT_memory_index` paired with `ANT_search_engine_memory_index` (both exist today).
-Single writer; searches and the writer are serialized with a readers-writer lock (writes
-are short — one document). Flush swaps in a fresh `ANT_memory_index` under the write lock,
-then serializes the old one to disk outside the lock.
+Single writer. `ANT_search_engine_memory_index` snapshots per-document state (lengths,
+accumulator sizing) at `open()`, so the NRT view is a wrapper engine that is rebuilt
+lazily: adds mark the segment dirty, and the next search discards and reconstructs the
+wrapper (cheap — proportional to the small memory segment). This requires a non-owning
+mode on the wrapper so destroying it does not free the shared `ANT_memory_index`.
+Phase 1 is single-threaded (matching ATIRE's existing engines and the Node.js binding);
+a readers-writer lock is deferred until a multi-threaded consumer exists. Flush swaps in a fresh `ANT_memory_index`, then serializes the old one to disk.
 
 Durability: documents in the memory segment are lost on crash. Two configurable modes:
 - **relaxed** (default): callers may re-submit; they hold the external keys.
@@ -75,11 +79,15 @@ into memory with the segment, persisted with write-temp-and-rename after each mu
 (batched — a delete is durable once its `.del` write completes; group-commit is fine).
 Tombstoning a doc in the *memory* segment is handled the same way with an in-memory bitset.
 
-Query-time filtering happens **during top-k selection**, not after: `ANT_search_engine`
-gains an optional exclusion bitset consulted where accumulators are walked to pick the
-top-k (heap insertion point). Filtering after selection would silently return fewer than
-k results. Deleted documents still contribute to df/IDF until compaction — the standard,
-accepted inaccuracy of every segment-based engine.
+Query-time filtering happens **post-sort with over-fetch**. ATIRE maintains its top-k
+inside the ranking functions' heap (`relevance_rank_top_k`), so injecting an exclusion
+bitset there would require touching every ranking function. Instead, each segment is
+searched for `top_k + that segment's tombstone count` results; tombstoned docids are then
+dropped from the sorted list. Since at most `tombstone count` results can be removed, the
+surviving list always holds at least `top_k` live documents (or every live match).
+Compaction (Phase 2) keeps tombstone counts — and therefore the over-fetch — small.
+Deleted documents still contribute to df/IDF until compaction — the standard, accepted
+inaccuracy of every segment-based engine.
 
 ### 2.4 Key map
 `external_key → (segment_generation, local_docid)`, held as an in-memory hash, persisted
