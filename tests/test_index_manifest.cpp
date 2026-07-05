@@ -146,6 +146,31 @@ delete m3;
 delete m4;
 delete m5;
 delete m6;
+
+/*
+	remove_segment(): used by compaction to drop merged inputs
+*/
+char rm_template[] = "/tmp/ant_manifest_XXXXXX";
+char *rm_dir = mkdtemp(rm_template);
+CHECK(rm_dir != NULL);
+ANT_index_manifest *rm = ANT_index_manifest::load(rm_dir);
+rm->add_segment(rm->take_generation());		// 1
+rm->add_segment(rm->take_generation());		// 2
+rm->add_segment(rm->take_generation());		// 3
+CHECK(rm->remove_segment(2) == 0);
+CHECK(rm->segment_count() == 2);
+CHECK(rm->get_segment(0) == 1);
+CHECK(rm->get_segment(1) == 3);
+CHECK(!rm->contains(2));
+CHECK(rm->remove_segment(99) == 1);			// absent -> 1, no change
+CHECK(rm->segment_count() == 2);
+CHECK(rm->save() == 0);
+ANT_index_manifest *rm2 = ANT_index_manifest::load(rm_dir);
+CHECK(rm2->segment_count() == 2);
+CHECK(rm2->contains(1) && rm2->contains(3) && !rm2->contains(2));
+delete rm;
+delete rm2;
+
 printf("PASSED\n");
 return 0;
 }

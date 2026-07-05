@@ -84,6 +84,22 @@ snprintf(buffer, (size_t)buffer_size, "%s/seg_%06lld.%s", directory, generation,
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::DELETE_SEGMENT_FILES()
+	-------------------------------------------
+	Best-effort: files that survive (permissions, races) are unmanifested
+	orphans and are swept at the next open().
+*/
+void ATIRE_segment_index::delete_segment_files(long long generation)
+{
+char filename[4096];
+
+segment_filename(filename, sizeof(filename), generation, "aspt");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "del");
+remove(filename);
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::START_NEW_WRITER()
 	------------------------------------------
 	Take the next generation number, persist the manifest (before creating any

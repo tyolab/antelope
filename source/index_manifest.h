@@ -39,6 +39,7 @@ public:
 	long long get_generation(void) { return generation; }
 
 	void add_segment(long long segment_generation);
+	long remove_segment(long long segment_generation);	// 0 = removed, 1 = not present; call save() to persist
 	long long segment_count(void) { return segments_used; }
 	long long get_segment(long long which) { return segments[which]; }
 	long contains(long long segment_generation);

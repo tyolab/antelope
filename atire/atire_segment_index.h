@@ -76,6 +76,7 @@ private:
 	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index);
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
+	void delete_segment_files(long long generation);	// best-effort unlink of seg_G.aspt / seg_G.del
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
 	long rebuild_keymap(void);			// reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 

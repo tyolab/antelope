@@ -51,6 +51,27 @@ segments[segments_used++] = segment_generation;
 }
 
 /*
+	ANT_INDEX_MANIFEST::REMOVE_SEGMENT()
+	------------------------------------
+	Order-preserving removal.  In-memory only -- the caller decides when to
+	save() (compaction batches removals + the addition into one atomic save).
+*/
+long ANT_index_manifest::remove_segment(long long segment_generation)
+{
+long long which, shuffle;
+
+for (which = 0; which < segments_used; which++)
+	if (segments[which] == segment_generation)
+		{
+		for (shuffle = which; shuffle < segments_used - 1; shuffle++)
+			segments[shuffle] = segments[shuffle + 1];
+		segments_used--;
+		return 0;
+		}
+return 1;
+}
+
+/*
 	ANT_INDEX_MANIFEST::CONTAINS()
 	------------------------------
 	Linear scan to check if a segment generation number is in the manifest.
