@@ -17,9 +17,20 @@ ANT_search_engine_memory_index::ANT_search_engine_memory_index(ANT_memory_index 
 {
 this->index = index;
 this->memory = memory;
+/*
+	Searching needs quantized impact scores, so we force 8 bits on the (possibly
+	shared) index -- but the indexer may later serialise() it, and there a value
+	other than -1 suppresses the automatic bit-count computation (see
+	ANT_memory_index::serialise()).  So remember the original value and restore
+	it in the destructor.  This save/restore assumes wrappers around the same
+	index are used sequentially (create, search, destroy, then the next one),
+	never nested -- which is how the rebuild-on-dirty pattern uses them.
+*/
+saved_quantization_bits = index->quantization_bits;
 index->quantization_bits = 8;
 postings_buffer_location = postings_buffer = NULL;
 postings_buffer_length = 0;
+owns_index = 1;
 }
 
 /*
@@ -28,8 +39,35 @@ postings_buffer_length = 0;
 */
 ANT_search_engine_memory_index::~ANT_search_engine_memory_index()
 {
+/*
+	results_list is placement-allocated inside "memory" (see open(), which does
+	"results_list = new (memory) ANT_search_engine_result(memory, documents);").
+	The base class destructor (~ANT_search_engine) also runs after this body and
+	will call "results_list->~ANT_search_engine_result();" if results_list is
+	non-NULL -- so we must destruct it and clear the pointer BEFORE freeing
+	memory, otherwise the base dtor touches memory already released by
+	"delete memory" below (confirmed via gdb: segfault in
+	ANT_search_engine::~ANT_search_engine() when a wrapper that has had open()
+	called on it is destroyed).
+*/
+if (results_list)
+	{
+	results_list->~ANT_search_engine_result();
+	results_list = NULL;
+	}
+
+/*
+	Undo the constructor's index->quantization_bits = 8 so a later
+	serialise() by the index's real owner still computes the automatic bit
+	count (which requires the field to be -1).  Done regardless of
+	owns_index (harmless just before the delete in owning mode); see the
+	constructor for the sequential-use assumption.
+*/
+index->quantization_bits = saved_quantization_bits;
+
 delete memory;
-delete index;
+if (owns_index)
+	delete index;
 }
 
 /*

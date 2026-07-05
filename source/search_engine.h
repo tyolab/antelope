@@ -172,6 +172,7 @@ public:
 
 	long long boolean_results_list(long terms_in_query);
 	long long get_variable(char *name);
+	ANT_search_engine_result *get_results_list(void) { return results_list; }
 	long long quantized(void) { return is_quantized; }					// true if the index is quantized, false if the index is TF values.
 
 	ANT_stem *get_stemmer(void) { return stemmer; }

@@ -125,7 +125,7 @@ CHECK(t->count() == 3);
 	Save / load round trip
 */
 CHECK(t->save(filename) == 0);
-ANT_index_tombstones *loaded = ANT_index_tombstones::load(filename, 300);
+ANT_index_tombstones *loaded = ANT_index_tombstones::load(filename, 1);	// documents=1 forces load()'s grow path
 CHECK(loaded != NULL);
 CHECK(loaded->is_deleted(7));
 CHECK(loaded->is_deleted(99));
@@ -141,6 +141,23 @@ sprintf(missing, "%s/absent.del", dir);
 ANT_index_tombstones *empty = ANT_index_tombstones::load(missing, 300);
 CHECK(empty != NULL);
 CHECK(empty->count() == 0);
+
+/*
+	A corrupted header (e.g. negative byte count) must be treated like a
+	missing file, never trusted (heap-overflow guard)
+*/
+char corrupt_name[1024];
+sprintf(corrupt_name, "%s/corrupt.del", dir);
+long long bad[2];
+bad[0] = 3;
+bad[1] = -4096;
+FILE *corrupt_fp = fopen(corrupt_name, "wb");
+fwrite(bad, sizeof(long long), 2, corrupt_fp);
+fclose(corrupt_fp);
+ANT_index_tombstones *corrupt = ANT_index_tombstones::load(corrupt_name, 100);
+CHECK(corrupt != NULL);
+CHECK(corrupt->count() == 0);
+delete corrupt;
 
 /*
 	Save must not leave a temp file behind (atomic write-temp + rename)
@@ -289,7 +306,8 @@ long ANT_index_tombstones::save(const char *filename)
 char temp_name[4096];
 FILE *fp;
 
-sprintf(temp_name, "%s.tmp", filename);
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
+	return 1;
 if ((fp = fopen(temp_name, "wb")) == NULL)
 	return 1;
 if (fwrite(&deleted_documents, sizeof(deleted_documents), 1, fp) != 1
@@ -325,6 +343,11 @@ long long stored_count, stored_bytes;
 if (fread(&stored_count, sizeof(stored_count), 1, fp) == 1
 	&& fread(&stored_bytes, sizeof(stored_bytes), 1, fp) == 1)
 	{
+	if (stored_count < 0 || stored_bytes <= 0 || stored_bytes > (1LL << 40))
+		{
+		fclose(fp);
+		return result;		// corrupt header: treat as a segment with no deletions
+		}
 	result->grow_to(stored_bytes * 8 - 1);
 	if (fread(result->bitmap, 1, (size_t)stored_bytes, fp) == (size_t)stored_bytes)
 		result->deleted_documents = stored_count;

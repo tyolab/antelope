@@ -223,6 +223,7 @@ public:
 	virtual void set_unique_term_count(long long length) { set_document_detail(&squiggle_unique_term_count, length); }
 	virtual void set_inverted_index_mode(long mode, double parameter) { inverted_index_mode = mode; inverted_index_parameter = parameter; }
 	virtual void set_quantization(long quantization, long quantization_automatic, long bits) { this->index_quantization = quantization; this->quantization_automatic = quantization_automatic; this->quantization_bits = bits;}
+	long long get_quantization_bits(void) { return quantization_bits; }
 	virtual void set_document_detail(ANT_string_pair *measure_name, long long length, long mode = MODE_ABSOLUTE);
 	virtual void set_ranking_function(long ranking_function, double p1, double p2, double p3) {ranking_function_id = ranking_function; ranking_function_p1 = p1; ranking_function_p2 = p2; ranking_function_p3 = p3;}
 	virtual void set_static_pruning(long long k) { static_prune_point = k; }
