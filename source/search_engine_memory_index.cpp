@@ -20,6 +20,7 @@ this->memory = memory;
 index->quantization_bits = 8;
 postings_buffer_location = postings_buffer = NULL;
 postings_buffer_length = 0;
+owns_index = 1;
 }
 
 /*
@@ -28,8 +29,26 @@ postings_buffer_length = 0;
 */
 ANT_search_engine_memory_index::~ANT_search_engine_memory_index()
 {
+/*
+	results_list is placement-allocated inside "memory" (see open(), which does
+	"results_list = new (memory) ANT_search_engine_result(memory, documents);").
+	The base class destructor (~ANT_search_engine) also runs after this body and
+	will call "results_list->~ANT_search_engine_result();" if results_list is
+	non-NULL -- so we must destruct it and clear the pointer BEFORE freeing
+	memory, otherwise the base dtor touches memory already released by
+	"delete memory" below (confirmed via gdb: segfault in
+	ANT_search_engine::~ANT_search_engine() when a wrapper that has had open()
+	called on it is destroyed).
+*/
+if (results_list)
+	{
+	results_list->~ANT_search_engine_result();
+	results_list = NULL;
+	}
+
 delete memory;
-delete index;
+if (owns_index)
+	delete index;
 }
 
 /*

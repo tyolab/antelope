@@ -22,6 +22,7 @@ protected:
 	ANT_memory *memory;
 	char *postings_buffer, *postings_buffer_location;
 	size_t postings_buffer_length;
+	long owns_index;			// if false, the destructor leaves the shared ANT_memory_index alone
 
 public:
 	ANT_search_engine_memory_index(ANT_memory_index *index, ANT_memory *memory);
@@ -32,6 +33,7 @@ public:
 	virtual int open(const char *filename = "index.aspt", unsigned long header_offset = 0);
 	virtual long open(const char *filename, char *mode) { return open(filename); }
 	virtual long write(unsigned char *data, long long size);
+	void set_index_ownership(long owns) { owns_index = owns; }
 } ;
 
 #endif /* SEARCH_ENGINE_MEMORY_INDEX_H_ */

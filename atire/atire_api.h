@@ -177,7 +177,7 @@ public:
 		bypassing disk serialisation.  doc_list is an array of doc_count filename
 		strings owned by the caller; this method deep-copies them.
 	*/
-	long open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count);
+	long open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count, long take_ownership = 1);
 
 	ANT_search_engine *get_search_engine(void) { return search_engine; }
 

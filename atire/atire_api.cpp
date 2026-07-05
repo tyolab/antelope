@@ -328,8 +328,15 @@ return 0;		// success
 	allocate_decompress_buffer() called (done automatically by serialise(), or
 	by open_from_indexer() below).  doc_list is deep-copied so the caller
 	retains ownership of those strings.
+
+	If take_ownership is true (the default, preserving prior behaviour) the
+	resulting ANT_search_engine_memory_index frees the ANT_memory_index when
+	this ATIRE_API is destroyed.  Pass take_ownership = 0 when the index is
+	still owned by an indexer (or another wrapper) that must keep using it
+	after this ATIRE_API goes away -- e.g. when rebuilding a wrapper around a
+	live, still-growing in-memory index.
 */
-long ATIRE_API::open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count)
+long ATIRE_API::open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count, long take_ownership)
 {
 if (document_list != NULL)
 	return 1;		// already open
@@ -347,6 +354,8 @@ index->allocate_decompress_buffer();
 */
 ANT_memory *mem = new ANT_memory;
 search_engine = new ANT_search_engine_memory_index(index, mem);
+if (!take_ownership)
+	((ANT_search_engine_memory_index *)search_engine)->set_index_ownership(0);
 search_engine->open();
 
 /*
