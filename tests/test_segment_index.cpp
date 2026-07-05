@@ -132,10 +132,119 @@ delete [] dir;
 printf("test_flush_and_reopen OK\n");
 }
 
+/*
+	UNIQUE_TERM()
+	-------------
+	Build a per-doc unique query term for n in [0, 31] out of two lowercase
+	letters (n div 26, n mod 26), never digits.  ATIRE's document tokeniser
+	(source/parser.cpp) breaks a run of characters at the letter/number
+	boundary (a letter run and a following digit run become two separate
+	terms), but its NEXI query tokeniser (source/nexi.cpp, ANT_NEXI::ispart())
+	treats a mixed letter+digit run as ONE token.  A term like "unique0" would
+	therefore be indexed as two terms ("unique", "0") but looked up as the
+	single literal term "unique0", which is never in the vocabulary -- an
+	unrelated, pre-existing ATIRE tokeniser quirk, nothing to do with segment
+	growth.  Letters-only suffixes sidestep it entirely.
+*/
+static void unique_term(char *buffer, long long n)
+{
+sprintf(buffer, "unique%c%c", (int)('a' + n / 26), (int)('a' + n % 26));
+}
+
+/*
+	TEST_MULTI_SEGMENT_GROWTH()
+	---------------------------
+	Grow the index across three flushes; results must merge across all
+	segments plus the live memory segment, ranked consistently.
+*/
+static void test_multi_segment_growth(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], term[32];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+/*
+	Three batches of 10 docs, each flushed -> three disk segments.
+	Every doc contains "common"; doc i contains its own unique_term(i).
+*/
+long long batch, expected_total = 0;
+for (batch = 0; batch < 3; batch++)
+	{
+	for (i = 0; i < 10; i++)
+		{
+		long long n = batch * 10 + i;
+		sprintf(key, "doc-%lld", n);
+		unique_term(term, n);
+		sprintf(doc, "<DOC>common %s filler words here</DOC>", term);
+		CHECK(index->add_document(key, doc) >= 0);
+		expected_total++;
+		}
+	CHECK(index->flush() == 0);
+	}
+
+/*
+	Two more docs stay in memory (4th, unflushed segment)
+*/
+unique_term(term, 30);
+sprintf(doc, "<DOC>common %s</DOC>", term);
+index->add_document("doc-30", doc);
+unique_term(term, 31);
+sprintf(doc, "<DOC>common %s</DOC>", term);
+index->add_document("doc-31", doc);
+expected_total += 2;
+
+CHECK(index->get_document_count() == expected_total);
+
+/*
+	A term in every doc: all 32 found across 4 segments
+*/
+strcpy(query, "common");
+CHECK(index->search(query, 100) == expected_total);
+
+/*
+	top_k truncation works across segments
+*/
+strcpy(query, "common");
+CHECK(index->search(query, 5) == 5);
+
+/*
+	Unique terms resolve to the right doc regardless of segment
+*/
+unique_term(query, 0);
+CHECK(index->search(query, 10) == 1);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-0") == 0);
+unique_term(query, 25);
+CHECK(index->search(query, 10) == 1);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-25") == 0);
+unique_term(query, 31);
+CHECK(index->search(query, 10) == 1);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-31") == 0);
+
+/*
+	Reopen: three disk segments come back, memory docs are gone
+*/
+delete index;
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->get_document_count() == 30);
+strcpy(query, "common");
+CHECK(reopened->search(query, 100) == 30);
+unique_term(query, 15);
+CHECK(reopened->search(query, 10) == 1);
+CHECK(strcmp(reopened->get_hit(0)->filename, "doc-15") == 0);
+delete reopened;
+delete [] dir;
+printf("test_multi_segment_growth OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
 test_flush_and_reopen();
+test_multi_segment_growth();
 printf("PASSED\n");
 return 0;
 }
