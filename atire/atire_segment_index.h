@@ -92,6 +92,8 @@ public:
 
 	long flush(void);										// memory segment -> disk segment; 0 on success
 
+	long compact(long long *input_generations, long long input_count);	// merge those disk segments into one; 0 on success
+
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the
 		writer holds at least this many documents.  0 disables auto-flush

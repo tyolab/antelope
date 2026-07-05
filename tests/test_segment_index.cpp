@@ -1223,6 +1223,83 @@ delete [] dir;
 printf("test_merger_repeated_merge OK\n");
 }
 
+/*
+	TEST_COMPACT_BASIC()
+	--------------------
+	Compact two segments with deletions into one; searches, counts, keymap
+	(update/delete by key) and reopen must all be correct afterwards.
+*/
+static void test_compact_basic(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16];
+long long i;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 8; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	if (i == 3)
+		CHECK(index->flush() == 0);
+	}
+CHECK(index->flush() == 0);
+CHECK(index->delete_document("doc-2") == 0);
+CHECK(index->delete_document("doc-5") == 0);
+
+long long inputs[2];
+inputs[0] = 1;
+inputs[1] = 2;
+CHECK(index->compact(inputs, 2) == 0);
+
+/*
+	One disk segment now; 6 live docs; tombstone over-fetch overhead gone
+*/
+CHECK(index->get_document_count() == 6);
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 6);
+unique_term(letters, 2);
+strcpy(query, letters);
+CHECK(index->search(query, 10) == 0);
+
+/*
+	Keymap remapped: update + delete by key still hit the right documents
+*/
+unique_term(letters, 3);
+sprintf(doc, "<DOC>common replacement %s</DOC>", letters);
+CHECK(index->update_document("doc-3", doc) >= 0);
+strcpy(query, letters);
+CHECK(index->search(query, 10) == 1);		// only the replacement's copy of the unique term
+CHECK(index->delete_document("doc-7") == 0);
+CHECK(index->get_document_count() == 5);
+
+/*
+	Durable: reopen sees the compacted state (plus the unflushed update is
+	lost, so doc-3 reverts to its compacted body -- relaxed durability).
+
+	The tombstones raised above (doc-3's old copy and doc-7) are against
+	the OUTPUT disk segment, so tombstone() persists their .del entry
+	immediately -- durable without a flush().  The replacement body for
+	doc-3, by contrast, lives only in the in-memory writer and is lost
+	when the index is destroyed without flush()ing.  So on reopen: 6 docs
+	in the compacted segment, minus the two persisted tombstones (old
+	doc-3, doc-7) = 4 live documents; doc-3's replacement never made it to
+	disk at all.
+*/
+delete index;
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->get_document_count() == 4);
+strcpy(query, "common");
+CHECK(reopened->search(query, 100) == 4);
+delete reopened;
+delete [] dir;
+printf("test_compact_basic OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1242,6 +1319,7 @@ test_equivalence_with_oneshot();
 test_merger_no_tombstones();
 test_merger_drops_tombstones();
 test_merger_repeated_merge();
+test_compact_basic();
 printf("PASSED\n");
 return 0;
 }
