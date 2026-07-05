@@ -737,6 +737,71 @@ delete [] dir;
 printf("test_keymap_recovery OK\n");
 }
 
+/*
+	TEST_KEYMAP_RECOVERY_COMPOUND_LOSS()
+	------------------------------------
+	Delete BOTH keymap.log and the segment's .del: both copies of an updated
+	key now look live inside ONE segment.  The rebuild walks docids ascending
+	(oldest first within a segment), so the newer copy still wins the keymap
+	and the older copy is re-tombstoned -- and the re-raised tombstones are
+	batch-persisted, so the recovered index behaves normally afterwards.
+*/
+static void test_keymap_recovery_compound_loss(void)
+{
+char *dir = make_index_dir();
+char query[64], victim[4096];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->add_document("k1", "<DOC>wombat alpha</DOC>");			// docid 0
+CHECK(index->update_document("k1", "<DOC>wombat beta</DOC>") >= 0);	// docid 1; docid 0 tombstoned in the writer
+index->add_document("k2", "<DOC>echidna</DOC>");			// docid 2
+CHECK(index->flush() == 0);		// ONE segment (generation 1) holding both copies of k1, .del written
+delete index;
+
+/*
+	Compound loss: the keymap log AND the segment's tombstones.  The remove()
+	of the .del doubles as an assertion that flush() persisted it at all.
+*/
+snprintf(victim, sizeof(victim), "%s/keymap.log", dir);
+CHECK(remove(victim) == 0);
+snprintf(victim, sizeof(victim), "%s/seg_000001.del", dir);
+CHECK(remove(victim) == 0);
+
+ATIRE_segment_index *recovered = new ATIRE_segment_index();
+CHECK(recovered->open(dir) == 0);
+
+/*
+	"wombat" is common to v1 and v2: exactly ONE hit means the rebuild
+	re-tombstoned the older copy rather than leaving both live.
+*/
+strcpy(query, "wombat");
+CHECK(recovered->search(query, 10) == 1);
+strcpy(query, "alpha");
+CHECK(recovered->search(query, 10) == 0);
+strcpy(query, "beta");
+CHECK(recovered->search(query, 10) == 1);
+
+/*
+	The rebuilt keymap points k1 at the v2 copy: updating to v3 tombstones
+	v2, and deleting k2 works.
+*/
+CHECK(recovered->update_document("k1", "<DOC>wombat gamma</DOC>") >= 0);
+strcpy(query, "wombat");
+CHECK(recovered->search(query, 10) == 1);
+strcpy(query, "beta");
+CHECK(recovered->search(query, 10) == 0);
+strcpy(query, "gamma");
+CHECK(recovered->search(query, 10) == 1);
+CHECK(recovered->delete_document("k2") == 0);
+strcpy(query, "echidna");
+CHECK(recovered->search(query, 10) == 0);
+
+delete recovered;
+delete [] dir;
+printf("test_keymap_recovery_compound_loss OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -751,6 +816,7 @@ test_update_across_flush_boundary();
 test_readd_after_reconciliation();
 test_autoflush_and_orphan_cleanup();
 test_keymap_recovery();
+test_keymap_recovery_compound_loss();
 printf("PASSED\n");
 return 0;
 }

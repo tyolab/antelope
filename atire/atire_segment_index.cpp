@@ -146,10 +146,11 @@ return 0;
 
 	segments[] is in manifest order, which is the order generations were
 	added (= append/flush order), i.e. OLDEST first.  Walking it in that
-	order and simply calling keymap->add() for every live document means a
-	key that appears in two segments (an update whose tombstone was itself
-	recorded only in the lost keymap.log) ends up pointing at the segment
-	processed LAST -- the newest one -- exactly the "newer copy wins"
+	order (and each segment's docids ascending, which within one segment is
+	likewise oldest first) and simply calling keymap->add() for every live
+	document means a key that appears twice (an update whose tombstone was
+	itself recorded only in the lost keymap.log) ends up pointing at the
+	copy processed LAST -- the newest one -- exactly the "newer copy wins"
 	semantics an update provides.  But that leaves the OLDER copy silently
 	still reachable through the segment's own doclist / accumulator scan
 	(search_one_segment() does not consult the keymap, only tombstones), so
@@ -158,13 +159,26 @@ return 0;
 	and a live-looking stale duplicate would otherwise resurface in search
 	results and could later be resurrected by update_document()/
 	delete_document() acting on it via a keymap collision.
+
+	Tombstones raised here are set in memory only during the scan (a
+	duplicate-heavy rebuild would otherwise rewrite the same .del file once
+	per duplicate); each dirtied segment's .del is then saved exactly ONCE
+	after the scan.  Returns 0 on success, nonzero if any .del save fails:
+	in that case the keymap points at the new copies but the old duplicates
+	would come back from the dead on the next open (their tombstones were
+	never persisted), so the caller must treat the whole open() as failed
+	rather than proceed with a keymap it cannot trust.
 */
-void ATIRE_segment_index::rebuild_keymap(void)
+long ATIRE_segment_index::rebuild_keymap(void)
 {
-long long which, docid, doc_count;
+long long which, docid, doc_count, victim;
 long long old_generation, old_docid;
-char filename_buffer[4096];
+char filename_buffer[4096], del_name[4096];
 char *filename;
+long *dirty, failed;
+
+dirty = new long[segment_count];
+memset(dirty, 0, (size_t)(segment_count * sizeof(*dirty)));
 
 for (which = 0; which < segment_count; which++)
 	{
@@ -186,17 +200,43 @@ for (which = 0; which < segment_count; which++)
 
 		/*
 			If this key is already in the (partially rebuilt) map, the
-			earlier segment's copy is the OLDER one -- it was superseded by
-			an update whose tombstone lived only in the log we just lost.
-			Tombstone it now (persists a .del immediately) so it stops
-			showing up in search() and cannot be resurrected via the keymap.
+			earlier copy is the OLDER one -- it was superseded by an update
+			whose tombstone lived only in the log we just lost.  Tombstone it
+			in memory (its .del is batch-saved below) so it stops showing up
+			in search() and cannot be resurrected via the keymap.  The old
+			(generation, docid) can only name a disk segment: every entry in
+			the map at this point was added by this very loop, and the writer
+			does not exist yet (open() rebuilds before start_new_writer()).
 		*/
 		if (keymap->find(filename, &old_generation, &old_docid))
-			tombstone(old_generation, old_docid);
+			for (victim = 0; victim < segment_count; victim++)
+				if (segments[victim].generation == old_generation)
+					{
+					segments[victim].tombstones->set_deleted(old_docid);
+					dirty[victim] = 1;
+					break;
+					}
 
 		keymap->add(filename, segments[which].generation, docid);
 		}
 	}
+
+/*
+	Persist each dirtied segment's tombstones exactly once.  Keep going past
+	a failure (later segments' saves are independent and every persisted
+	tombstone is one fewer resurrected duplicate) but report it.
+*/
+failed = 0;
+for (which = 0; which < segment_count; which++)
+	if (dirty[which])
+		{
+		segment_filename(del_name, sizeof(del_name), segments[which].generation, "del");
+		if (segments[which].tombstones->save(del_name) != 0)
+			failed = 1;
+		}
+
+delete [] dirty;
+return failed;
 }
 
 /*
@@ -298,12 +338,16 @@ if (directory_handle != NULL)
 	the segments that are actually durable) and before start_new_writer()
 	claims the next generation (rebuild only concerns already-flushed
 	segments; the new writer starts with nothing to rebuild anyway).  The
-	rebuilt entries are appended through keymap->add()/tombstone(), whose
-	log handle load() already opened for append, so the rebuild itself
-	persists for the next open().
+	rebuilt entries are appended through keymap->add(), whose log handle
+	load() already opened for append, so the rebuild itself persists for
+	the next open().  A nonzero return means some segment's re-raised
+	tombstones could not be persisted -- the keymap would then disagree
+	with what the next open() sees on disk (dead duplicates resurrected),
+	so refuse to open rather than serve an index we know is inconsistent.
 */
 if (!had_keymap_log && segment_count > 0)
-	rebuild_keymap();
+	if (rebuild_keymap() != 0)
+		return 1;
 
 if (start_new_writer() != 0)
 	return 1;

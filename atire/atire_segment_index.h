@@ -77,7 +77,7 @@ private:
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
-	void rebuild_keymap(void);			// Task 11: reconstruct the keymap from segments' stored filenames when keymap.log is lost
+	long rebuild_keymap(void);			// Task 11: reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 
 public:
 	ATIRE_segment_index();
