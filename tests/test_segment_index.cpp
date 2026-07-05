@@ -240,11 +240,137 @@ delete [] dir;
 printf("test_multi_segment_growth OK\n");
 }
 
+/*
+	TEST_UPDATE_AND_DELETE()
+	------------------------
+*/
+static void test_update_and_delete(void)
+{
+char *dir = make_index_dir();
+char query[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+index->add_document("doc-1", "<DOC>aardvark original</DOC>");
+index->add_document("doc-2", "<DOC>quokka stable</DOC>");
+CHECK(index->flush() == 0);
+
+/*
+	Update a flushed document: old version tombstoned in disk segment,
+	new version searchable from memory segment
+*/
+long long new_handle = index->update_document("doc-1", "<DOC>aardvark revised wombat</DOC>");
+CHECK(new_handle >= 0);
+
+strcpy(query, "aardvark");
+CHECK(index->search(query, 10) == 1);			// not 2: old version filtered
+CHECK(strcmp(index->get_hit(0)->filename, "doc-1") == 0);
+CHECK(ATIRE_segment_index::make_handle(index->get_hit(0)->generation, index->get_hit(0)->docid) == new_handle);
+strcpy(query, "original");
+CHECK(index->search(query, 10) == 0);			// old body no longer reachable
+strcpy(query, "wombat");
+CHECK(index->search(query, 10) == 1);			// new body is
+CHECK(index->get_document_count() == 2);
+
+/*
+	Update an unflushed (memory segment) document
+*/
+index->add_document("doc-3", "<DOC>ephemeral first</DOC>");
+index->update_document("doc-3", "<DOC>ephemeral second</DOC>");
+strcpy(query, "ephemeral");
+CHECK(index->search(query, 10) == 1);
+strcpy(query, "first");
+CHECK(index->search(query, 10) == 0);
+
+/*
+	Delete
+*/
+CHECK(index->delete_document("doc-2") == 0);
+strcpy(query, "quokka");
+CHECK(index->search(query, 10) == 0);
+CHECK(index->delete_document("no-such-key") == 1);
+
+/*
+	upsert: update of an unknown key behaves as add
+*/
+CHECK(index->update_document("doc-new", "<DOC>upserted marsupial</DOC>") >= 0);
+strcpy(query, "marsupial");
+CHECK(index->search(query, 10) == 1);
+
+/*
+	Tombstones survive flush + reopen
+*/
+CHECK(index->flush() == 0);
+delete index;
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+strcpy(query, "original");
+CHECK(reopened->search(query, 10) == 0);
+strcpy(query, "quokka");
+CHECK(reopened->search(query, 10) == 0);
+strcpy(query, "wombat");
+CHECK(reopened->search(query, 10) == 1);
+strcpy(query, "first");
+CHECK(reopened->search(query, 10) == 0);
+strcpy(query, "second");
+CHECK(reopened->search(query, 10) == 1);
+delete reopened;
+delete [] dir;
+printf("test_update_and_delete OK\n");
+}
+
+/*
+	TEST_STALE_KEYMAP_RECONCILIATION()
+	----------------------------------
+	Docs added but never flushed leave keymap entries pointing at a
+	generation the manifest never records; reopen must reconcile so
+	update/delete of such keys behave as absent (upsert / not-found).
+*/
+static void test_stale_keymap_reconciliation(void)
+{
+char *dir = make_index_dir();
+char query[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->add_document("doc-flushed", "<DOC>kept kangaroo</DOC>");
+CHECK(index->flush() == 0);
+index->add_document("doc-lost", "<DOC>vanishing vapour</DOC>");
+delete index;			// doc-lost's generation never flushed
+
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+
+/*
+	Stale key: delete reports unknown, update upserts a fresh copy
+*/
+CHECK(reopened->delete_document("doc-lost") == 1);
+CHECK(reopened->update_document("doc-lost", "<DOC>vanishing reborn</DOC>") >= 0);
+strcpy(query, "reborn");
+CHECK(reopened->search(query, 10) == 1);
+strcpy(query, "vapour");
+CHECK(reopened->search(query, 10) == 0);
+
+/*
+	The flushed doc is untouched by reconciliation
+*/
+CHECK(reopened->delete_document("doc-flushed") == 0);
+strcpy(query, "kangaroo");
+CHECK(reopened->search(query, 10) == 0);
+
+delete reopened;
+delete [] dir;
+printf("test_stale_keymap_reconciliation OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
 test_flush_and_reopen();
 test_multi_segment_growth();
+test_update_and_delete();
+test_stale_keymap_reconciliation();
 printf("PASSED\n");
 return 0;
 }

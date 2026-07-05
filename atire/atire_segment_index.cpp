@@ -160,6 +160,25 @@ for (which = 0; which < manifest->segment_count(); which++)
 		return 1;
 
 /*
+	Reconcile the keymap against the manifest BEFORE the new writer's
+	generation exists: keymap entries can reference generations that were
+	added to but never flushed (a session that exited without flush()ing
+	its memory segment).  On reopen those entries are lies -- the segment
+	they point at does not exist and never will -- so any live keymap
+	entry whose generation is not one of the manifest's segments must be
+	dropped now, or delete_document() would fail confusingly and
+	update_document() would tombstone into nothing.  Only manifest
+	generations are valid at this point; the current session's writer
+	generation is handed out (and starts collecting keymap entries) below,
+	after this check.
+*/
+long long *manifest_generations = new long long[manifest->segment_count()];
+for (which = 0; which < manifest->segment_count(); which++)
+	manifest_generations[which] = manifest->get_segment(which);
+keymap->retain_generations(manifest_generations, manifest->segment_count());
+delete [] manifest_generations;
+
+/*
 	TASK 10: sweep the directory for segment files not referenced by the
 	manifest (orphaned by a writer session that exited without flushing) and
 	delete them.
@@ -238,14 +257,57 @@ return make_handle(writer_generation, docid);
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::TOMBSTONE()
+	--------------------------------
+	Mark (generation, docid) deleted.  For a disk segment the .del file is
+	persisted immediately (write-temp + rename, so it is crash-atomic).
+*/
+long ATIRE_segment_index::tombstone(long long generation, long long docid)
+{
+char del_name[4096];
+long long which;
+
+if (writer != NULL && generation == writer_generation)
+	{
+	writer_tombstones->set_deleted(docid);
+	return 0;
+	}
+for (which = 0; which < segment_count; which++)
+	if (segments[which].generation == generation)
+		{
+		segments[which].tombstones->set_deleted(docid);
+		segment_filename(del_name, sizeof(del_name), generation, "del");
+		return segments[which].tombstones->save(del_name);
+		}
+return 1;			// unknown segment: keymap and manifest disagree (should be impossible after reconciliation)
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()
 	-----------------------------------------
-	TASK 9: upsert (tombstone the old (generation, docid) via the keymap,
-	then add_document() the new content).
+	TASK 9: upsert.  Add the new content FIRST, then tombstone the old
+	(generation, docid) -- in that order, so a crash between the two leaves
+	a transient duplicate (harmless, filtered at compaction) rather than a
+	lost document.  add_document() already repoints the keymap at the new
+	copy, so by the time we tombstone the old one it is no longer reachable
+	through the keymap regardless.
+
+	If add_document() rejects the new content (returns -1, e.g. a zero-term
+	document), the keymap still points at the OLD version and nothing is
+	tombstoned: the update is a no-op, which is the correct failure
+	semantics (preserve the old copy rather than lose the document).
 */
 long long ATIRE_segment_index::update_document(const char *key, const char *document)
 {
-return -1;
+long long old_generation, old_docid;
+long had_old = keymap->find(key, &old_generation, &old_docid);
+
+long long handle = add_document(key, document);		// also repoints the keymap at the new copy
+if (handle < 0)
+	return -1;
+if (had_old)
+	tombstone(old_generation, old_docid);
+return handle;
 }
 
 /*
@@ -257,7 +319,16 @@ return -1;
 */
 long ATIRE_segment_index::delete_document(const char *key)
 {
-return 1;
+long long generation, docid;
+
+if (!keymap->find(key, &generation, &docid))
+	return 1;		// unknown key
+
+if (tombstone(generation, docid) != 0)
+	return 1;
+
+keymap->remove(key);
+return 0;
 }
 
 /*

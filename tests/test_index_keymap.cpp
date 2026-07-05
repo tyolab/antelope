@@ -214,6 +214,41 @@ CHECK(map_toggle2 != NULL);
 CHECK(map_toggle2->find("toggle-key", &generation, &docid) && generation == 4 && docid == 9);
 delete map_toggle2;
 
+/*
+	RETAIN_GENERATIONS: entries whose generation is not in the given list
+	are dropped; entries whose generation is in the list are untouched;
+	already-removed entries stay removed; the reconciliation survives reload.
+*/
+char retain_dir_template[] = "/tmp/ant_keymap_XXXXXX";
+char *retain_dir = mkdtemp(retain_dir_template);
+CHECK(retain_dir != NULL);
+ANT_index_keymap *map_retain = ANT_index_keymap::load(retain_dir);
+CHECK(map_retain != NULL);
+map_retain->add("kept-1", 1, 0);		// generation 1: retained
+map_retain->add("kept-2", 2, 1);		// generation 2: retained
+map_retain->add("stale-1", 3, 2);		// generation 3: not retained -> dropped
+map_retain->add("already-gone", 1, 3);
+map_retain->remove("already-gone");		// already removed before reconciliation
+
+long long keep_generations[2] = { 1, 2 };
+map_retain->retain_generations(keep_generations, 2);
+
+CHECK(map_retain->find("kept-1", &generation, &docid) && generation == 1 && docid == 0);
+CHECK(map_retain->find("kept-2", &generation, &docid) && generation == 2 && docid == 1);
+CHECK(!map_retain->find("stale-1", &generation, &docid));
+CHECK(!map_retain->find("already-gone", &generation, &docid));
+delete map_retain;
+
+/*
+	Reload: the dropped entry's removal was logged, so it stays dropped
+*/
+ANT_index_keymap *map_retain2 = ANT_index_keymap::load(retain_dir);
+CHECK(map_retain2 != NULL);
+CHECK(map_retain2->find("kept-1", &generation, &docid) && generation == 1 && docid == 0);
+CHECK(map_retain2->find("kept-2", &generation, &docid) && generation == 2 && docid == 1);
+CHECK(!map_retain2->find("stale-1", &generation, &docid));
+delete map_retain2;
+
 printf("PASSED\n");
 return 0;
 }

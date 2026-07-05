@@ -371,3 +371,50 @@ if (docid != NULL)
 	*docid = s->docid;
 return 1;		// found
 }
+
+/*
+	ANT_INDEX_KEYMAP::RETAIN_GENERATIONS()
+	---------------------------------------
+	Reconcile the keymap against the set of generations that actually exist
+	on disk (the manifest).  A memory segment that documents were added to
+	but that was never flushed before the process exited leaves keymap
+	entries pointing at a generation that is not, and never will be, on
+	disk -- those entries are lies: without this, delete_document() would
+	fail confusingly (tombstone() cannot find the segment) and
+	update_document() would tombstone into nothing (silently no-op instead
+	of upserting cleanly).  Walk the table directly (not via find_slot(),
+	which is keyed on a key we don't have here) and mark every LIVE entry
+	(docid >= 0) whose generation is absent from the given list as removed,
+	logging a "D\t<key>\n" record so the reconciliation persists across the
+	next reload too.
+*/
+void ANT_index_keymap::retain_generations(const long long *generations, long long generation_count)
+{
+long long i, g;
+long found;
+
+for (i = 0; i < slots_allocated; i++)
+	{
+	if (table[i].key == NULL || table[i].docid < 0)
+		continue;		// unused slot or already-removed entry
+
+	found = 0;
+	for (g = 0; g < generation_count; g++)
+		if (table[i].generation == generations[g])
+			{
+			found = 1;
+			break;
+			}
+
+	if (!found)
+		{
+		table[i].docid = -1;		// mark removed: generation not in the manifest
+
+		if (log != NULL)
+			{
+			if (fprintf(log, "D\t%s\n", table[i].key) >= 0)
+				fflush(log);
+			}
+		}
+	}
+}

@@ -76,6 +76,7 @@ private:
 	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index);
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
+	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
 
 public:
 	ATIRE_segment_index();

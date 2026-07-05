@@ -56,6 +56,20 @@ public:
 	void add(const char *key, long long generation, long long docid);
 	void remove(const char *key);
 	long find(const char *key, long long *generation, long long *docid);
+
+	/*
+		ANT_INDEX_KEYMAP::RETAIN_GENERATIONS()
+		---------------------------------------
+		Reconcile the keymap against the set of generations that actually
+		exist on disk (the manifest).  A memory segment that was added to but
+		never flushed before the process exited leaves keymap entries
+		pointing at a generation that is not, and never will be, on disk --
+		those entries are lies.  Every LIVE entry whose generation is not in
+		the given list is marked removed (docid = -1) and a "D\t<key>\n"
+		record is appended to the log so the reconciliation survives the
+		next reload too.
+	*/
+	void retain_generations(const long long *generations, long long generation_count);
 } ;
 
 #endif /* INDEX_KEYMAP_H_ */
