@@ -48,7 +48,8 @@ long long original_qbits = indexer->get_index()->get_quantization_bits();
 	indexer keeps its pointer and can continue indexing afterwards.
 */
 ATIRE_API *engine_one = new ATIRE_API();
-CHECK(engine_one->open_from_memory_index(indexer->get_index(), indexer->get_doc_list(&count), count, /*take_ownership =*/ 0) == 0);
+char **doc_list_one = indexer->get_doc_list(&count);		// hoisted: arguments are unsequenced, count must be written first
+CHECK(engine_one->open_from_memory_index(indexer->get_index(), doc_list_one, count, /*take_ownership =*/ 0) == 0);
 strcpy(query, "aardvark");
 CHECK(engine_one->search(query, 10) == 1);
 delete engine_one;			// must NOT free the memory index
@@ -59,7 +60,8 @@ delete engine_one;			// must NOT free the memory index
 */
 indexer->index_document(name_three, doc_three);
 ATIRE_API *engine_two = new ATIRE_API();
-CHECK(engine_two->open_from_memory_index(indexer->get_index(), indexer->get_doc_list(&count), count, 0) == 0);
+char **doc_list_two = indexer->get_doc_list(&count);
+CHECK(engine_two->open_from_memory_index(indexer->get_index(), doc_list_two, count, 0) == 0);
 strcpy(query, "aardvark");
 CHECK(engine_two->search(query, 10) == 2);
 strcpy(query, "wombat");
