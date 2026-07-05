@@ -37,8 +37,9 @@ index-dir/
   refuses quantized inputs), append it to the manifest, start a fresh memory segment.
 - **Compact** → extended `atire_merge` combines segments, *skipping tombstoned docids and
   renumbering*, reclaiming space; replaces inputs in the manifest atomically.
-- **Search** → fan the query across all disk segments plus the live memory segment, filter
-  tombstoned docids during top-k selection, merge results by score.
+- **Search** → fan the query across all disk segments plus the live memory segment
+  (over-fetching by each segment's tombstone count), drop tombstoned docids from the
+  sorted results, merge by score.
 
 Freshness profiles are settings, not code paths:
 
@@ -152,7 +153,7 @@ reverse order, which could lose the document entirely.
 
 ## 4. Implementation phases
 1. **Multi-segment read path**: manifest, segment manager, multi-segment searcher with
-   tombstone filtering in top-k selection, key map. Delivers add/update/delete + growth,
+   post-sort tombstone filtering (over-fetch), key map. Delivers add/update/delete + growth,
    with flush-per-batch. (No merge changes yet — segments just accumulate.)
 2. **Compacting merge**: tombstone-skipping + renumbering in `merge_index()`, remap-table
    output, tiered merge policy, background scheduling.
