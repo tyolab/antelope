@@ -137,7 +137,7 @@ return 0;
 /*
 	ATIRE_SEGMENT_INDEX::REBUILD_KEYMAP()
 	-----------------------------------------
-	TASK 11: the keymap is, by design, a CACHE over information the segments
+	The keymap is, by design, a CACHE over information the segments
 	already carry themselves -- each segment stores its documents' filenames
 	internally (this build always serialises FILENAME_INDEX-style, ANT_V5;
 	see append_segment()'s banner) -- so if keymap.log is lost, the map can
@@ -330,7 +330,7 @@ if (directory_handle != NULL)
 	}
 
 /*
-	Keymap recovery (Task 11): if there was no keymap.log going into this
+	Keymap recovery: if there was no keymap.log going into this
 	open(), the keymap loaded above is empty (retain_generations() just ran
 	against it and had nothing to do) and every already-open segment is a
 	source of ground truth for it -- rebuild by scanning their stored
@@ -473,7 +473,7 @@ return 1;			// unknown segment: keymap and manifest disagree (should be impossib
 /*
 	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()
 	-----------------------------------------
-	TASK 9: upsert.  Add the new content FIRST, then tombstone the old
+	Upsert.  Add the new content FIRST, then tombstone the old
 	(generation, docid) -- in that order, so a crash between the two leaves
 	a transient duplicate (harmless, filtered at compaction) rather than a
 	lost document.  add_document() already repoints the keymap at the new
@@ -501,7 +501,7 @@ return handle;
 /*
 	ATIRE_SEGMENT_INDEX::DELETE_DOCUMENT()
 	-----------------------------------------
-	TASK 9: look the key up in the keymap, mark it deleted in the owning
+	Look the key up in the keymap, mark it deleted in the owning
 	segment's tombstones (writer_tombstones or segments[which].tombstones),
 	and remove it from the keymap.
 */
@@ -551,7 +551,7 @@ if (writer_documents == 0)
 	The writer_engine is a non-owning NRT wrapper around the writer's memory
 	index (rebuild_writer_engine(), take_ownership = 0).  It must be torn
 	down before writer->finish() touches the memory index (finish() calls
-	ANT_memory_index::serialise(), which -- via the Task 5 quantization_bits
+	ANT_memory_index::serialise(), which -- via the wrapper's quantization_bits
 	save/restore -- expects to be the sole owner at that point).
 */
 delete writer_engine;

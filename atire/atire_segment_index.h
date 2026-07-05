@@ -77,7 +77,7 @@ private:
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
-	long rebuild_keymap(void);			// Task 11: reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
+	long rebuild_keymap(void);			// reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 
 public:
 	ATIRE_segment_index();
@@ -86,10 +86,10 @@ public:
 	long open(const char *directory);						// 0 on success
 
 	long long add_document(const char *key, const char *document);		// returns handle, -1 on error
-	long long update_document(const char *key, const char *document);	// upsert; returns new handle (Task 9)
-	long delete_document(const char *key);								// 0 on success, 1 if key unknown (Task 9)
+	long long update_document(const char *key, const char *document);	// upsert; returns new handle
+	long delete_document(const char *key);								// 0 on success, 1 if key unknown
 
-	long flush(void);										// memory segment -> disk segment; 0 on success (Task 7)
+	long flush(void);										// memory segment -> disk segment; 0 on success
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the
