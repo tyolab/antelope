@@ -45,6 +45,7 @@ class ANT_thesaurus;
 class ANT_evaluator;
 class ANT_ANT_param_block;
 class ANT_search_engine_memory_index;
+class ANT_search_engine_readability;
 
 /*
 	class ATIRE_API
@@ -76,7 +77,7 @@ private:
 		one after the engine's global statistics change (see
 		apply_global_statistics()).
 	*/
-	long default_ranking_readability;		// open() chose the readability ranker
+	ANT_search_engine_readability *readable_search_engine;	// non-NULL when open() chose the readability engine/ranker (same object as search_engine, correctly typed)
 	long default_ranking_quantize;			// quantize argument passed to the divergence ranker
 	long long default_ranking_quantization_bits;	// quantization_bits argument passed to the divergence ranker
 	ANT_stemmer *stemmer;					// stemming function to use

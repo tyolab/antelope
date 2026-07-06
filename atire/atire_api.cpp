@@ -108,7 +108,7 @@ parsed_query = new ANT_query;
 
 search_engine = NULL;
 ranking_function = NULL;
-default_ranking_readability = FALSE;
+readable_search_engine = NULL;
 default_ranking_quantize = FALSE;
 default_ranking_quantization_bits = -1;
 stemmer = NULL;
@@ -276,8 +276,6 @@ return id_list;
 */
 long ATIRE_API::open(long type, char *index_filename, char *doclist_filename, long quantize, long long quantization_bits, unsigned long header_offset)
 {
-ANT_search_engine_readability *readable_search_engine;
-
 if (document_list != NULL)
 	return 1;		//we're already open;
 
@@ -291,7 +289,6 @@ if (type & READABILITY_SEARCH_ENGINE)
 	/*
 		Makes no sense to quantize readability based ranking ... at least it doesn't now
 	*/
-	default_ranking_readability = TRUE;
 	default_ranking_quantize = FALSE;
 	default_ranking_quantization_bits = 0;
 	construct_default_ranking_function();
@@ -310,7 +307,7 @@ else
 		user says about quantization (construct_default_ranking_function()
 		re-checks search_engine->quantized() every time it rebuilds).
 	*/
-	default_ranking_readability = FALSE;
+	readable_search_engine = NULL;
 	default_ranking_quantize = quantize;
 	default_ranking_quantization_bits = quantization_bits;
 	construct_default_ranking_function();
@@ -410,7 +407,7 @@ if (documents_in_id_list > 0)
 /*
 	Use divergence-from-randomness as the default ranking function.
 */
-default_ranking_readability = FALSE;
+readable_search_engine = NULL;
 default_ranking_quantize = FALSE;
 default_ranking_quantization_bits = -1;
 construct_default_ranking_function();
@@ -430,12 +427,16 @@ return 0;		// success
 	(Re)build the ranking function open()/open_from_memory_index() selected,
 	using the branch/parameters recorded at open time.  Because
 	ANT_ranking_function's constructor SNAPSHOTS engine->document_count() and
-	the derived constructors precompute per-document priors from
-	mean_document_length (ranking_function.cpp:20-45, ranking_function_bm25.cpp:29),
-	this is the ONLY way to make the ranking function pick up a change to the
-	engine's statistics -- poking the engine members alone changes nothing at
-	query time.  Only ranking_function is rebuilt here: feedback_ranking_function
-	and the topsig rankers are user-configured after open() (never wired from
+	mean_document_length (ranking_function.cpp:20-45), this is the ONLY way to
+	make the ranking function pick up a change to the engine's statistics --
+	poking the engine members alone changes nothing at query time.  How the
+	snapshot is consumed varies by ranker: BM25 precomputes per-document
+	priors from it at construction (ranking_function_bm25.cpp:29, an O(docs)
+	build), while the default divergence ranker just copies the two values
+	and recomputes per-document normalisation at query time (so THIS rebuild
+	is O(1) for it); either way the values only update on reconstruction.
+	Only ranking_function is rebuilt here: feedback_ranking_function and the
+	topsig rankers are user-configured after open() (never wired from
 	ranking_function at open time), so they are left untouched.
 */
 void ATIRE_API::construct_default_ranking_function(void)
@@ -443,8 +444,8 @@ void ATIRE_API::construct_default_ranking_function(void)
 delete ranking_function;
 ranking_function = NULL;
 
-if (default_ranking_readability)
-	ranking_function = new ANT_ranking_function_readability((ANT_search_engine_readability *)search_engine, false, 0);
+if (readable_search_engine != NULL)
+	ranking_function = new ANT_ranking_function_readability(readable_search_engine, false, 0);
 else if (search_engine->quantized())
 	ranking_function = new ANT_ranking_function_impact(search_engine, false, -1);
 else
@@ -456,10 +457,13 @@ else
 	------------------------------------
 	Overrides the engine's document count and mean length, then rebuilds the
 	ranking function -- REQUIRED because ANT_ranking_function snapshots
-	document_count() and precomputes per-document priors from
-	mean_document_length at construction (ranking_function.cpp:20-45,
-	ranking_function_bm25.cpp:29); poking the engine members alone changes
-	nothing at query time.  global_documents == 0 restores local statistics.
+	document_count() and mean_document_length at construction
+	(ranking_function.cpp:20-45; BM25 additionally precomputes per-document
+	priors from them there, ranking_function_bm25.cpp:29, while the default
+	divergence ranker recomputes normalisation at query time -- either way
+	the snapshot only updates on reconstruction); poking the engine members
+	alone changes nothing at query time.  global_documents == 0 restores
+	local statistics.
 
 	After the rebuild we RESTORE the engine's local statistics (the 0 sentinel):
 	the ranking function has already copied the global N/mean into its own

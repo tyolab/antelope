@@ -436,9 +436,9 @@ lengths and NaN length-normalised scores; both loaders now recover the packed va
 directly, and refresh_global_statistics() defensively refuses to push a non-finite or
 non-positive mean.
 
-- [ ] **Step 2:** run → FAIL (`set_global_stats` undeclared).
+- [x] **Step 2:** run → FAIL (`set_global_stats` undeclared).
 
-- [ ] **Step 3: engine hook.** `source/search_engine.h`, public section:
+- [x] **Step 3: engine hook.** `source/search_engine.h`, public section:
 
 ```cpp
 	/*
@@ -467,7 +467,7 @@ non-positive mean.
 ```
 Private members `long long local_documents_saved;` / `double local_mean_document_length_saved;` initialized to 0/0.0 in the constructor(s) — find every ANT_search_engine ctor and init there.
 
-- [ ] **Step 4: ATIRE_API reconstruction.** In `atire/atire_api.cpp`, read the ranking-function construction in `open()` AND in `open_from_memory_index()` (both paths). Factor the exact selection each performs into a private helper `void construct_default_ranking_function(void)` (delete the old `ranking_function` first if non-NULL, then run the same new-expression the open path used — preserve any quantize/bits arguments verbatim). Replace the inline constructions with helper calls. Then add:
+- [x] **Step 4: ATIRE_API reconstruction.** In `atire/atire_api.cpp`, read the ranking-function construction in `open()` AND in `open_from_memory_index()` (both paths). Factor the exact selection each performs into a private helper `void construct_default_ranking_function(void)` (delete the old `ranking_function` first if non-NULL, then run the same new-expression the open path used — preserve any quantize/bits arguments verbatim). Replace the inline constructions with helper calls. Then add:
 
 ```cpp
 /*
@@ -488,7 +488,7 @@ construct_default_ranking_function();
 ```
 Declaration in `atire/atire_api.h`. CAUTION: verify what else hangs off `ranking_function` (feedback ranking function, forum writers) — the helper must only rebuild what open() itself built for our path; if open() also wires `feedback_ranking_function` from the same object, mirror that wiring. Read before writing; report what the selection branch actually is for our segments (non-quantized, INDEX_IN_MEMORY / memory-index wrapper).
 
-- [ ] **Step 5: coordinator.** `atire/atire_segment_index.h`: public `void set_global_stats(long on);` private `long global_stats_enabled;` (ctor: 1) and `void refresh_global_statistics(void);`. Implementation:
+- [x] **Step 5: coordinator.** `atire/atire_segment_index.h`: public `void set_global_stats(long on);` private `long global_stats_enabled;` (ctor: 1) and `void refresh_global_statistics(void);`. Implementation:
 
 ```cpp
 /*
@@ -549,9 +549,9 @@ if (directory != NULL)
 ```
 Refresh points: end of `open()` (before returning 0), end of successful `flush()`, success path of `compact()` (after step 6), and in `rebuild_writer_engine()` immediately after the new wrapper is constructed. CHECK `get_document_lengths`'s exact signature/behavior on a segment engine (it returns the lengths array and writes the mean — confirm it's loaded for INDEX_IN_MEMORY segments; it is for the memory wrapper per the June work). NOTE the writer-without-wrapper case in the code above: on a fresh open with an empty writer this is moot (0 docs); after adds but before any search, disk engines get a slightly stale mean until the next refresh/search — acceptable, documented in the comment.
 
-- [ ] **Step 6:** run the test → green. Then the FULL suite: this change alters default lexical scoring in multi-segment indexes — run `./bin/test_segment_index` (now 29 functions) and scrutinize any failure in EXISTING tests: membership/count assertions must be unaffected (scores aren't asserted lexically anywhere except vector/hybrid paths, which don't use BM25 stats — if something fails, investigate rather than force; report findings). All seven binaries + `make internal`.
+- [x] **Step 6:** run the test → green. Then the FULL suite: this change alters default lexical scoring in multi-segment indexes — run `./bin/test_segment_index` (now 29 functions) and scrutinize any failure in EXISTING tests: membership/count assertions must be unaffected (scores aren't asserted lexically anywhere except vector/hybrid paths, which don't use lexical document statistics — if something fails, investigate rather than force; report findings). All seven binaries + `make internal`.
 
-- [ ] **Step 7: Commit** — `feat: global document statistics across segments with ranking-function rebuild`
+- [x] **Step 7: Commit** — `feat: global document statistics across segments with ranking-function rebuild`
 
 ---
 

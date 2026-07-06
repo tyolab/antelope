@@ -137,7 +137,17 @@ if (get_postings_details(length_term, &term_details) != NULL)
 		*/
 		ANT_memory_index_hash_node *index_node = (ANT_memory_index_hash_node *)term_details.postings_position_on_disk;
 		ANT_memory_index_hash_node duplicate_node = *index_node;
+		/*
+			serialise_one_node() bumps the index's diagnostic counters; save and
+			restore them so repeated NRT wrapper rebuilds don't inflate the stats.
+		*/
+		long long saved_term_occurences = index->stats->term_occurences;
+		long long saved_bytes_to_store_docids = index->stats->bytes_to_store_docids;
+		long long saved_bytes_to_store_tfs = index->stats->bytes_to_store_tfs;
 		index->serialise_one_node(this, &duplicate_node);
+		index->stats->term_occurences = saved_term_occurences;
+		index->stats->bytes_to_store_docids = saved_bytes_to_store_docids;
+		index->stats->bytes_to_store_tfs = saved_bytes_to_store_tfs;
 		decompress_buffer[0] = (ANT_compressable_integer)(duplicate_node.in_disk.docids_pos_on_disk >> 32);
 		if (term_details.local_document_frequency == 2)
 			decompress_buffer[1] = (ANT_compressable_integer)duplicate_node.in_disk.impacted_length;
