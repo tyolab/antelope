@@ -179,6 +179,13 @@ HASHER := HEADER_NUM
 
 # common flags
 LDFLAGS += -ldl
+# -fPIC: harmless for the ordinary static executables built from these objects,
+# but required so the same object set (via lib/libantelope_engine.a, see
+# engine_lib below) can also be linked into the Node-API addon's shared object
+# (nodejs/build/Release/antelope_segment.node) -- a plain archive of non-PIC
+# objects cannot be pulled into a .so link (relocation against vtable symbols
+# fails with "recompile with -fPIC").
+override CFLAGS += -fPIC
 override CFLAGS += -x c++ -Wall -D${HASHER}=1 -DHASHER=1 -DONE_PARSER -D__STDC_LIMIT_MACROS -DREBALANCE_FACTOR=$(rb) \
 					-Wno-missing-braces -Wno-unknown-pragmas -Wno-write-strings \
 					-Wno-sign-compare -Wno-parentheses
