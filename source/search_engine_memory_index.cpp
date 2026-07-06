@@ -188,7 +188,16 @@ if (postings_buffer_location + size > postings_buffer + postings_buffer_length)
 	{
 	used = postings_buffer_location - postings_buffer;
 	postings_buffer_length = postings_buffer_length + size;			// used + size would be the exact size, this creates a bit of spare.
-	tmp = (char *)memory->malloc(postings_buffer_length);
+	/*
+		Over-allocate by END_PADDING so an over-reading decompression scheme
+		(e.g. Simple-9, which can read a few words past the logical end of a
+		postings list) stays inside the allocation.  postings_buffer_length
+		stays the LOGICAL length -- the growth guard above and the write below
+		never touch the padding; it is read-only slack for decompression,
+		matching the disk paths (index_merge.cpp::grow_postings_buffer and
+		search_engine.cpp both pad by ANT_COMPRESSION_FACTORY_END_PADDING).
+	*/
+	tmp = (char *)memory->malloc(postings_buffer_length + ANT_COMPRESSION_FACTORY_END_PADDING);
 	memcpy(tmp, postings_buffer, (size_t)used);
 	postings_buffer = tmp;
 	postings_buffer_location = postings_buffer + used;
