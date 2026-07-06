@@ -2354,6 +2354,115 @@ printf("test_approx_l2_fallback OK\n");
 }
 
 /*
+	TEST_HNSW_RECALL()
+	------------------
+	V3 approximate cosine search via per-segment HNSW graphs.  Recall of
+	search_vector_hnsw() vs exact search_vector() averaged over 25 queries.
+*/
+static void test_hnsw_recall(void)
+{
+char *dir = make_index_dir();
+long long dim = 32, n = 400, k = 10, i, d;
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+idx->set_ef_search(64);
+srand(9);
+float *vecs = new float[n * dim]; char key[32], doc[64];
+for (i = 0; i < n; i++)
+	{
+	for (d = 0; d < dim; d++) vecs[i*dim+d] = (float)(rand() % 200 - 100);
+	snprintf(key, sizeof(key), "k%lld", i); snprintf(doc, sizeof(doc), "<DOC>term%lld</DOC>", i);
+	CHECK(idx->add_document(key, doc, vecs + i*dim) >= 0);
+	}
+CHECK(idx->flush() == 0);
+/* average recall over 25 queries (V2 lesson: never a single-query coin-flip) */
+double total = 0; long long nq = 25, qi;
+for (qi = 0; qi < nq; qi++)
+	{
+	float query[32]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 200 - 100);
+	long long eh = idx->search_vector(query, k); char ek[10][256];
+	for (i = 0; i < eh; i++) strcpy(ek[i], idx->get_hit(i)->filename);
+	long long ah = idx->search_vector_hnsw(query, k);
+	long long overlap = 0, j;
+	for (i = 0; i < ah; i++) for (j = 0; j < eh; j++) if (strcmp(idx->get_hit(i)->filename, ek[j]) == 0) { overlap++; break; }
+	total += (double)overlap / (double)k;
+	}
+double mean = total / (double)nq;
+CHECK(mean >= 0.85);		/* margin-safe; HNSW typically >> this at ef=64 */
+delete [] vecs; delete idx; delete [] dir;
+printf("test_hnsw_recall OK (mean_recall=%.3f over %lld q)\n", mean, nq);
+}
+
+/*
+	TEST_HNSW_L2_RECALL()
+	---------------------
+	As test_hnsw_recall() but VECTOR_METRIC_L2 -- exercises V3's new L2
+	approximate graph path (SimHash V2 could not serve L2).
+*/
+static void test_hnsw_l2_recall(void)
+{
+char *dir = make_index_dir();
+long long dim = 32, n = 400, k = 10, i, d;
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+idx->set_ef_search(64);
+srand(9);
+float *vecs = new float[n * dim]; char key[32], doc[64];
+for (i = 0; i < n; i++)
+	{
+	for (d = 0; d < dim; d++) vecs[i*dim+d] = (float)(rand() % 200 - 100);
+	snprintf(key, sizeof(key), "k%lld", i); snprintf(doc, sizeof(doc), "<DOC>term%lld</DOC>", i);
+	CHECK(idx->add_document(key, doc, vecs + i*dim) >= 0);
+	}
+CHECK(idx->flush() == 0);
+double total = 0; long long nq = 25, qi;
+for (qi = 0; qi < nq; qi++)
+	{
+	float query[32]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 200 - 100);
+	long long eh = idx->search_vector(query, k); char ek[10][256];
+	for (i = 0; i < eh; i++) strcpy(ek[i], idx->get_hit(i)->filename);
+	long long ah = idx->search_vector_hnsw(query, k);
+	long long overlap = 0, j;
+	for (i = 0; i < ah; i++) for (j = 0; j < eh; j++) if (strcmp(idx->get_hit(i)->filename, ek[j]) == 0) { overlap++; break; }
+	total += (double)overlap / (double)k;
+	}
+double mean = total / (double)nq;
+CHECK(mean >= 0.85);
+delete [] vecs; delete idx; delete [] dir;
+printf("test_hnsw_l2_recall OK (mean_recall=%.3f over %lld q)\n", mean, nq);
+}
+
+/*
+	TEST_HNSW_DOT_FALLBACK()
+	------------------------
+	VECTOR_METRIC_DOT => search_vector_hnsw() transparently falls back to the
+	exact search_vector() and produces byte-identical ranking.
+*/
+static void test_hnsw_dot_fallback(void)
+{
+char *dir = make_index_dir();
+long long dim = 8, i, d; float v[8];
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+for (i = 0; i < 20; i++) { for (d=0;d<dim;d++) v[d]=(float)((i*7+d)%11); char key[16]; snprintf(key,sizeof(key),"k%lld",i); CHECK(idx->add_document(key,"<DOC>x</DOC>",v)>=0); }
+CHECK(idx->flush() == 0);
+float q[8]; for (d=0;d<dim;d++) q[d]=(float)(d%5);
+long long he = idx->search_vector(q, 5); char ek[5][256];
+for (i=0;i<he;i++) strcpy(ek[i], idx->get_hit(i)->filename);
+long long ha = idx->search_vector_hnsw(q, 5);
+CHECK(ha == he);
+for (i=0;i<ha;i++) CHECK(strcmp(ek[i], idx->get_hit(i)->filename) == 0);	/* dot => byte-identical exact fallback */
+delete idx; delete [] dir;
+printf("test_hnsw_dot_fallback OK\n");
+}
+
+/*
 	TEST_HYBRID_APPROX_SMOKE()
 	--------------------------
 	Smoke test for search_hybrid_approx(): RRF fusion of the lexical leg with
@@ -2962,6 +3071,9 @@ test_segment_signatures_loaded();
 test_segment_hnsw_loaded();
 test_approx_recall();
 test_approx_l2_fallback();
+test_hnsw_recall();
+test_hnsw_l2_recall();
+test_hnsw_dot_fallback();
 test_hybrid_approx_smoke();
 test_compaction_preserves_signatures();
 test_keymap_log_compaction();

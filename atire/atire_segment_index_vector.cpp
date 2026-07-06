@@ -707,6 +707,116 @@ return results_count;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES_HNSW()
+	---------------------------------------------
+	Like vector_candidates(), but each disk segment WITH a valid cached HNSW
+	graph is navigated approximately (ef = max(hnsw_ef_search, top_k)); the graph
+	returns exactly-scored (kernel) candidates so there is NO separate rerank.
+	Segments without a usable graph, and the live memory buffer, are exact-scanned.
+	Caller guarantees metric != DOT and HNSW is configured.
+*/
+long long ATIRE_segment_index::vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best)
+{
+long long which, docid, best_count = 0;
+long long ef = hnsw_ef_search < top_k ? top_k : hnsw_ef_search;
+float *normalized = NULL;
+long long *cand_docids = new long long[ef > 0 ? ef : 1];
+double *cand_scores = new double[ef > 0 ? ef : 1];
+
+if (vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, query, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{ delete [] normalized; delete [] cand_docids; delete [] cand_scores; return 0; }
+	query = normalized;
+	}
+
+for (which = 0; which < segment_count; which++)
+	{
+	if (segments[which].vectors == NULL)
+		continue;
+	if (segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty()
+		&& segments[which].hnsw_graph->node_count() == segments[which].engine->get_document_count())
+		{
+		long long c = segments[which].hnsw_graph->search(query, vector_metric, ef, ef,
+			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores);
+		for (long long p = 0; p < c; p++)
+			ANT_vector_candidate_insert(best, &best_count, top_k, cand_scores[p], segments[which].generation, cand_docids[p]);
+		}
+	else
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+	}
+
+for (docid = 0; docid < writer_documents; docid++)		// live memory buffer: always exact (mirrors vector_candidates())
+	{
+	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
+		continue;
+	if (writer_tombstones->is_deleted(docid))
+		continue;
+	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
+	}
+
+delete [] normalized;
+delete [] cand_docids;
+delete [] cand_scores;
+return best_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR_HNSW()
+	-----------------------------------------
+	HNSW-graph dense-vector top-k.  Shares search_vector()'s downstream (sort +
+	resolve + publish) verbatim so approximate and exact rankings are identical
+	modulo the graph navigation; only the candidate gatherer differs.
+	Transparently falls back to the exact path when HNSW is unconfigured or the
+	metric is DOT (unnormalized dot has no bounded kernel for graph navigation) --
+	giving byte-identical results in those cases.
+*/
+long long ATIRE_segment_index::search_vector_hnsw(const float *query, long long top_k)
+{
+char filename_buffer[4096];
+long long which, count;
+ANT_vector_candidate *best;
+
+if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
+	return search_vector(query, top_k);			// transparent fallback (dot / unconfigured)
+
+reset_results();
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+best = new ANT_vector_candidate[top_k];
+count = vector_candidates_hnsw(query, top_k, best);
+qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
+
+for (which = 0; which < count; which++)
+	{
+	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+
+	hit *slot = append_result();
+
+	slot->generation = best[which].generation;
+	slot->docid = best[which].docid;
+	slot->score = best[which].score;
+	if (filename != NULL)
+		{
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
+		}
+	else
+		{
+		slot->filename = new char[1];
+		slot->filename[0] = '\0';
+		}
+	}
+
+delete [] best;
+return results_count;
+}
+
+/*
 	struct ANT_FUSED_CANDIDATE
 	---------------------------
 	Bundles the RRF-scored candidate with its filename so the two travel
