@@ -440,6 +440,123 @@ return results_count;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES_APPROX()
+	-----------------------------------------------
+	Like vector_candidates(), but each disk segment WITH a valid cached signature
+	store is Hamming-shortlisted (pool = top_k * candidate_multiplier) and only
+	those candidates are exact-reranked.  Segments without signatures, and the
+	live memory buffer, are exact-scanned.  Caller guarantees metric != L2 and
+	approximate is configured.
+*/
+long long ATIRE_segment_index::vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best)
+{
+long long which, docid, best_count = 0, pool_size = top_k * candidate_multiplier;
+float *normalized = NULL;
+unsigned char *query_sig = new unsigned char[query_signer->signature_bytes()];
+long long *pool = new long long[pool_size > 0 ? pool_size : 1];
+
+if (vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, query, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{ delete [] normalized; delete [] query_sig; delete [] pool; return 0; }
+	query = normalized;
+	}
+
+query_signer->sign(query, query_sig);
+
+for (which = 0; which < segment_count; which++)
+	{
+	if (segments[which].vectors == NULL)
+		continue;
+	if (segments[which].signatures != NULL && segments[which].signatures->document_count() == segments[which].engine->get_document_count())
+		{
+		long long count = 0, p;
+		segments[which].signatures->shortlist(query_sig, segments[which].tombstones, pool_size, pool, &count);
+		for (p = 0; p < count; p++)
+			{
+			docid = pool[p];
+			if (!segments[which].vectors->has(docid))
+				continue;
+			ANT_vector_candidate_insert(best, &best_count, top_k,
+				ANT_vector_store::kernel(query, segments[which].vectors->get(docid), vector_dimension_current, vector_metric),
+				segments[which].generation, docid);
+			}
+		}
+	else
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+	}
+
+for (docid = 0; docid < writer_documents; docid++)		// live memory buffer: always exact (mirrors vector_candidates())
+	{
+	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
+		continue;
+	if (writer_tombstones->is_deleted(docid))
+		continue;
+	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
+	}
+
+delete [] normalized;
+delete [] query_sig;
+delete [] pool;
+return best_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR_APPROX()
+	-------------------------------------------
+	Signature-prefiltered dense-vector top-k.  Shares search_vector()'s
+	downstream (sort + resolve + publish) verbatim so approximate and exact
+	rankings are identical modulo the shortlist; only the candidate gatherer
+	differs.  Transparently falls back to the exact path when approximate is
+	unconfigured or the metric is L2 (SimHash tracks angular, not Euclidean,
+	distance) -- giving byte-identical results in those cases.
+*/
+long long ATIRE_segment_index::search_vector_approx(const float *query, long long top_k)
+{
+char filename_buffer[4096];
+long long which, count;
+ANT_vector_candidate *best;
+
+if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
+	return search_vector(query, top_k);			// transparent fallback
+
+reset_results();
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+best = new ANT_vector_candidate[top_k];
+count = vector_candidates_approx(query, top_k, best);
+qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
+
+for (which = 0; which < count; which++)
+	{
+	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+
+	hit *slot = append_result();
+
+	slot->generation = best[which].generation;
+	slot->docid = best[which].docid;
+	slot->score = best[which].score;
+	if (filename != NULL)
+		{
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
+		}
+	else
+		{
+		slot->filename = new char[1];
+		slot->filename[0] = '\0';
+		}
+	}
+
+delete [] best;
+return results_count;
+}
+
+/*
 	struct ANT_FUSED_CANDIDATE
 	---------------------------
 	Bundles the RRF-scored candidate with its filename so the two travel

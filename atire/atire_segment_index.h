@@ -153,6 +153,7 @@ private:
 	void reset_writer_vectors(void);
 
 	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
+	long long vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best);	// signature-prefiltered gatherer; caller guarantees metric != L2 and approximate configured
 	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
 
 	void reset_results(void);			// frees results[0, results_count)'s filenames and zeroes results_count
@@ -218,6 +219,7 @@ public:
 
 	long long search(char *query, long long top_k);			// returns number of hits stored
 	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
+	long long search_vector_approx(const float *query, long long top_k);	// signature-prefiltered top-k; transparently falls back to exact for L2 / unconfigured
 	long long search_hybrid(char *query_text, const float *query_vector, long long top_k);	// RRF fusion of lexical + vector top-k; either side may be absent
 	hit *get_hit(long long which) { return &results[which]; }
 

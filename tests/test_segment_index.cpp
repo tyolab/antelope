@@ -2160,6 +2160,68 @@ delete [] dir;
 printf("test_segment_signatures_loaded OK\n");
 }
 
+static void test_approx_recall(void)
+{
+char *dir = make_index_dir();
+long long dim = 32, n = 400, k = 10, i, d;
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_approximate_config(256) == 0);
+idx->set_candidate_multiplier(4);
+srand(7);
+float *vecs = new float[n * dim];
+char key[32], doc[64];
+for (i = 0; i < n; i++)
+	{
+	for (d = 0; d < dim; d++) vecs[i * dim + d] = (float)(rand() % 200 - 100);
+	snprintf(key, sizeof(key), "k%lld", i);
+	snprintf(doc, sizeof(doc), "<DOC>term%lld</DOC>", i);
+	CHECK(idx->add_document(key, doc, vecs + i * dim) >= 0);
+	}
+CHECK(idx->flush() == 0);
+float query[32]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 200 - 100);
+long long exact_hits = idx->search_vector(query, k);
+CHECK(exact_hits == k);
+char exact_keys[10][256];
+for (i = 0; i < k; i++) strcpy(exact_keys[i], idx->get_hit(i)->filename);
+long long approx_hits = idx->search_vector_approx(query, k);
+CHECK(approx_hits == k);
+long long overlap = 0, j;
+for (i = 0; i < k; i++)
+	for (j = 0; j < k; j++)
+		if (strcmp(exact_keys[i], idx->get_hit(j)->filename) == 0) { overlap++; break; }
+CHECK((double)overlap / (double)k >= 0.9);
+delete [] vecs; delete idx; delete [] dir;
+printf("test_approx_recall OK (recall=%.2f)\n", (double)overlap / (double)k);
+}
+
+static void test_approx_l2_fallback(void)
+{
+char *dir = make_index_dir();
+long long dim = 8, i, d;
+float v[8];
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_approximate_config(64) == 0);
+for (i = 0; i < 20; i++)
+	{
+	for (d = 0; d < dim; d++) v[d] = (float)((i * 7 + d) % 11);
+	char key[16]; snprintf(key, sizeof(key), "k%lld", i);
+	CHECK(idx->add_document(key, "<DOC>x</DOC>", v) >= 0);
+	}
+CHECK(idx->flush() == 0);
+float q[8]; for (d = 0; d < dim; d++) q[d] = (float)(d % 5);
+long long he = idx->search_vector(q, 5);
+char ek[5][256]; for (i = 0; i < he; i++) strcpy(ek[i], idx->get_hit(i)->filename);
+long long ha = idx->search_vector_approx(q, 5);
+CHECK(ha == he);
+for (i = 0; i < ha; i++) CHECK(strcmp(ek[i], idx->get_hit(i)->filename) == 0);		// identical ranking
+delete idx; delete [] dir;
+printf("test_approx_l2_fallback OK\n");
+}
+
 /*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
@@ -2705,6 +2767,8 @@ test_approx_config_persists();
 test_flush_writes_signatures();
 test_build_signatures_backfill();
 test_segment_signatures_loaded();
+test_approx_recall();
+test_approx_l2_fallback();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();
