@@ -165,6 +165,7 @@ public:
 	long set_approximate_config(long long bits);		// bits<=0 => default 256; persists signature.config on first enable; 0 on success
 	void set_candidate_multiplier(long long n);			// clamps to >= 1
 	long approximate_configured(void) { return signature_bits_current != 0; }
+	long build_signatures(void);						// idempotent backfill: .vsig for every disk segment with vectors but no valid signature sidecar; 0 on success (1 if approximate unconfigured)
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

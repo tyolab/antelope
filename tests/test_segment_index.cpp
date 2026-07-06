@@ -2114,6 +2114,32 @@ delete [] dir;
 printf("test_flush_writes_signatures OK\n");
 }
 
+static void test_build_signatures_backfill(void)
+{
+char *dir = make_index_dir();
+char vsig[4096];
+float v[8] = {0,1,0,0,0,0,0,0};
+ATIRE_segment_index *a = new ATIRE_segment_index();		// segment created BEFORE approximate enabled
+CHECK(a->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->add_document("d1", "<DOC>beta</DOC>", v) >= 0);
+CHECK(a->flush() == 0);
+long long g = a->disk_segment_generation(0);
+delete a;
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+CHECK(b->set_approximate_config(64) == 0);
+snprintf(vsig, sizeof(vsig), "%s/seg_%06lld.vsig", dir, g);
+CHECK(fopen(vsig, "rb") == NULL);		// not there yet
+CHECK(b->build_signatures() == 0);
+FILE *fp = fopen(vsig, "rb");
+CHECK(fp != NULL);						// backfilled
+fclose(fp);
+delete b;
+delete [] dir;
+printf("test_build_signatures_backfill OK\n");
+}
+
 /*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
@@ -2657,6 +2683,7 @@ test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_approx_config_persists();
 test_flush_writes_signatures();
+test_build_signatures_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();

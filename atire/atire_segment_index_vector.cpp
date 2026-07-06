@@ -229,6 +229,57 @@ candidate_multiplier = n < 1 ? 1 : n;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::BUILD_SIGNATURES()
+	---------------------------------------
+	Idempotent backfill: for every manifested disk segment with vectors but no
+	valid .vsig, sign its dense vectors into a fresh sidecar (loaded on next
+	open()).  Per-segment failures are skipped (that segment stays
+	signature-less / exact-scanned), never left corrupt.  Returns 0 on success
+	(1 if approximate is unconfigured).
+*/
+long ATIRE_segment_index::build_signatures(void)
+{
+long long which, docid;
+char vec_name[4096], vsig_name[4096];
+
+if (signature_bits_current == 0 || query_signer == NULL)
+	return 1;
+
+for (which = 0; which < segment_count; which++)
+	{
+	long long generation = segments[which].generation;
+	long long docs = segments[which].engine->get_document_count();
+
+	segment_filename(vsig_name, sizeof(vsig_name), generation, "vsig");
+	ANT_signature_store *existing = ANT_signature_store::load(vsig_name, signature_bits_current, docs);
+	long long already = existing->document_count() == docs && docs > 0;
+	delete existing;
+	if (already)
+		continue;
+
+	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
+	ANT_vector_store *vectors = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (vectors->document_count() != docs)
+		{ delete vectors; continue; }
+
+	ANT_signature_store_writer sig_writer;
+	unsigned char *sig = new unsigned char[query_signer->signature_bytes()];
+	long failed = sig_writer.create(vsig_name, signature_bits_current) != 0;
+	for (docid = 0; !failed && docid < docs; docid++)
+		{
+		if (vectors->has(docid))
+			{ query_signer->sign(vectors->get(docid), sig); failed = sig_writer.append(sig) != 0; }
+		else
+			failed = sig_writer.append(NULL) != 0;
+		}
+	if (!failed) sig_writer.finish(); else sig_writer.abandon();
+	delete [] sig;
+	delete vectors;
+	}
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::WRITER_VECTOR_APPEND()
 	-------------------------------------------
 	Keeps the vector buffer parallel to the writer's docids: called exactly
