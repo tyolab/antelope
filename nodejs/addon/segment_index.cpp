@@ -225,18 +225,312 @@ if (!require_open(env))
 return Napi::Number::New(env, (double)engine->vector_dimension());
 }
 
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::AddDocument(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::UpdateDocument(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::DeleteDocument(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::Search(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::SearchVector(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 3 */
-Napi::Value SegmentIndexWrap::SearchHybrid(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
+/*
+	EXTRACT_VECTOR()
+	----------------
+	Accepts Float32Array (zero-copy pointer) or number[] (converted into
+	scratch, which the caller owns).  Returns NULL and throws on anything
+	else or on dimension mismatch.  *scratch is set non-NULL only when a
+	conversion allocated; caller delete[]s it.
+*/
+static const float *extract_vector(Napi::Env env, Napi::Value value, long long dimension, float **scratch)
+{
+*scratch = NULL;
+if (dimension < 1)
+	{
+	Napi::TypeError::New(env, "vectors are not enabled on this index").ThrowAsJavaScriptException();
+	return NULL;
+	}
+if (value.IsTypedArray())
+	{
+	Napi::TypedArray typed = value.As<Napi::TypedArray>();
+	if (typed.TypedArrayType() != napi_float32_array)
+		{
+		Napi::TypeError::New(env, "vector must be a Float32Array or number[]").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	if ((long long)typed.ElementLength() != dimension)
+		{
+		Napi::TypeError::New(env, "vector dimension mismatch").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	return static_cast<const float *>(typed.As<Napi::Float32Array>().Data());
+	}
+if (value.IsArray())
+	{
+	Napi::Array array = value.As<Napi::Array>();
+	if ((long long)array.Length() != dimension)
+		{
+		Napi::TypeError::New(env, "vector dimension mismatch").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	*scratch = new float[dimension];
+	for (long long which = 0; which < dimension; which++)
+		(*scratch)[which] = (float)array.Get((uint32_t)which).ToNumber().DoubleValue();
+	return *scratch;
+	}
+Napi::TypeError::New(env, "vector must be a Float32Array or number[]").ThrowAsJavaScriptException();
+return NULL;
+}
+
+/*
+	HITS_TO_ARRAY()
+	---------------
+	Deep-copies the engine's hit list (valid only until the next search)
+	into a JS array of { key, score, generation, docid }.
+*/
+static Napi::Array hits_to_array(Napi::Env env, ATIRE_segment_index *engine, long long count)
+{
+Napi::Array result = Napi::Array::New(env, (size_t)count);
+for (long long which = 0; which < count; which++)
+	{
+	ATIRE_segment_index::hit *hit = engine->get_hit(which);
+	Napi::Object entry = Napi::Object::New(env);
+	entry.Set("key", Napi::String::New(env, hit->filename == NULL ? "" : hit->filename));
+	entry.Set("score", Napi::Number::New(env, hit->score));
+	entry.Set("generation", Napi::Number::New(env, (double)hit->generation));
+	entry.Set("docid", Napi::Number::New(env, (double)hit->docid));
+	result.Set((uint32_t)which, entry);
+	}
+return result;
+}
+
+/*
+	SEGMENTINDEXWRAP::ADDDOCUMENT()
+	----------------------------------
+	add_document(key, text[, vector]) -> { generation, docid }.  The vector
+	argument is optional even on a vector-enabled index (lexical-only
+	documents are allowed to co-exist with vector documents).  Both
+	add_document() overloads take const char* / const float* -- no writable
+	copies are needed here (unlike search()).
+*/
+Napi::Value SegmentIndexWrap::AddDocument(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+float *scratch = NULL;
+const float *vector = NULL;
+
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
+	{
+	Napi::TypeError::New(env, "addDocument(key, text[, vector])").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+std::string key = info[0].As<Napi::String>().Utf8Value();
+std::string text = info[1].As<Napi::String>().Utf8Value();
+if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
+	{
+	vector = extract_vector(env, info[2], engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		return env.Undefined();		// TypeError already thrown
+	}
+
+long long handle = vector != NULL
+	? engine->add_document(key.c_str(), text.c_str(), vector)
+	: engine->add_document(key.c_str(), text.c_str());
+delete [] scratch;
+
+if (handle < 0)
+	{
+	Napi::Error::New(env, vector != NULL && option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE
+		? "document rejected: empty/unparseable text, zero vector under cosine, or degraded index"
+		: "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+Napi::Object ref = Napi::Object::New(env);
+ref.Set("generation", Napi::Number::New(env, (double)(handle >> 40)));
+ref.Set("docid", Napi::Number::New(env, (double)(handle & ((1LL << 40) - 1))));
+return ref;
+}
+
+/*
+	SEGMENTINDEXWRAP::UPDATEDOCUMENT()
+	-------------------------------------
+	Upsert: identical to AddDocument except it calls update_document(), which
+	replaces (tombstones + re-adds) any existing document under the same key.
+*/
+Napi::Value SegmentIndexWrap::UpdateDocument(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+float *scratch = NULL;
+const float *vector = NULL;
+
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
+	{
+	Napi::TypeError::New(env, "updateDocument(key, text[, vector])").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+std::string key = info[0].As<Napi::String>().Utf8Value();
+std::string text = info[1].As<Napi::String>().Utf8Value();
+if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
+	{
+	vector = extract_vector(env, info[2], engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		return env.Undefined();		// TypeError already thrown
+	}
+
+long long handle = vector != NULL
+	? engine->update_document(key.c_str(), text.c_str(), vector)
+	: engine->update_document(key.c_str(), text.c_str());
+delete [] scratch;
+
+if (handle < 0)
+	{
+	Napi::Error::New(env, vector != NULL && option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE
+		? "document rejected: empty/unparseable text, zero vector under cosine, or degraded index"
+		: "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+Napi::Object ref = Napi::Object::New(env);
+ref.Set("generation", Napi::Number::New(env, (double)(handle >> 40)));
+ref.Set("docid", Napi::Number::New(env, (double)(handle & ((1LL << 40) - 1))));
+return ref;
+}
+
+/*
+	SEGMENTINDEXWRAP::DELETEDOCUMENT()
+	-------------------------------------
+	delete_document()'s key parameter is const char* -- .c_str() is safe.
+*/
+Napi::Value SegmentIndexWrap::DeleteDocument(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 1 || !info[0].IsString())
+	{
+	Napi::TypeError::New(env, "deleteDocument(key)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+std::string key = info[0].As<Napi::String>().Utf8Value();
+return Napi::Boolean::New(env, engine->delete_document(key.c_str()) == 0);
+}
+
+/*
+	SEGMENTINDEXWRAP::SEARCH()
+	-----------------------------
+	search()'s query parameter is char* (non-const) -- the engine is free to
+	mutate the buffer in place, so we pass a writable std::string copy's
+	internal buffer (&mutable_query[0]), never .c_str() (which returns a
+	const pointer and may point at shared/immutable storage).
+*/
+Napi::Value SegmentIndexWrap::Search(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[0].IsString() || !info[1].IsNumber())
+	{
+	Napi::TypeError::New(env, "search(text, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+std::string query = info[0].As<Napi::String>().Utf8Value();
+long long top_k = info[1].As<Napi::Number>().Int64Value();
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+std::string mutable_query = query;		// engine may modify the buffer
+long long count = engine->search(&mutable_query[0], top_k);
+return hits_to_array(env, engine, count);
+}
+
+/*
+	SEGMENTINDEXWRAP::SEARCHVECTOR()
+	------------------------------------
+	Per spec: when vectors are disabled on this index (vector_dimension() ==
+	0) this returns an empty array rather than throwing -- extract_vector()
+	throws for that case, so it is handled explicitly BEFORE calling it, and
+	extract_vector() is still used to validate type/dimension when vectors
+	ARE enabled.  search_vector()'s query parameter is const float* -- no
+	writable copy needed.
+*/
+Napi::Value SegmentIndexWrap::SearchVector(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[1].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchVector(vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+long long top_k = info[1].As<Napi::Number>().Int64Value();
+long long dimension = engine->vector_dimension();
+if (dimension < 1)
+	return Napi::Array::New(env, 0);		// vectors not enabled: empty result, not a throw
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+float *scratch = NULL;
+const float *vector = extract_vector(env, info[0], dimension, &scratch);
+if (vector == NULL)
+	return env.Undefined();		// TypeError already thrown
+
+long long count = engine->search_vector(vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
+	SEGMENTINDEXWRAP::SEARCHHYBRID()
+	------------------------------------
+	Both the text and vector arguments are independently optional
+	(null/undefined => that side is absent).  When BOTH are absent, return []
+	without calling the engine.  The text side uses the writable-copy
+	pattern (search_hybrid()'s query_text parameter is char*, non-const,
+	exactly like search()); the vector side is const float* like
+	search_vector().
+*/
+Napi::Value SegmentIndexWrap::SearchHybrid(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 3 || !info[2].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchHybrid(text, vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+bool has_text = !info[0].IsUndefined() && !info[0].IsNull();
+bool has_vector = !info[1].IsUndefined() && !info[1].IsNull();
+long long top_k = info[2].As<Napi::Number>().Int64Value();
+
+if (has_text && !info[0].IsString())
+	{
+	Napi::TypeError::New(env, "searchHybrid: text must be a string, null, or undefined").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+if (!has_text && !has_vector)
+	return Napi::Array::New(env, 0);
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+std::string mutable_query;
+char *text_ptr = NULL;
+if (has_text)
+	{
+	mutable_query = info[0].As<Napi::String>().Utf8Value();	// engine may modify the buffer
+	text_ptr = &mutable_query[0];
+	}
+
+float *scratch = NULL;
+const float *vector = NULL;
+if (has_vector)
+	{
+	vector = extract_vector(env, info[1], engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		return env.Undefined();		// TypeError already thrown
+	}
+
+long long count = engine->search_hybrid(text_ptr, vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
 /* replaced in Task 4 */
 Napi::Value SegmentIndexWrap::Flush(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
 /* replaced in Task 4 */
