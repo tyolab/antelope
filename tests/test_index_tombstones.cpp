@@ -82,6 +82,27 @@ CHECK(corrupt != NULL);
 CHECK(corrupt->count() == 0);
 
 /*
+	Truncation bomb: a header claiming stored_bytes = 2^39 with nothing behind
+	it must NOT drive an absurd grow_to() allocation -- the file-size check
+	rejects the file and load degrades to an empty bitmap.  The header alone
+	passes the existing bounds check (2^39 < 2^40), so the file-size check is
+	the defence.
+*/
+char bomb_name[1024];
+sprintf(bomb_name, "%s/bomb.del", dir);
+long long bomb_header[2];
+bomb_header[0] = 3;			// stored_count
+bomb_header[1] = 1LL << 39;		// stored_bytes: claims ~512GB of bitmap
+FILE *bomb_fp = fopen(bomb_name, "wb");
+CHECK(bomb_fp != NULL);
+CHECK(fwrite(bomb_header, sizeof(long long), 2, bomb_fp) == 2);
+fclose(bomb_fp);
+ANT_index_tombstones *bomb = ANT_index_tombstones::load(bomb_name, 100);
+CHECK(bomb != NULL);
+CHECK(bomb->count() == 0);
+CHECK(!bomb->is_deleted(7));
+
+/*
 	Save must not leave a temp file behind (atomic write-temp + rename)
 */
 char tmpname[1200];
@@ -92,6 +113,7 @@ delete t;
 delete loaded;
 delete empty;
 delete corrupt;
+delete bomb;
 printf("PASSED\n");
 return 0;
 }

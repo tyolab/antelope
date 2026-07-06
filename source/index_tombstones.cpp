@@ -115,7 +115,7 @@ ANT_index_tombstones *result = new ANT_index_tombstones(documents);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return result;			// no .del file means no deletions
 
-long long stored_count, stored_bytes;
+long long stored_count, stored_bytes, file_size, expected_size;
 if (fread(&stored_count, sizeof(stored_count), 1, fp) == 1
 	&& fread(&stored_bytes, sizeof(stored_bytes), 1, fp) == 1)
 	{
@@ -124,6 +124,22 @@ if (fread(&stored_count, sizeof(stored_count), 1, fp) == 1
 		fclose(fp);
 		return result;		// corrupt header: treat as a segment with no deletions
 		}
+
+	/*
+		The header's stored_bytes count drives the grow_to() allocation below, so
+		a corrupt file lying about it could trigger an absurd new[] and abort the
+		process.  Verify the actual file size matches exactly what save() would
+		have produced (the two int64 header fields plus the bitmap bytes) before
+		trusting it.
+	*/
+	expected_size = (long long)(sizeof(stored_count) + sizeof(stored_bytes)) + stored_bytes;
+	if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size
+		|| fseek(fp, (long)(sizeof(stored_count) + sizeof(stored_bytes)), SEEK_SET) != 0)
+		{
+		fclose(fp);
+		return result;		// corrupt header: treat as a segment with no deletions
+		}
+
 	result->grow_to(stored_bytes * 8 - 1);
 	if (fread(result->bitmap, 1, (size_t)stored_bytes, fp) == (size_t)stored_bytes)
 		result->deleted_documents = stored_count;
