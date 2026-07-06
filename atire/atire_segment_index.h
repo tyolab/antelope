@@ -110,6 +110,9 @@ private:
 	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
 	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
 
+	void reset_results(void);			// frees results[0, results_count)'s filenames and zeroes results_count
+	hit *append_result(void);			// grows results[] (doubling, initial 256) if needed, then reserves and returns the next slot
+
 public:
 	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
 

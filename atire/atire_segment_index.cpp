@@ -1410,6 +1410,49 @@ writer_engine_stale = 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::RESET_RESULTS()
+	-------------------------------------
+	Free the filenames owned by results[0, results_count) and zero
+	results_count, ready for a fresh round of append_result() calls.  Shared
+	by search(), search_vector() and search_hybrid(), which all overwrite the
+	same results[] array on each call.
+*/
+void ATIRE_segment_index::reset_results(void)
+{
+long long which;
+
+for (which = 0; which < results_count; which++)
+	delete [] results[which].filename;
+results_count = 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::APPEND_RESULT()
+	---------------------------------------
+	Ensure results[] has room for one more hit (growing by doubling, from an
+	initial capacity of 256, copying the existing entries across), then
+	reserve the next slot and return a pointer to it for the caller to fill.
+*/
+ATIRE_segment_index::hit *ATIRE_segment_index::append_result(void)
+{
+if (results_count >= results_allocated)
+	{
+	long long new_cap = results_allocated == 0 ? 256 : results_allocated * 2;
+	hit *new_results = new hit[new_cap];
+	long long i;
+
+	for (i = 0; i < results_count; i++)
+		new_results[i] = results[i];
+	delete [] results;
+	results = new_results;
+	results_allocated = new_cap;
+	}
+
+results_count++;
+return &results[results_count - 1];
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::SEARCH_ONE_SEGMENT()
 	--------------------------------------------
 	Run query against one already-open segment engine and merge its (score,
@@ -1445,18 +1488,6 @@ for (which = 0; which < hits && which < fetch && which < list_len; which++)
 	if (tombstones != NULL && tombstones->is_deleted(docid))
 		continue;
 
-	if (results_count >= results_allocated)
-		{
-		long long new_cap = results_allocated == 0 ? 16 : results_allocated * 2;
-		hit *new_results = new hit[new_cap];
-		long long i;
-		for (i = 0; i < results_count; i++)
-			new_results[i] = results[i];
-		delete [] results;
-		results = new_results;
-		results_allocated = new_cap;
-		}
-
 	/*
 		Disk segments are reopened via ATIRE_API::open() as ANT_V5 (this build's
 		serialise() always writes the FILENAME_INDEX filename table); the memory
@@ -1469,18 +1500,18 @@ for (which = 0; which < hits && which < fetch && which < list_len; which++)
 	else
 		filename = engine->get_document_filename_from_doclist(docid);
 
-	results[results_count].generation = generation;
-	results[results_count].docid = docid;
-	results[results_count].score = accumulator->get_rsv();
+	hit *slot = append_result();
+
+	slot->generation = generation;
+	slot->docid = docid;
+	slot->score = accumulator->get_rsv();
 	if (filename != NULL)
 		{
-		results[results_count].filename = new char[strlen(filename) + 1];
-		strcpy(results[results_count].filename, filename);
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
 		}
 	else
-		results[results_count].filename = NULL;
-
-	results_count++;
+		slot->filename = NULL;
 	}
 }
 
@@ -1512,9 +1543,7 @@ long long ATIRE_segment_index::search(char *query, long long top_k)
 {
 long long which;
 
-for (which = 0; which < results_count; which++)
-	delete [] results[which].filename;
-results_count = 0;
+reset_results();
 
 for (which = 0; which < segment_count; which++)
 	search_one_segment(segments[which].engine, segments[which].tombstones, segments[which].generation, query, top_k, /*use_filename_index=*/1);
@@ -1647,9 +1676,7 @@ char filename_buffer[4096];
 long long which, count;
 ANT_vector_candidate *best;
 
-for (which = 0; which < results_count; which++)
-	delete [] results[which].filename;
-results_count = 0;
+reset_results();
 
 if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 	return 0;
@@ -1662,33 +1689,21 @@ for (which = 0; which < count; which++)
 	{
 	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
 
-	/* grow results[] by doubling, as search()/search_one_segment() do */
-	if (results_count >= results_allocated)
-		{
-		long long new_cap = results_allocated == 0 ? 16 : results_allocated * 2;
-		hit *new_results = new hit[new_cap];
-		long long i;
-		for (i = 0; i < results_count; i++)
-			new_results[i] = results[i];
-		delete [] results;
-		results = new_results;
-		results_allocated = new_cap;
-		}
+	hit *slot = append_result();
 
-	results[results_count].generation = best[which].generation;
-	results[results_count].docid = best[which].docid;
-	results[results_count].score = best[which].score;
+	slot->generation = best[which].generation;
+	slot->docid = best[which].docid;
+	slot->score = best[which].score;
 	if (filename != NULL)
 		{
-		results[results_count].filename = new char[strlen(filename) + 1];
-		strcpy(results[results_count].filename, filename);
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
 		}
 	else
 		{
-		results[results_count].filename = new char[1];
-		results[results_count].filename[0] = '\0';
+		slot->filename = new char[1];
+		slot->filename[0] = '\0';
 		}
-	results_count++;
 	}
 
 delete [] best;
@@ -1815,28 +1830,18 @@ if (query_vector != NULL && vector_dimension_current != 0)
 */
 qsort(fused, (size_t)fused_count, sizeof(*fused), ANT_fused_candidate_compare);
 
-for (which = 0; which < results_count; which++)
-	delete [] results[which].filename;
-results_count = 0;
+reset_results();
 
 long long publish = fused_count < top_k ? fused_count : top_k;
 for (which = 0; which < publish; which++)
 	{
-	if (results_count >= results_allocated)
-		{
-		long long bigger_size = results_allocated == 0 ? 256 : results_allocated * 2;
-		hit *bigger = new hit[bigger_size];
-		memcpy(bigger, results, (size_t)(results_count * sizeof(*results)));
-		delete [] results;
-		results = bigger;
-		results_allocated = bigger_size;
-		}
-	results[results_count].generation = fused[which].candidate.generation;
-	results[results_count].docid = fused[which].candidate.docid;
-	results[results_count].score = fused[which].candidate.score;
-	results[results_count].filename = fused[which].filename;		/* ownership transfer */
+	hit *slot = append_result();
+
+	slot->generation = fused[which].candidate.generation;
+	slot->docid = fused[which].candidate.docid;
+	slot->score = fused[which].candidate.score;
+	slot->filename = fused[which].filename;		/* ownership transfer */
 	fused[which].filename = NULL;
-	results_count++;
 	}
 for (which = publish; which < fused_count; which++)
 	delete [] fused[which].filename;
