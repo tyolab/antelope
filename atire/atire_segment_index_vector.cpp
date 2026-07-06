@@ -1,0 +1,419 @@
+/*
+	ATIRE_SEGMENT_INDEX_VECTOR.CPP
+	------------------------------
+	Per-document vectors, vector search, and hybrid (RRF) search.  Part of
+	ATIRE_segment_index, whose implementation is split across
+	atire_segment_index*.cpp by feature (see
+	docs/superpowers/specs/2026-07-06-segment-index-file-split-design.md).
+*/
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <dirent.h>
+#include <unistd.h>
+
+#include "atire_segment_index.h"
+#include "atire_api.h"
+#include "indexer.h"
+#include "../source/index_manifest.h"
+#include "../source/index_keymap.h"
+#include "../source/index_tombstones.h"
+#include "../source/search_engine.h"
+#include "../source/search_engine_result.h"
+#include "../source/search_engine_accumulator.h"
+#include "../source/version.h"
+#include "../source/index_merge.h"
+#include "../source/vector_store.h"
+#include "../source/wal.h"
+
+/*
+	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
+	--------------------------------------------
+	Frees the memory-segment vector buffer and zeroes its bookkeeping.  Called
+	from start_new_writer() (a fresh segment starts with a fresh, empty
+	buffer -- docids are local to the segment) and from the destructor.  The
+	vector.config state (dimension/metric) is index-wide, not per-segment, and
+	is untouched here.
+*/
+void ATIRE_segment_index::reset_writer_vectors(void)
+{
+delete [] writer_vector_data;
+delete [] writer_vector_presence;
+writer_vector_data = NULL;
+writer_vector_presence = NULL;
+writer_vector_capacity = 0;
+writer_vectors_present = 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_VECTOR_CONFIG()
+	----------------------------------------
+	Must be called before open().  The configuration is fixed for the life of
+	the index; open() writes it to <dir>/vector.config on first use and
+	verifies it against an existing file on every later use.
+*/
+long ATIRE_segment_index::set_vector_config(long long dimension, long metric)
+{
+if (directory != NULL)
+	return 1;			// already open
+if (dimension < 1 || dimension > 65536)
+	return 1;
+if (metric != VECTOR_METRIC_DOT && metric != VECTOR_METRIC_COSINE && metric != VECTOR_METRIC_L2)
+	return 1;
+pending_vector_dimension = dimension;
+pending_vector_metric = metric;
+vector_config_pending = 1;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_VECTOR_CONFIG()
+	-----------------------------------------
+	Reads <dir>/vector.config (two lines: dimension, metric).  Absent file
+	leaves vectors disabled.  Garbage is treated as absent (defensive parsing
+	per house convention).
+*/
+long ATIRE_segment_index::load_vector_config(void)
+{
+char filename[4096], line[64];
+FILE *fp;
+long long dimension = 0;
+long metric = -1;
+
+snprintf(filename, sizeof(filename), "%s/vector.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fgets(line, sizeof(line), fp) != NULL)
+	dimension = atoll(line);
+if (fgets(line, sizeof(line), fp) != NULL)
+	metric = atol(line);
+fclose(fp);
+if (dimension < 1 || dimension > 65536 || metric < VECTOR_METRIC_DOT || metric > VECTOR_METRIC_L2)
+	return 0;			// corrupt: treat as absent
+vector_dimension_current = dimension;
+vector_metric = metric;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_VECTOR_CONFIG()
+	-----------------------------------------
+*/
+long ATIRE_segment_index::save_vector_config(void)
+{
+char filename[4096], temp_name[4200];
+FILE *fp;
+
+snprintf(filename, sizeof(filename), "%s/vector.config", directory);
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
+	return 1;
+if ((fp = fopen(temp_name, "wb")) == NULL)
+	return 1;
+fprintf(fp, "%lld\n%ld\n", vector_dimension_current, vector_metric);
+fclose(fp);
+if (rename(temp_name, filename) != 0)
+	{
+	remove(temp_name);
+	return 1;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_VECTOR_APPEND()
+	-------------------------------------------
+	Keeps the vector buffer parallel to the writer's docids: called exactly
+	once per successfully indexed document (NULL for lexical-only docs).  The
+	docid is passed explicitly by the caller (add_document_core(), before
+	writer_documents is incremented) rather than derived from writer_documents
+	here, so the ordering of the buffer append relative to that increment is
+	the caller's concern, not this function's.  Cosine-mode normalization
+	happens in the caller (add_document_core()) before this is reached.
+*/
+long ATIRE_segment_index::writer_vector_append(long long docid, const float *vector_or_null)
+{
+if (writer_vector_capacity == 0)
+	{
+	writer_vector_capacity = 1024;
+	writer_vector_data = new float[writer_vector_capacity * vector_dimension_current];
+	writer_vector_presence = new unsigned char[(writer_vector_capacity + 7) / 8];
+	memset(writer_vector_presence, 0, (size_t)((writer_vector_capacity + 7) / 8));
+	}
+if (docid >= writer_vector_capacity)
+	{
+	long long new_capacity = writer_vector_capacity * 2;
+	while (docid >= new_capacity)
+		new_capacity *= 2;
+	float *new_data = new float[new_capacity * vector_dimension_current];
+	unsigned char *new_presence = new unsigned char[(new_capacity + 7) / 8];
+	memset(new_presence, 0, (size_t)((new_capacity + 7) / 8));
+	memcpy(new_data, writer_vector_data, (size_t)(writer_vector_capacity * vector_dimension_current * sizeof(float)));
+	memcpy(new_presence, writer_vector_presence, (size_t)((writer_vector_capacity + 7) / 8));
+	delete [] writer_vector_data;
+	delete [] writer_vector_presence;
+	writer_vector_data = new_data;
+	writer_vector_presence = new_presence;
+	writer_vector_capacity = new_capacity;
+	}
+if (vector_or_null == NULL)
+	memset(writer_vector_data + docid * vector_dimension_current, 0, (size_t)(vector_dimension_current * sizeof(float)));
+else
+	{
+	memcpy(writer_vector_data + docid * vector_dimension_current, vector_or_null, (size_t)(vector_dimension_current * sizeof(float)));
+	writer_vector_presence[docid / 8] |= (unsigned char)(1 << (docid % 8));
+	writer_vectors_present++;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES()
+	----------------------------------------
+	Exact top-k across every disk segment's vector store and the live memory
+	buffer.  In cosine mode the query is normalized here (stored vectors were
+	normalized at insertion -- see add_document_core()).  Returns the
+	candidate count; caller supplies best[top_k].
+*/
+long long ATIRE_segment_index::vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best)
+{
+long long which, docid, best_count = 0;
+float *normalized = NULL;
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+if (vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, query, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{
+		delete [] normalized;
+		return 0;
+		}
+	query = normalized;
+	}
+
+for (which = 0; which < segment_count; which++)
+	if (segments[which].vectors != NULL)
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+
+for (docid = 0; docid < writer_documents; docid++)
+	{
+	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
+		continue;
+	if (writer_tombstones->is_deleted(docid))
+		continue;
+	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
+	}
+
+delete [] normalized;
+return best_count;
+}
+
+/*
+	VECTOR_CANDIDATE_COMPARE()
+	---------------------------
+	qsort comparator for vector-search results: score descending, ties broken
+	by (generation, docid) ascending for deterministic output.
+*/
+static int vector_candidate_compare(const void *a, const void *b)
+{
+const ANT_vector_candidate *one = (const ANT_vector_candidate *)a;
+const ANT_vector_candidate *two = (const ANT_vector_candidate *)b;
+
+if (one->score > two->score)
+	return -1;
+if (one->score < two->score)
+	return 1;
+if (one->generation != two->generation)
+	return one->generation < two->generation ? -1 : 1;
+return one->docid < two->docid ? -1 : (one->docid == two->docid ? 0 : 1);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR()
+	--------------------------------------
+	Exact top-k dense-vector search across the live memory buffer and every
+	open disk segment's vector store.  Mirrors search()'s results[] contract
+	(prior hits' filenames freed at entry) -- results[]/results_count are
+	shared with search(); only one of the two result sets exists at a time.
+*/
+long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
+{
+char filename_buffer[4096];
+long long which, count;
+ANT_vector_candidate *best;
+
+reset_results();
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+best = new ANT_vector_candidate[top_k];
+count = vector_candidates(query, top_k, best);
+qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
+
+for (which = 0; which < count; which++)
+	{
+	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+
+	hit *slot = append_result();
+
+	slot->generation = best[which].generation;
+	slot->docid = best[which].docid;
+	slot->score = best[which].score;
+	if (filename != NULL)
+		{
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
+		}
+	else
+		{
+		slot->filename = new char[1];
+		slot->filename[0] = '\0';
+		}
+	}
+
+delete [] best;
+return results_count;
+}
+
+/*
+	struct ANT_FUSED_CANDIDATE
+	---------------------------
+	Bundles the RRF-scored candidate with its filename so the two travel
+	together through qsort() (a parallel filename array desynchronizes from
+	the candidate array once qsort reorders one but not the other).
+*/
+struct ANT_fused_candidate
+{
+ANT_vector_candidate candidate;
+char *filename;		// owned; NULL only if not yet resolved (never published that way)
+} ;
+
+/*
+	ANT_FUSED_CANDIDATE_COMPARE()
+	-----------------------------
+	qsort comparator for fused candidates: score descending, ties broken by
+	(generation, docid) ascending, mirroring vector_candidate_compare().
+*/
+static int ANT_fused_candidate_compare(const void *a, const void *b)
+{
+const ANT_fused_candidate *one = (const ANT_fused_candidate *)a;
+const ANT_fused_candidate *two = (const ANT_fused_candidate *)b;
+
+if (one->candidate.score > two->candidate.score)
+	return -1;
+if (one->candidate.score < two->candidate.score)
+	return 1;
+if (one->candidate.generation != two->candidate.generation)
+	return one->candidate.generation < two->candidate.generation ? -1 : 1;
+if (one->candidate.docid != two->candidate.docid)
+	return one->candidate.docid < two->candidate.docid ? -1 : 1;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID()
+	------------------------------------
+	Reciprocal Rank Fusion of the lexical top-k and the vector top-k:
+	fused(d) = sum over lists containing d of 1 / (60 + rank_d), ranks
+	1-based.  60 is the standard RRF constant.  Either side may be absent;
+	the result degrades to the other side (still RRF-scored, order preserved).
+
+	The candidate and its filename are carried together in a single
+	ANT_fused_candidate[] array (see struct above, just up) so that qsort()
+	cannot desynchronize them; a parallel filename array would move the
+	ANT_vector_candidate rows without moving the corresponding filename rows.
+*/
+long long ATIRE_segment_index::search_hybrid(char *query_text, const float *query_vector, long long top_k)
+{
+long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
+char filename_buffer[4096];
+
+if (top_k < 1)
+	return 0;
+
+/*
+	Lexical side first: run the existing search and snapshot its hits (the
+	results array is shared, so the snapshot must deep-copy the filenames)
+	into the fused array before it gets overwritten.
+*/
+ANT_fused_candidate *fused = new ANT_fused_candidate[top_k * 2];
+
+if (query_text != NULL && *query_text != '\0')
+	lexical_count = search(query_text, top_k);
+for (which = 0; which < lexical_count; which++)
+	{
+	fused[fused_count].candidate.generation = results[which].generation;
+	fused[fused_count].candidate.docid = results[which].docid;
+	fused[fused_count].candidate.score = 1.0 / (60.0 + (double)(which + 1));
+	fused[fused_count].filename = new char[strlen(results[which].filename) + 1];
+	strcpy(fused[fused_count].filename, results[which].filename);
+	fused_count++;
+	}
+
+/*
+	Vector side: candidates + rank contribution, merged into the fused set
+	by (generation, docid) identity.
+*/
+if (query_vector != NULL && vector_dimension_current != 0)
+	{
+	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
+	vector_count = vector_candidates(query_vector, top_k, best);
+	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
+	for (which = 0; which < vector_count; which++)
+		{
+		double contribution = 1.0 / (60.0 + (double)(which + 1));
+		long found = false;
+		for (other = 0; other < fused_count; other++)
+			if (fused[other].candidate.generation == best[which].generation && fused[other].candidate.docid == best[which].docid)
+				{
+				fused[other].candidate.score += contribution;
+				found = true;
+				break;
+				}
+		if (!found)
+			{
+			fused[fused_count].candidate.generation = best[which].generation;
+			fused[fused_count].candidate.docid = best[which].docid;
+			fused[fused_count].candidate.score = contribution;
+			char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+			fused[fused_count].filename = new char[(filename != NULL ? strlen(filename) : 0) + 1];
+			strcpy(fused[fused_count].filename, filename != NULL ? filename : "");
+			fused_count++;
+			}
+		}
+	delete [] best;
+	}
+
+/*
+	Sort fused by score desc (ties: generation, docid asc) -- candidate and
+	filename move together, so this cannot desynchronize them -- then
+	truncate and publish into the shared results array.  The lexical
+	search() call above already freed the PREVIOUS results at its entry (or,
+	if query_text was NULL/empty, the results array is whatever it held
+	before this call); either way those filenames are snapshotted into
+	fused[] by now, so free them here before repopulating.
+*/
+qsort(fused, (size_t)fused_count, sizeof(*fused), ANT_fused_candidate_compare);
+
+reset_results();
+
+long long publish = fused_count < top_k ? fused_count : top_k;
+for (which = 0; which < publish; which++)
+	{
+	hit *slot = append_result();
+
+	slot->generation = fused[which].candidate.generation;
+	slot->docid = fused[which].candidate.docid;
+	slot->score = fused[which].candidate.score;
+	slot->filename = fused[which].filename;		/* ownership transfer */
+	fused[which].filename = NULL;
+	}
+for (which = publish; which < fused_count; which++)
+	delete [] fused[which].filename;
+delete [] fused;
+return results_count;
+}
