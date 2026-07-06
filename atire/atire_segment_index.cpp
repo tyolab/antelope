@@ -1,6 +1,13 @@
 /*
 	ATIRE_SEGMENT_INDEX.CPP
 	-----------------------
+	The implementation of ATIRE_segment_index is split by feature across
+	atire_segment_index*.cpp (see
+	docs/superpowers/specs/2026-07-06-segment-index-file-split-design.md):
+	this file holds the lifecycle and write path (open/add/update/delete/
+	flush/append_segment/rebuild_keymap/rebuild_writer_engine and the ctor/
+	dtor); compaction, vectors, lexical search, and WAL/global-stats live in
+	_compaction, _vector, _search, and _durability respectively.
 */
 #include <stdio.h>
 #include <stdlib.h>

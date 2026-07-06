@@ -6,6 +6,11 @@
 	docs/superpowers/specs/2026-07-05-incremental-index-design.md.
 
 	Single-threaded (like the rest of ATIRE).  Compaction is Phase 2.
+
+	The implementation is split across atire_segment_index*.cpp by feature:
+	lifecycle + write path in atire_segment_index.cpp, and compaction, vectors,
+	lexical search, and WAL/global-stats in the _compaction, _vector, _search,
+	and _durability siblings.
 */
 #ifndef ATIRE_SEGMENT_INDEX_H_
 #define ATIRE_SEGMENT_INDEX_H_
