@@ -357,6 +357,12 @@ directories:
 # faster compilation without considering extra objects, useful for repeated make for testing
 internal: directories index atire atire_client atire_broker atire_dictionary atire_merge atire_doclist
 
+ENGINE_LIB = $(LIB_DIR)/libantelope_engine.a
+
+engine_lib: directories $(SOURCES_OBJECTS)
+	@mkdir -p $(LIB_DIR)
+	ar rcs $(ENGINE_LIB) $(SOURCES_OBJECTS)
+
 index: $(BIN_DIR)/index
 atire: $(BIN_DIR)/atire
 atire_client: $(BIN_DIR)/atire_client

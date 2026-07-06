@@ -22,6 +22,24 @@
       "cflags_cc": ["-std=c++17", "-fexceptions", "-frtti"],
       "cflags_cc!": ["-fno-exceptions", "-fno-rtti"],
       "ldflags": ["-Wl,-rpath,<(module_root_dir)/bin/linux"]
+    },
+    {
+      "target_name": "antelope_segment",
+      "sources": [ "addon/segment_index.cpp" ],
+      "include_dirs": [
+        "<!@(node -p \"require('node-addon-api').include\")"
+      ],
+      "defines": [ "NAPI_VERSION=8", "NAPI_DISABLE_CPP_EXCEPTIONS" ],
+      "cflags_cc": [ "-std=c++17", "-fno-exceptions" ],
+      "libraries": [
+        "<(module_root_dir)/../lib/libantelope_engine.a",
+        "<(module_root_dir)/../external/unencumbered/zlib/libz.a",
+        "<(module_root_dir)/../external/unencumbered/bzip/libbz2.a",
+        "<(module_root_dir)/../external/gpl/lzo/liblzo2.a",
+        "<(module_root_dir)/../external/unencumbered/snappy/libsnappy.a",
+        "<(module_root_dir)/../external/unencumbered/snowball/libstemmer.a",
+        "-lpthread", "-ldl"
+      ]
     }
   ],
   "conditions": [
