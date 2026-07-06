@@ -82,6 +82,23 @@ ANT_write_ahead_log *bad = ANT_write_ahead_log::open(dir, 3);
 CHECK(!bad->replay_next(&record));
 delete bad;
 
+/*
+	Bounds: a fabricated record claiming a huge document length (int64 on
+	the wire) is rejected (replay ends) without attempting the allocation
+*/
+CHECK(truncate(wal_name, 0) == 0);
+fp = fopen(wal_name, "ab");
+int32_t good_key_len = 5;
+int64_t bad_doc_len = 1LL << 40;
+fwrite(&op, 1, 1, fp);
+fwrite(&good_key_len, sizeof(good_key_len), 1, fp);
+fwrite("doc-9", 1, 5, fp);
+fwrite(&bad_doc_len, sizeof(bad_doc_len), 1, fp);
+fclose(fp);
+ANT_write_ahead_log *bad_doc = ANT_write_ahead_log::open(dir, 3);
+CHECK(!bad_doc->replay_next(&record));
+delete bad_doc;
+
 printf("PASSED\n");
 return 0;
 }

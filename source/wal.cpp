@@ -100,7 +100,8 @@ return self;
 */
 long ANT_write_ahead_log::append(char op, const char *key, const char *document_or_null, const float *vector_or_null)
 {
-int32_t key_length, doc_length = 0;
+int32_t key_length;
+int64_t doc_length = 0;
 uint8_t has_vector = 0;
 size_t written;
 
@@ -138,8 +139,8 @@ else if (document_or_null == NULL)
 	}
 else
 	{
-	doc_length = (int32_t)strlen(document_or_null);
-	if (doc_length < 0 || doc_length > (256 * 1024 * 1024))
+	doc_length = (int64_t)strlen(document_or_null);
+	if (doc_length < 0 || doc_length > (int64_t)(256 * 1024 * 1024))
 		{
 		is_healthy = 0;
 		return 1;
@@ -251,7 +252,8 @@ return 0;
 long ANT_write_ahead_log::replay_next(record *into)
 {
 uint8_t op;
-int32_t key_length, doc_length;
+int32_t key_length;
+int64_t doc_length;
 uint8_t has_vector;
 size_t nread;
 
@@ -294,7 +296,7 @@ nread = fread(&doc_length, sizeof(doc_length), 1, fp);
 if (nread != 1)
 	return 0;
 
-if (doc_length < 0 || doc_length > (256 * 1024 * 1024))
+if (doc_length < 0 || doc_length > (int64_t)(256 * 1024 * 1024))
 	return 0;
 
 /* Allocate and read document */
