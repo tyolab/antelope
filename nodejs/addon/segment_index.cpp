@@ -27,6 +27,9 @@ private:
 	long option_merge_factor;			// -1 = default
 	double option_tombstone_ratio;		// < 0 = default
 	long option_auto_maintain;			// 0/1
+	long option_durable;				// 0/1 -- set_durable() before open()
+	long option_wal_fsync;				// 0/1 -- set_wal_fsync() before open()
+	long option_global_stats;			// 0/1, default 1 -- set_global_stats(0) before open() when false
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -81,6 +84,9 @@ option_flush_threshold = -1;
 option_merge_factor = -1;
 option_tombstone_ratio = -1.0;
 option_auto_maintain = 0;
+option_durable = 0;
+option_wal_fsync = 0;
+option_global_stats = 1;
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -122,6 +128,12 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 		option_tombstone_ratio = options.Get("tombstoneRatio").ToNumber().DoubleValue();
 	if (options.Has("autoMaintain"))
 		option_auto_maintain = options.Get("autoMaintain").ToBoolean().Value() ? 1 : 0;
+	if (options.Has("durable"))
+		option_durable = options.Get("durable").ToBoolean().Value() ? 1 : 0;
+	if (options.Has("walFsync"))
+		option_wal_fsync = options.Get("walFsync").ToBoolean().Value() ? 1 : 0;
+	if (options.Has("globalStats"))
+		option_global_stats = options.Get("globalStats").ToBoolean().Value() ? 1 : 0;
 	}
 }
 
@@ -131,6 +143,12 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	Engine setup sequence: set_vector_config() BEFORE open(), then the other
 	setters, then open() itself.  A failed open() leaves the instance
 	reusable (fresh engine per attempt) rather than transitioning to CLOSED.
+
+	`durable` MUST be applied via set_durable() before open() -- like
+	set_vector_config(), the engine only honors it pre-open (it decides
+	whether open() creates/replays the WAL).  `walFsync` and `globalStats`
+	are order-insensitive with respect to open() but are applied here too,
+	before open(), for a single obvious setup sequence.
 */
 Napi::Value SegmentIndexWrap::Open(const Napi::CallbackInfo &info)
 {
@@ -168,6 +186,17 @@ if (option_merge_factor > 0)
 if (option_tombstone_ratio >= 0.0)
 	engine->set_tombstone_compact_ratio(option_tombstone_ratio);
 engine->set_auto_maintain(option_auto_maintain);
+if (option_durable && engine->set_durable(1) != 0)
+	{
+	delete engine;
+	engine = NULL;
+	Napi::Error::New(env, "set_durable failed: index is already open").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+if (option_wal_fsync)
+	engine->set_wal_fsync(1);
+if (!option_global_stats)
+	engine->set_global_stats(0);
 
 if (engine->open(directory.c_str()) != 0)
 	{

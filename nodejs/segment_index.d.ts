@@ -7,6 +7,9 @@ export interface SegmentIndexOptions {
 	mergeFactor?: number;
 	tombstoneRatio?: number;
 	autoMaintain?: boolean;
+	durable?: boolean;
+	walFsync?: boolean;
+	globalStats?: boolean;
 }
 
 export interface DocRef { generation: number; docid: number; }

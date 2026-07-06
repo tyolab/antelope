@@ -164,4 +164,18 @@ await index.maintain();   // compact
 index.close();
 ```
 
+### Options
+
+| Option | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `dimension` | `number` | vectors disabled | enables vector search; 1-65536 |
+| `metric` | `'dot' \| 'cosine' \| 'l2'` | `'dot'` | vector similarity metric |
+| `flushThreshold` | `number` | engine default | docs per auto-flush; `0` = manual only |
+| `mergeFactor` | `number` | engine default | segments per compaction merge |
+| `tombstoneRatio` | `number` | engine default | dead-doc ratio that triggers compaction |
+| `autoMaintain` | `boolean` | `false` | run `maintain()` opportunistically |
+| `durable` | `boolean` | `false` | opt-in write-ahead log: writes since the last `flush()` survive a crash (process exit without `flush()`), replayed automatically on the next `open()` |
+| `walFsync` | `boolean` | `false` | `fsync()` every WAL append (not just `fflush()`) for stronger durability at the cost of write latency; only meaningful with `durable: true` |
+| `globalStats` | `boolean` | `true` | cross-segment N / mean-document-length ranking statistics; set `false` to rank each segment on its own local statistics instead |
+
 TypeScript definitions are provided in `segment_index.d.ts`.

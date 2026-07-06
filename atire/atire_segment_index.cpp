@@ -834,6 +834,15 @@ keymap->add(key, writer_generation, docid);
 	Log the ORIGINAL key/document pointers the caller passed in -- not
 	key_copy/doc_copy above, which the indexer may have mutated in place
 	and which are freed by now regardless.
+
+	COSINE note: for this 'A' hook, `vector` here is whatever add_document()
+	passed down -- already normalized for COSINE-metric indexes (see
+	add_document()'s banner comment) -- so the logged vector is
+	POST-normalization; replay renormalizes it again on top, which is
+	idempotent only to ULP scale (harmless).  The 'U' hook below, by
+	contrast, logs the RAW caller-supplied vector, so its replay renormalizes
+	from the same original input and reproduces the first normalization
+	bit-exactly.
 */
 if (wal != NULL && !wal_replaying && !wal_suppress_add)
 	wal->append('A', key, document, vector);

@@ -2502,6 +2502,45 @@ delete [] dir;
 printf("test_wal_replay_mid_autoflush OK\n");
 }
 
+/*
+	TEST_WAL_FSYNC_DURABILITY()
+	----------------------------
+	Same crash-and-recover shape as test_wal_durability(), but with
+	set_wal_fsync(1): proves the fsync path itself (not just fflush) is wired
+	end-to-end -- the append still reports healthy, and the record survives
+	a "crash" (destruction without flush) into a durable reopen.
+*/
+static void test_wal_fsync_durability(void)
+{
+char *dir = make_index_dir();
+char doc[256], letters[16], query[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_durable(1) == 0);
+index->set_wal_fsync(1);
+CHECK(index->open(dir) == 0);
+CHECK(index->wal_healthy());
+
+unique_term(letters, 0);
+sprintf(doc, "<DOC>fsynced %s</DOC>", letters);
+CHECK(index->add_document("fsync-doc", doc) >= 0);
+CHECK(index->wal_healthy());
+delete index;									// crash: no flush
+
+ATIRE_segment_index *recovered = new ATIRE_segment_index();
+CHECK(recovered->set_durable(1) == 0);
+recovered->set_wal_fsync(1);
+CHECK(recovered->open(dir) == 0);
+CHECK(recovered->get_document_count() == 1);
+strcpy(query, "fsynced");
+CHECK(recovered->search(query, 10) == 1);
+CHECK(recovered->flush() == 0);
+delete recovered;
+
+delete [] dir;
+printf("test_wal_fsync_durability OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -2536,6 +2575,7 @@ test_global_stats_score_equality();
 test_wal_durability();
 test_wal_unhealthy();
 test_wal_replay_mid_autoflush();
+test_wal_fsync_durability();
 printf("PASSED\n");
 return 0;
 }

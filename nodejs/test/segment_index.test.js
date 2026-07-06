@@ -150,3 +150,27 @@ test('busy-guard: engine calls during maintenance throw', async () => {
 	assert.strictEqual(idx.search('common', 100).length, 50);	// usable again
 	idx.close();
 });
+
+test('durable mode recovers unflushed writes across sessions', async () => {
+	const dir = freshDir();
+	let idx = new SegmentIndex({ durable: true, dimension: 4, metric: 'dot' });
+	idx.open(dir);
+	idx.addDocument('doc-1', '<DOC>alpha survivor</DOC>', Float32Array.from([1, 0, 0, 0]));
+	idx.close();		// no flush: relaxed mode would lose this
+
+	idx = new SegmentIndex({ durable: true, dimension: 4, metric: 'dot' });
+	idx.open(dir);
+	assert.strictEqual(idx.documentCount(), 1);
+	assert.strictEqual(idx.search('survivor', 5).length, 1);
+	assert.strictEqual(idx.searchVector(Float32Array.from([1, 0, 0, 0]), 5).length, 1);
+	await idx.flush();
+	idx.close();
+});
+
+test('globalStats option round-trips', () => {
+	const idx = new SegmentIndex({ globalStats: false });
+	idx.open(freshDir());
+	idx.addDocument('doc-1', '<DOC>alpha</DOC>');
+	assert.strictEqual(idx.search('alpha', 5).length, 1);	// still functional
+	idx.close();
+});
