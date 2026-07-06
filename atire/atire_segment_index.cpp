@@ -114,6 +114,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].tombstones;
 	delete segments[which].vectors;
 	delete segments[which].signatures;
+	delete segments[which].hnsw_graph;
 	}
 delete [] segments;
 
@@ -152,6 +153,8 @@ remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vec");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vsig");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "hnsw");
 remove(filename);
 }
 
@@ -1145,6 +1148,16 @@ segments[segment_count].engine = engine;
 segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
 segments[segment_count].vectors = vector_dimension_current != 0 ? ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()) : NULL;
 segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;
+
+if (vector_dimension_current != 0 && hnsw_M_current != 0)
+	{
+	char hnsw_name[4096];
+	segment_filename(hnsw_name, sizeof(hnsw_name), segments[segment_count].generation, "hnsw");
+	segments[segment_count].hnsw_graph = ANT_hnsw::load(hnsw_name, hnsw_M_current, hnsw_ef_construction_current, segments[segment_count].engine->get_document_count());
+	}
+else
+	segments[segment_count].hnsw_graph = NULL;
+
 segment_count++;
 
 return 0;
@@ -1238,6 +1251,19 @@ return segments[which].engine->get_search_engine();
 long ATIRE_segment_index::disk_segment_has_signatures(long long which)
 {
 return segments[which].signatures != NULL && segments[which].signatures->document_count() > 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_HAS_HNSW()
+	-----------------------------------------------
+	Test-only accessor: whether the given disk segment has a cached,
+	non-empty HNSW graph loaded (i.e. its .hnsw sidecar was present and valid
+	at open/append time). Defined here (rather than inline in the header) so
+	the header can stay include-free (forward-declares ANT_hnsw only).
+*/
+long ATIRE_segment_index::disk_segment_has_hnsw(long long which)
+{
+return segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty();
 }
 
 ANT_memory_index *ATIRE_segment_index::writer_memory_index_for_test(void)

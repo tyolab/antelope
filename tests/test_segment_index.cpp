@@ -2214,6 +2214,24 @@ delete [] dir;
 printf("test_segment_signatures_loaded OK\n");
 }
 
+static void test_segment_hnsw_loaded(void)
+{
+char *dir = make_index_dir(); float v[8] = {1,1,0,0,0,0,0,0};
+ATIRE_segment_index *a = new ATIRE_segment_index();
+CHECK(a->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->set_hnsw_config(16, 200) == 0);
+CHECK(a->add_document("d1", "<DOC>alpha</DOC>", v) >= 0);
+CHECK(a->flush() == 0);
+delete a;
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+CHECK(b->disk_segment_count() == 1);
+CHECK(b->disk_segment_has_hnsw(0) == 1);		/* new test hook */
+delete b; delete [] dir;
+printf("test_segment_hnsw_loaded OK\n");
+}
+
 /*
 	TEST_APPROX_RECALL()
 	---------------------
@@ -2941,6 +2959,7 @@ test_flush_builds_hnsw();
 test_build_signatures_backfill();
 test_build_hnsw_backfill();
 test_segment_signatures_loaded();
+test_segment_hnsw_loaded();
 test_approx_recall();
 test_approx_l2_fallback();
 test_hybrid_approx_smoke();
