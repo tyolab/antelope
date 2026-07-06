@@ -221,6 +221,7 @@ public:
 	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
 	long long search_vector_approx(const float *query, long long top_k);	// signature-prefiltered top-k; transparently falls back to exact for L2 / unconfigured
 	long long search_hybrid(char *query_text, const float *query_vector, long long top_k);	// RRF fusion of lexical + vector top-k; either side may be absent
+	long long search_hybrid_approx(char *query_text, const float *query_vector, long long top_k);	// like search_hybrid(), but the vector leg is signature-prefiltered; transparently falls back to search_hybrid() for L2 / unconfigured
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents
