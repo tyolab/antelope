@@ -108,6 +108,9 @@ parsed_query = new ANT_query;
 
 search_engine = NULL;
 ranking_function = NULL;
+default_ranking_readability = FALSE;
+default_ranking_quantize = FALSE;
+default_ranking_quantization_bits = -1;
 stemmer = NULL;
 expander_tf = NULL;
 expander_query = NULL;
@@ -288,8 +291,10 @@ if (type & READABILITY_SEARCH_ENGINE)
 	/*
 		Makes no sense to quantize readability based ranking ... at least it doesn't now
 	*/
-	delete ranking_function;
-	ranking_function = new ANT_ranking_function_readability(readable_search_engine, false, 0);
+	default_ranking_readability = TRUE;
+	default_ranking_quantize = FALSE;
+	default_ranking_quantization_bits = 0;
+	construct_default_ranking_function();
 	}
 else
 	{
@@ -302,13 +307,13 @@ else
 
 	/*
 		If it's already quantized, then ignore what the
-		user says about quantization
+		user says about quantization (construct_default_ranking_function()
+		re-checks search_engine->quantized() every time it rebuilds).
 	*/
-	delete ranking_function;
-	if (search_engine->quantized())
-		ranking_function = new ANT_ranking_function_impact(search_engine, false, -1);
-	else
-		ranking_function = new ANT_ranking_function_divergence(search_engine, quantize, quantization_bits);
+	default_ranking_readability = FALSE;
+	default_ranking_quantize = quantize;
+	default_ranking_quantization_bits = quantization_bits;
+	construct_default_ranking_function();
 	}
 
 // Then doclist
@@ -405,8 +410,10 @@ if (documents_in_id_list > 0)
 /*
 	Use divergence-from-randomness as the default ranking function.
 */
-delete ranking_function;
-ranking_function = new ANT_ranking_function_divergence(search_engine, false, -1);
+default_ranking_readability = FALSE;
+default_ranking_quantize = FALSE;
+default_ranking_quantization_bits = -1;
+construct_default_ranking_function();
 
 /*
 	Flag as a non-V5 index so the server uses get_document_filename_from_doclist()
@@ -415,6 +422,66 @@ ranking_function = new ANT_ranking_function_divergence(search_engine, false, -1)
 ant_version = ANT_V3;
 
 return 0;		// success
+}
+
+/*
+	ATIRE_API::CONSTRUCT_DEFAULT_RANKING_FUNCTION()
+	-----------------------------------------------
+	(Re)build the ranking function open()/open_from_memory_index() selected,
+	using the branch/parameters recorded at open time.  Because
+	ANT_ranking_function's constructor SNAPSHOTS engine->document_count() and
+	the derived constructors precompute per-document priors from
+	mean_document_length (ranking_function.cpp:20-45, ranking_function_bm25.cpp:29),
+	this is the ONLY way to make the ranking function pick up a change to the
+	engine's statistics -- poking the engine members alone changes nothing at
+	query time.  Only ranking_function is rebuilt here: feedback_ranking_function
+	and the topsig rankers are user-configured after open() (never wired from
+	ranking_function at open time), so they are left untouched.
+*/
+void ATIRE_API::construct_default_ranking_function(void)
+{
+delete ranking_function;
+ranking_function = NULL;
+
+if (default_ranking_readability)
+	ranking_function = new ANT_ranking_function_readability((ANT_search_engine_readability *)search_engine, false, 0);
+else if (search_engine->quantized())
+	ranking_function = new ANT_ranking_function_impact(search_engine, false, -1);
+else
+	ranking_function = new ANT_ranking_function_divergence(search_engine, default_ranking_quantize, default_ranking_quantization_bits);
+}
+
+/*
+	ATIRE_API::APPLY_GLOBAL_STATISTICS()
+	------------------------------------
+	Overrides the engine's document count and mean length, then rebuilds the
+	ranking function -- REQUIRED because ANT_ranking_function snapshots
+	document_count() and precomputes per-document priors from
+	mean_document_length at construction (ranking_function.cpp:20-45,
+	ranking_function_bm25.cpp:29); poking the engine members alone changes
+	nothing at query time.  global_documents == 0 restores local statistics.
+
+	After the rebuild we RESTORE the engine's local statistics (the 0 sentinel):
+	the ranking function has already copied the global N/mean into its own
+	members, so scoring keeps using the global values, while
+	search_engine->document_count()/get_document_lengths() go back to reporting
+	THIS segment's own counts -- which the coordinator (get_document_count(),
+	maintain(), and refresh_global_statistics() itself) reads as per-segment
+	locals.  Without this restore every local doc-count read would return the
+	global N and the coordinator's arithmetic would be wrong.
+*/
+void ATIRE_API::apply_global_statistics(long long global_documents, double global_mean_document_length)
+{
+if (global_documents == 0)
+	{
+	search_engine->set_global_document_statistics(0, 0.0);		// restore local
+	construct_default_ranking_function();						// snapshots local N/mean
+	return;
+	}
+
+search_engine->set_global_document_statistics(global_documents, global_mean_document_length);
+construct_default_ranking_function();							// snapshots global N/mean
+search_engine->set_global_document_statistics(0, 0.0);			// restore local N/mean for document_count()/get_document_lengths()
 }
 
 /*

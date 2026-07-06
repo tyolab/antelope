@@ -64,8 +64,9 @@ nothing is lost by the reset). This mirrors the keymap log's cache-not-truth pos
 New engine hook: `ANT_search_engine::set_global_document_statistics(long long documents,
 double mean_document_length)` overriding the two members the ranking functions read for
 N and length normalization (the implementation plan locates the exact members —
-`documents`/`documents_as_integer` and the mean-length value BM25 consumes — and the
-setter writes those, nothing else).
+`documents` and `mean_document_length`, the ranking function's N and length
+normalization inputs; the default ranker in this build is DFR divergence I(ne)B2, not
+BM25 — and the setter writes those, nothing else).
 
 Coordinator method `refresh_global_statistics()`:
 - global N = Σ `document_count()` over disk segments + `writer_documents`
@@ -124,11 +125,20 @@ README updated. No other binding surface changes.
   unwritable mid-session) → operations still succeed, `wal_healthy()==0`, next flush
   restores health; fsync toggle smoke test.
 - **Global stats (headline):** the same document set indexed as one segment vs three
-  segments must produce **equal BM25 scores** for identical queries (score equality
-  within float tolerance, not just membership) — and with `set_global_stats(0)` the
-  scores measurably diverge, proving the mechanism does something. NRT case: score
-  equality holds when part of the corpus is still in the memory segment; retention
-  across a dirty rebuild.
+  segments, scored with the default ranker (DFR divergence in this build — not BM25;
+  per-term df/cf stays per-segment per section 6, so full score identity for terms
+  shared across segments is out of reach by design). Three-part contract:
+  1. **Strict equality** (1e-4) for any query term whose df is layout-invariant (its
+     matching documents all live in one segment): every input to the ranking formula is
+     then identical. Includes the NRT case — a term confined to the memory segments of
+     both layouts scores strictly equally after the writer-engine rebuild.
+  2. **Rank order + constant ratio** for a term shared across segments: identical rank
+     order, and the multi/single score ratio is constant across all documents (relative
+     spread < 1e-3) — a constant ratio proves N and length normalization are globalized,
+     with only the per-term df/cf factor (the same for every document) differing.
+  3. **Negative control:** with `set_global_stats(0)` the ratio is measurably NOT
+     constant (relative spread > 0.01; measured ≈ 0.47 in the fixture) — per-segment
+     N/mean drift varies by segment, proving the mechanism does something.
 - **Keymap compaction:** heavy update churn → `log_dead_ratio()` high → after reopen (or
   post-maintain trigger) the log file shrinks measurably and a fresh reload reproduces
   the identical mapping; failure injection (read-only dir) leaves the old log usable.

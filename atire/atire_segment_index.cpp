@@ -44,6 +44,8 @@ writer_engine_stale = 1;
 
 flush_after_documents = 10000;		// 0 = manual flush only; bounds NRT arena growth of the live segment
 
+global_stats_enabled = 1;			// cross-segment global ranking statistics on by default (single-segment-equivalent scores)
+
 merge_factor = 10;					// tier trigger default (design spec section 4)
 tombstone_compact_ratio = 0.25;		// tombstone trigger default (design spec section 4)
 auto_maintain = 0;					// off by default: Phase 1 behaviour unchanged unless requested
@@ -602,6 +604,13 @@ if (keymap->log_dead_ratio() > 0.5)
 if (start_new_writer() != 0)
 	return 1;
 
+/*
+	Every disk segment is now open; push collection-wide global ranking
+	statistics into them so a reopened multi-segment index scores exactly
+	like the equivalent single-segment index (no-op when disabled).
+*/
+refresh_global_statistics();
+
 return 0;
 }
 
@@ -953,6 +962,13 @@ if (start_new_writer() != 0)
 	return 1;
 
 /*
+	The segment set just changed (one more disk segment, a fresh empty
+	writer): recompute and repush the global ranking statistics so the next
+	query scores against the new collection-wide N/mean.
+*/
+refresh_global_statistics();
+
+/*
 	Opportunistic maintenance: only runs when the caller has opted in via
 	set_auto_maintain() (default off, so Phase 1 callers are unaffected).
 	Best-effort -- maintain()'s own failure is not propagated from flush():
@@ -1201,6 +1217,14 @@ for (input = 0; input < input_count; input++)
 	delete_segment_files(input_generations[input]);
 remove(marker_name);
 
+/*
+	The compacted output replaced its inputs (a new engine with its own local
+	statistics): repush the collection-wide global statistics so scores stay
+	single-segment-equivalent.  The total N is unchanged by a merge, but the
+	output engine snapshotted its own locals at append_segment() time.
+*/
+refresh_global_statistics();
+
 return 0;
 }
 
@@ -1417,7 +1441,91 @@ doc_list = writer->get_doc_list(&doc_count);
 writer_engine = new ATIRE_API();
 writer_engine->open_from_memory_index(writer->get_index(), doc_list, doc_count, /*take_ownership=*/0);
 
+/*
+	The freshly-built NRT wrapper snapshotted its OWN (memory-segment-only)
+	statistics into its ranking function; push the collection-wide global
+	statistics into it so its scores line up with the disk segments'.  A no-op
+	when global stats are disabled (refresh pushes the restore sentinel).
+*/
+refresh_global_statistics();
+
 writer_engine_stale = 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::REFRESH_GLOBAL_STATISTICS()
+	------------------------------------------------
+	Pushes global N and mean document length into every open engine (disk
+	segments + the NRT wrapper) and rebuilds their ranking functions.  When
+	disabled, pushes the restore sentinel instead.  Called at every boundary
+	that changes the segment set; O(segments).
+*/
+void ATIRE_segment_index::refresh_global_statistics(void)
+{
+long long which, total_documents = 0;
+double total_length = 0.0;
+
+if (!global_stats_enabled)
+	{
+	for (which = 0; which < segment_count; which++)
+		segments[which].engine->apply_global_statistics(0, 0.0);
+	if (writer_engine != NULL)
+		writer_engine->apply_global_statistics(0, 0.0);
+	return;
+	}
+
+for (which = 0; which < segment_count; which++)
+	{
+	long long docs = segments[which].engine->get_document_count();
+	double mean = 0.0;
+
+	if (docs <= 0)
+		continue;		// nothing to contribute (and no trustworthy mean to read)
+	segments[which].engine->get_search_engine()->get_document_lengths(&mean);
+	total_documents += docs;
+	total_length += (double)docs * mean;
+	}
+if (writer_engine != NULL)
+	{
+	double mean = 0.0;
+
+	writer_engine->get_search_engine()->get_document_lengths(&mean);
+	total_documents += writer_documents;
+	total_length += (double)writer_documents * mean;
+	}
+else
+	total_documents += writer_documents;	/* lengths unknown until a wrapper exists; next refresh corrects */
+
+if (total_documents == 0)
+	return;
+double global_mean = total_length / (double)total_documents;
+
+/*
+	Defence in depth: never push a non-finite or non-positive mean -- a
+	poisoned mean would NaN every length-normalised score in every segment
+	(worse than the per-segment drift this feature fixes).  !(x > 0.0)
+	catches NaN as well as zero/negative without needing isfinite().
+*/
+if (!(global_mean > 0.0))
+	return;
+for (which = 0; which < segment_count; which++)
+	segments[which].engine->apply_global_statistics(total_documents, global_mean);
+if (writer_engine != NULL)
+	writer_engine->apply_global_statistics(total_documents, global_mean);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_GLOBAL_STATS()
+	---------------------------------------
+	Toggle cross-segment global ranking statistics (default on).  Refreshes
+	immediately when the index is already open so the change takes effect on
+	the next query without waiting for a flush/compact boundary.
+*/
+void ATIRE_segment_index::set_global_stats(long on)
+{
+global_stats_enabled = on;
+if (directory != NULL)
+	refresh_global_statistics();
 }
 
 /*

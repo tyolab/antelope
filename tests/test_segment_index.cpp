@@ -2123,6 +2123,193 @@ delete [] dir;
 printf("test_keymap_log_compaction OK\n");
 }
 
+/*
+	FIND_SCORE_BY_KEY()
+	-------------------
+	Return the score of the hit whose filename is key, from the given
+	index's first hits results; CHECK-fails if the key is absent.
+	Helper for test_global_stats_score_equality().
+*/
+static double find_score_by_key(ATIRE_segment_index *index, long long hits, const char *key)
+{
+long long which;
+
+for (which = 0; which < hits; which++)
+	if (strcmp(index->get_hit(which)->filename, key) == 0)
+		return index->get_hit(which)->score;
+CHECK(!"key not found in results");
+return 0.0;
+}
+
+/*
+	TEST_GLOBAL_STATS_SCORE_EQUALITY()
+	----------------------------------
+	Global statistics push the collection-wide N and mean document length
+	into every segment engine and reconstruct each engine's ranking
+	function so it snapshots them.  Per-term document/collection frequency
+	stays PER-SEGMENT by design (the spec's section 6 pins global df out of
+	scope; per-segment df converges to the collection df as maintain()
+	merges segments).  The ranking function in this build is DFR divergence
+	(I(ne)B2), whose score is the product of a per-document part driven by
+	N and mean length and a per-term part driven by df/cf.  The contract
+	verified here is therefore:
+
+	1. A query term whose df is LAYOUT-INVARIANT (confined to documents
+	   that share one segment) scores STRICTLY EQUALLY (1e-4) in the multi-
+	   and single-segment layouts: every input to the formula is identical.
+	2. A term shared ACROSS segments ranks in the SAME ORDER, with a
+	   CONSTANT multi/single score ratio across all documents.  A constant
+	   ratio proves N and length normalization are globalized -- only the
+	   per-term df/cf factor differs between the layouts, and it is the
+	   same multiplicative factor for every document.
+	3. Negative control: with set_global_stats(0) each segment reverts to
+	   its own local N/mean, whose length normalization drifts BY SEGMENT,
+	   so the multi/single ratio is measurably NOT constant.
+*/
+static void test_global_stats_score_equality(void)
+{
+char *dir_multi = make_index_dir();
+char *dir_single = make_index_dir();
+char key[64], doc[512], letters[16], query[64];
+long long i, which;
+
+/*
+	12 docs with VARIED lengths (length normalization is what drifts);
+	every doc contains "common"; doc i also has its unique term; docs 4-7
+	(exactly the multi index's second segment) additionally share
+	"confinedterm", a term whose df is 4 in BOTH layouts.
+*/
+ATIRE_segment_index *multi = new ATIRE_segment_index();
+CHECK(multi->open(dir_multi) == 0);
+multi->set_flush_threshold(4);					// three segments
+ATIRE_segment_index *single = new ATIRE_segment_index();
+CHECK(single->open(dir_single) == 0);
+
+for (i = 0; i < 12; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	/* length varies: i+1 copies of filler words */
+	char body[400];
+	body[0] = '\0';
+	for (which = 0; which <= i; which++)
+		strcat(body, "filler ");
+	sprintf(doc, "<DOC>common %s %s%s</DOC>", letters, i >= 4 && i <= 7 ? "confinedterm " : "", body);
+	CHECK(multi->add_document(key, doc) >= 0);
+	CHECK(single->add_document(key, doc) >= 0);
+	}
+CHECK(multi->flush() == 0);
+CHECK(single->flush() == 0);
+CHECK(multi->disk_segment_count() == 3);
+CHECK(single->disk_segment_count() == 1);
+
+/*
+	1. STRICT score equality for the layout-invariant-df term (docs 4-7
+	   live together in one multi segment: df=4, cf=4 in both layouts)
+*/
+strcpy(query, "confinedterm");
+long long multi_hits = multi->search(query, 20);
+strcpy(query, "confinedterm");
+long long single_hits = single->search(query, 20);
+CHECK(multi_hits == 4 && single_hits == 4);
+for (which = 0; which < 4; which++)
+	{
+	const char *want = multi->get_hit(which)->filename;
+	double multi_score = multi->get_hit(which)->score;
+	CHECK(fabs(find_score_by_key(single, single_hits, want) - multi_score) < 1e-4);
+	}
+
+/*
+	2. Cross-segment shared term: identical rank order and a constant
+	   multi/single score ratio (per-term df/cf stays per-segment, so the
+	   two layouts' scores differ by exactly one collection-wide factor)
+*/
+strcpy(query, "common");
+multi_hits = multi->search(query, 20);
+strcpy(query, "common");
+single_hits = single->search(query, 20);
+CHECK(multi_hits == 12 && single_hits == 12);
+double min_ratio = 0.0, max_ratio = 0.0;
+for (which = 0; which < 12; which++)
+	{
+	/* rank order: the hit at each position names the same document */
+	CHECK(strcmp(multi->get_hit(which)->filename, single->get_hit(which)->filename) == 0);
+	double ratio = multi->get_hit(which)->score / single->get_hit(which)->score;
+	if (which == 0)
+		min_ratio = max_ratio = ratio;
+	else
+		{
+		if (ratio < min_ratio)
+			min_ratio = ratio;
+		if (ratio > max_ratio)
+			max_ratio = ratio;
+		}
+	}
+CHECK((max_ratio - min_ratio) / min_ratio < 1e-3);
+
+/*
+	3. Negative control: global stats OFF -> each segment scores with its
+	   own local N/mean and the multi/single ratio varies by segment
+*/
+multi->set_global_stats(0);
+strcpy(query, "common");
+CHECK(multi->search(query, 20) == 12);
+double off_min_ratio = 0.0, off_max_ratio = 0.0;
+for (which = 0; which < 12; which++)
+	{
+	const char *want = multi->get_hit(which)->filename;
+	double ratio = multi->get_hit(which)->score / find_score_by_key(single, single_hits, want);
+	if (which == 0)
+		off_min_ratio = off_max_ratio = ratio;
+	else
+		{
+		if (ratio < off_min_ratio)
+			off_min_ratio = ratio;
+		if (ratio > off_max_ratio)
+			off_max_ratio = ratio;
+		}
+	}
+CHECK((off_max_ratio - off_min_ratio) / off_min_ratio > 0.01);	// measured spread with stats off: 0.47 relative
+multi->set_global_stats(1);
+
+/*
+	NRT: two more docs in the memory segment only.  Their shared term
+	"tailmark" is confined to the memory segments of BOTH sides (df=2,
+	cf=2 in both layouts), so strict equality must hold for a fresh query
+	(the writer engine gets the global override at rebuild).
+*/
+for (i = 12; i < 14; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common tailmark %s tail words</DOC>", letters);
+	CHECK(multi->add_document(key, doc) >= 0);
+	CHECK(single->add_document(key, doc) >= 0);
+	}
+strcpy(query, "common");
+multi_hits = multi->search(query, 20);
+strcpy(query, "common");
+single_hits = single->search(query, 20);
+CHECK(multi_hits == 14 && single_hits == 14);
+strcpy(query, "tailmark");
+multi_hits = multi->search(query, 20);
+strcpy(query, "tailmark");
+single_hits = single->search(query, 20);
+CHECK(multi_hits == 2 && single_hits == 2);
+for (which = 0; which < 2; which++)
+	{
+	const char *want = multi->get_hit(which)->filename;
+	double multi_score = multi->get_hit(which)->score;
+	CHECK(fabs(find_score_by_key(single, single_hits, want) - multi_score) < 1e-4);
+	}
+
+delete multi;
+delete single;
+delete [] dir_multi;
+delete [] dir_single;
+printf("test_global_stats_score_equality OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -2153,6 +2340,7 @@ test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_keymap_log_compaction();
+test_global_stats_score_equality();
 printf("PASSED\n");
 return 0;
 }

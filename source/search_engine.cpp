@@ -59,6 +59,13 @@ else
 
 this->memory_model = memory_model;
 ant_version = -1;
+
+/*
+	Global-statistics override: no override in force until
+	set_global_document_statistics() saves this engine's local values.
+*/
+local_documents_saved = 0;
+local_mean_document_length_saved = 0.0;
 }
 
 /*
@@ -252,8 +259,36 @@ results_list = new (memory) ANT_search_engine_result(memory, documents);
 /*
 	decompress the document length vector
 */
+#ifdef SPECIAL_COMPRESSION
+if (collection_details.local_document_frequency <= 2)
+	{
+	/*
+		SPECIAL_COMPRESSION packs df <= 2 postings into the vocabulary leaf
+		(value << 32 | tf) rather than into a postings list, and applies to
+		the "~length" special term too -- get_postings() would return them
+		re-encoded impact-ordered, a format factory.decompress() cannot
+		parse (historically this made 1- and 2-document indexes load garbage
+		document lengths and a garbage mean).  Recover the raw values
+		straight from the leaf: value0 lives in the top half of
+		postings_position_on_disk, value1 (df == 2) in impacted_length --
+		exactly the fields get_postings()'s own df <= 2 decoder reads.  The
+		"~length" postings all carry tf 1 (set_document_length() posts once
+		per document), so serialise_one_node()'s differing-tf reordering
+		never applies to them.
+	*/
+	decompress_buffer[0] = (ANT_compressable_integer)(collection_details.postings_position_on_disk >> 32);
+	if (collection_details.local_document_frequency == 2)
+		decompress_buffer[1] = (ANT_compressable_integer)collection_details.impacted_length;
+	}
+else
+	{
+	postings_buffer = get_postings(&collection_details, postings_buffer);
+	factory.decompress(decompress_buffer, postings_buffer, collection_details.local_document_frequency);
+	}
+#else
 postings_buffer = get_postings(&collection_details, postings_buffer);
 factory.decompress(decompress_buffer, postings_buffer, collection_details.local_document_frequency);
+#endif
 
 sum = 0;
 for (current_length = 0; current_length < documents; current_length++)

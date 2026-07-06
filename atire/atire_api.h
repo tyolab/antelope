@@ -70,6 +70,15 @@ private:
 	ANT_search_engine *search_engine;		// the search engine itself
 	ANT_ranking_function *ranking_function;	// the ranking function to use (default is the perameterless Divergence From Randomness)
 	long long ranking_function_id;			// ID of the ranking funciton (so its possible to check it later)
+	/*
+		Remember which default ranking function open()/open_from_memory_index()
+		selected, so construct_default_ranking_function() can rebuild the SAME
+		one after the engine's global statistics change (see
+		apply_global_statistics()).
+	*/
+	long default_ranking_readability;		// open() chose the readability ranker
+	long default_ranking_quantize;			// quantize argument passed to the divergence ranker
+	long long default_ranking_quantization_bits;	// quantization_bits argument passed to the divergence ranker
 	ANT_stemmer *stemmer;					// stemming function to use
 	ANT_relevance_feedback *more_like_term_chooser;	// used to choose terms for "more like this"
 	ANT_relevance_feedback *feedbacker;		// relevance feedback algorithm to use (NULL = none)
@@ -134,6 +143,7 @@ protected:
 	char **read_docid_list(char * doclist_filename, long long *documents_in_id_list, char ***filename_list, char **mem1, char **mem2);
 	static char *max(char *a, char *b, char *c);
 	ANT_ranking_function *decode_ranking_function(long long function, long quantization, long long quantization_bits, double p1, double p2, double p3);
+	void construct_default_ranking_function(void);		// (re)build the ranking function open() selected, snapshotting the engine's current statistics
 	long process_NEXI_query(char *query);
 	ANT_bitstring *process_boolean_query(ANT_query_parse_tree *root, long *leaves);
 	long process_topsig_query(ANT_NEXI_term_ant *parse_tree);
@@ -178,6 +188,14 @@ public:
 		strings owned by the caller; this method deep-copies them.
 	*/
 	long open_from_memory_index(ANT_memory_index *index, char **doc_list, long long doc_count, long take_ownership = 1);
+
+	/*
+		Override the engine's document count and mean document length (for
+		segmented indexes whose global N/mean differ from this segment's own),
+		then rebuild the ranking function so it snapshots the override.  Pass
+		global_documents == 0 to restore this engine's local statistics.
+	*/
+	void apply_global_statistics(long long global_documents, double global_mean_document_length);
 
 	ANT_search_engine *get_search_engine(void) { return search_engine; }
 

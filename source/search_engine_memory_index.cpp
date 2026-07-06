@@ -117,8 +117,40 @@ char length_term[] = "~length";
 if (get_postings_details(length_term, &term_details) != NULL)
 	{
 	document_lengths = (ANT_compressable_integer *)memory->malloc(documents * sizeof(*document_lengths));
+#ifdef SPECIAL_COMPRESSION
+	if (term_details.local_document_frequency <= 2)
+		{
+		/*
+			SPECIAL_COMPRESSION packs df <= 2 postings into the leaf fields
+			rather than a postings list, "~length" included -- get_postings()
+			would return them re-encoded impact-ordered, a format
+			factory.decompress() cannot parse (historically 1- and 2-document
+			memory segments loaded all-zero lengths and a zero mean, NaN-ing
+			any length-normalised ranking).  Mirror get_postings(): serialise
+			a copy of the hash node (for a df <= 2 "~" term this only packs
+			the leaf fields, it writes nothing), then read the raw values
+			from the packed fields -- value0 from the top half of
+			docids_pos_on_disk, value1 (df == 2) from impacted_length.  The
+			"~length" postings all carry tf 1 (set_document_length() posts
+			once per document), so the differing-tf reordering in
+			serialise_one_node() never applies.
+		*/
+		ANT_memory_index_hash_node *index_node = (ANT_memory_index_hash_node *)term_details.postings_position_on_disk;
+		ANT_memory_index_hash_node duplicate_node = *index_node;
+		index->serialise_one_node(this, &duplicate_node);
+		decompress_buffer[0] = (ANT_compressable_integer)(duplicate_node.in_disk.docids_pos_on_disk >> 32);
+		if (term_details.local_document_frequency == 2)
+			decompress_buffer[1] = (ANT_compressable_integer)duplicate_node.in_disk.impacted_length;
+		}
+	else
+		{
+		compressed = get_postings(&term_details, (unsigned char *)decompress_buffer);
+		factory.decompress(decompress_buffer, compressed, term_details.local_document_frequency);
+		}
+#else
 	compressed = get_postings(&term_details, (unsigned char *)decompress_buffer);
 	factory.decompress(decompress_buffer, compressed, term_details.local_document_frequency);
+#endif
 	long long sum = 0;
 	for (long long i = 0; i < documents; i++)
 		{

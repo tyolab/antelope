@@ -61,6 +61,8 @@ private:
 
 	long long flush_after_documents;	// 0 = manual flush only; default 10000 bounds memory growth of the live segment
 
+	long global_stats_enabled;			// 1 (default): push global N/mean into every open engine so scores match a single-segment index; 0: each segment scores with its own local statistics
+
 	long merge_factor;					// tier trigger: a size tier with >= this many disk segments gets merged
 	double tombstone_compact_ratio;	// tombstone trigger: a segment whose tombstones/documents exceeds this gets rewritten
 	long auto_maintain;					// 0 = off (Phase 1 behaviour): flush() does not call maintain() unless set
@@ -83,6 +85,7 @@ private:
 private:
 	long start_new_writer(void);		// 0 on success, 1 if the manifest cannot be saved
 	void rebuild_writer_engine(void);
+	void refresh_global_statistics(void);	// push global N/mean (or the restore sentinel) into every open engine + rebuild their ranking functions
 	/*
 		use_filename_index selects the accessor used to fetch each hit's external
 		key: disk segments are reopened as ANT_V5 (this build always serialises
@@ -135,6 +138,7 @@ public:
 	long compact(long long *input_generations, long long input_count);	// merge those disk segments into one; 0 on success
 
 	long maintain(void);								// run the tiered merge policy to quiescence; 0 = success
+	void set_global_stats(long on);		// enable (default) / disable cross-segment global ranking statistics; refreshes immediately if open
 	void set_merge_factor(long segments_per_tier) { merge_factor = segments_per_tier; }
 	void set_tombstone_compact_ratio(double ratio) { tombstone_compact_ratio = ratio; }
 	void set_auto_maintain(long on) { auto_maintain = on; }

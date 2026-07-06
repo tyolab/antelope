@@ -82,6 +82,8 @@ protected:
 	ANT_compression_factory factory;
 	ANT_memory *memory;
 	long long documents;
+	long long local_documents_saved;		// global-stats override: this engine's own document_count() before any override (0 = nothing saved yet)
+	double local_mean_document_length_saved;	// paired with the above; both restored when set_global_document_statistics(0, ...) is called
 	long postings_buffer_length;
 	unsigned char *btree_leaf_buffer, *postings_buffer;
 	ANT_weighted_tf *stem_buffer;
@@ -150,6 +152,33 @@ public:
 	char **generate_results_list(char **document_id_list, char **sorted_id_list, long long top_k);
 // #endif
 	long long document_count(void) { return documents; }
+	/*
+		Global-statistics override (segmented indexes): replaces the values
+		the ranking function will snapshot at its NEXT construction.  Pass
+		global_documents == 0 to restore this engine's own local values.  The
+		caller (ATIRE_API::apply_global_statistics) sets the global values,
+		reconstructs the ranking function so it snapshots them, then restores
+		the locals -- so document_count()/get_document_lengths() keep reporting
+		this engine's OWN counts to everything except the ranking snapshot.
+	*/
+	void set_global_document_statistics(long long global_documents, double global_mean_document_length)
+		{
+		if (local_documents_saved == 0)
+			{
+			local_documents_saved = documents;
+			local_mean_document_length_saved = mean_document_length;
+			}
+		if (global_documents == 0)
+			{
+			documents = local_documents_saved;
+			mean_document_length = local_mean_document_length_saved;
+			}
+		else
+			{
+			documents = global_documents;
+			mean_document_length = global_mean_document_length;
+			}
+		}
 	long long term_count(void) { return collection_length_in_terms; }
 	ANT_compressable_integer *get_document_lengths(double *mean) { *mean = mean_document_length; return document_lengths; }
 #ifdef IMPACT_HEADER
