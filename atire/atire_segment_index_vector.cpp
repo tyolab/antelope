@@ -28,6 +28,7 @@
 #include "../source/wal.h"
 #include "../source/signature.h"
 #include "../source/signature_store.h"
+#include "../source/hnsw.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -381,6 +382,48 @@ for (which = 0; which < segment_count; which++)
 		}
 	if (!failed) sig_writer.finish(); else sig_writer.abandon();
 	delete [] sig;
+	delete vectors;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::BUILD_HNSW()
+	---------------------------------
+	Idempotent backfill: for every manifested disk segment with vectors but no
+	valid .hnsw, build a fresh HNSW graph sidecar (so HNSW can be enabled on an
+	index whose segments predate it).  Per-segment failures are skipped (that
+	segment stays graph-less / exact-scanned), never left corrupt.  Returns 0
+	on success (1 if HNSW is unconfigured).
+*/
+long ATIRE_segment_index::build_hnsw(void)
+{
+long long which;
+char vec_name[4096], hnsw_name[4096];
+
+if (hnsw_M_current == 0)
+	return 1;
+
+for (which = 0; which < segment_count; which++)
+	{
+	long long generation = segments[which].generation;
+	long long docs = segments[which].engine->get_document_count();
+
+	segment_filename(hnsw_name, sizeof(hnsw_name), generation, "hnsw");
+	ANT_hnsw *existing = ANT_hnsw::load(hnsw_name, hnsw_M_current, hnsw_ef_construction_current, docs);
+	long long already = existing->node_count() == docs && docs > 0 && !existing->empty();
+	delete existing;
+	if (already)
+		continue;
+
+	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
+	ANT_vector_store *vectors = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (vectors->document_count() == docs && docs > 0)
+		{
+		ANT_hnsw graph;
+		if (graph.build(vectors, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
+			graph.save(hnsw_name);
+		}
 	delete vectors;
 	}
 return 0;

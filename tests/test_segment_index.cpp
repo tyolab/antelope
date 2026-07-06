@@ -2173,6 +2173,27 @@ delete [] dir;
 printf("test_build_signatures_backfill OK\n");
 }
 
+static void test_build_hnsw_backfill(void)
+{
+char *dir = make_index_dir(); char hnsw[4096]; float v[8] = {0,1,0,0,0,0,0,0};
+ATIRE_segment_index *a = new ATIRE_segment_index();		/* segment created BEFORE HNSW enabled */
+CHECK(a->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->add_document("d1", "<DOC>beta</DOC>", v) >= 0);
+CHECK(a->flush() == 0);
+long long g = a->disk_segment_generation(0);
+delete a;
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+CHECK(b->set_hnsw_config(16, 200) == 0);
+snprintf(hnsw, sizeof(hnsw), "%s/seg_%06lld.hnsw", dir, g);
+CHECK(fopen(hnsw, "rb") == NULL);			/* not there yet */
+CHECK(b->build_hnsw() == 0);
+FILE *fp = fopen(hnsw, "rb"); CHECK(fp != NULL); fclose(fp);
+delete b; delete [] dir;
+printf("test_build_hnsw_backfill OK\n");
+}
+
 static void test_segment_signatures_loaded(void)
 {
 char *dir = make_index_dir();
@@ -2918,6 +2939,7 @@ test_hnsw_config_persists();
 test_flush_writes_signatures();
 test_flush_builds_hnsw();
 test_build_signatures_backfill();
+test_build_hnsw_backfill();
 test_segment_signatures_loaded();
 test_approx_recall();
 test_approx_l2_fallback();
