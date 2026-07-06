@@ -109,3 +109,59 @@ cd nodejs
 - `indexer.js` — command-line indexer
 - `server.js`  — example REST search server (disk-based)
 - `antelope.js` — interactive command-line search client
+
+
+## SegmentIndex (modern Node-API binding)
+
+`SegmentIndex` is a self-contained Node-API (N-API) addon that combines
+lexical (BM25-style) and vector search over a segment-based, mutable index.
+Unlike the legacy `antelope_api.node` addon above, it does not depend on the
+prebuilt `.so` files under `bin/` and does not require Node ≤ 14 — it targets
+any Node ≥ 12.22 (any release with stable N-API support).
+
+Because `nodejs/index.js` (the package's legacy `main` entry) still throws
+synchronously on Node versions newer than 14 (a version guard predating this
+binding), `require('antelope-search')` itself is currently unusable on
+modern Node. Until that legacy guard is relaxed, load the addon directly:
+
+```js
+const { SegmentIndex } = require('antelope-search/build/Release/antelope_segment.node');
+```
+
+`nodejs/index.js` also exposes a lazy `SegmentIndex` export (via
+`Object.defineProperty`) for the future/degenerate case where the legacy
+top-level code path does not throw — e.g. if a consumer patches or forks
+`index.js` to drop the old version guard — but on an unmodified checkout
+running under a modern Node, `require('antelope-search')` fails before that
+export is ever reached. Prefer the direct `build/Release/antelope_segment.node`
+require shown above.
+
+### Building
+
+```bash
+make -C .. all        # build the engine once (from the repo root)
+cd nodejs
+npm install
+npm run build:segment
+```
+
+### Usage
+
+```js
+const { SegmentIndex } = require('antelope-search');
+
+const index = new SegmentIndex({ dimension: 768, metric: 'cosine' });
+index.open('/var/data/myindex');
+
+index.addDocument('page-1', '<DOC>how to feed a quokka</DOC>', embedding1);
+index.addDocument('page-2', '<DOC>quokka habitat</DOC>');          // lexical-only
+
+const hits = index.searchHybrid('quokka food', queryEmbedding, 10);
+// [{ key: 'page-1', score: ..., generation: 1, docid: 0 }, ...]
+
+await index.flush();      // persist
+await index.maintain();   // compact
+index.close();
+```
+
+TypeScript definitions are provided in `segment_index.d.ts`.
