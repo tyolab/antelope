@@ -17,6 +17,7 @@ class ANT_index_keymap;
 class ANT_index_tombstones;
 class ANT_search_engine;
 class ANT_vector_store;
+class ANT_write_ahead_log;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -82,6 +83,30 @@ private:
 	long long writer_vector_capacity;
 	long long writer_vectors_present;		// how many docs in the buffer HAVE vectors
 
+	/*
+		Durable (WAL) mode.  wal is NULL unless set_durable(1) was called
+		before open().  wal_fsync_pending records a set_wal_fsync() call
+		made before open() (mirrors the vector_config_pending style) so it
+		can be applied once the log is actually open.  wal_replaying
+		suppresses the append hooks in add_document/update_document/
+		delete_document while open() is replaying the log through those
+		same public methods.  wal_suppress_add suppresses the 'A' append
+		that update_document's internal add_document() call would otherwise
+		log, so an update logs exactly one 'U' record.  wal_truncate_pending
+		defers flush()'s truncate() when a flush happens to fire WHILE a
+		replay is in progress (auto-flush partway through a long replay) --
+		truncating mid-replay would reopen the log out from under
+		replay_next()'s file position and silently drop the untouched tail;
+		instead flush() records the deferral and open() truncates once,
+		after the whole replay has been consumed.
+	*/
+	long durable;
+	long wal_fsync_pending;
+	ANT_write_ahead_log *wal;
+	long wal_replaying;
+	long wal_suppress_add;
+	long wal_truncate_pending;
+
 private:
 	long start_new_writer(void);		// 0 on success, 1 if the manifest cannot be saved
 	void rebuild_writer_engine(void);
@@ -121,6 +146,10 @@ public:
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
+
+	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
+	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()
+	long wal_healthy(void);				// 1 when healthy OR disabled (no WAL); 0 when the last append failed
 
 	ATIRE_segment_index();
 	~ATIRE_segment_index();

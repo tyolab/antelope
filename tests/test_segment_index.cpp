@@ -2310,6 +2310,198 @@ delete [] dir_single;
 printf("test_global_stats_score_equality OK\n");
 }
 
+/*
+	TEST_WAL_DURABILITY()
+	---------------------
+	With set_durable(1), everything since the last flush survives a crash
+	(destruction without flush): adds, updates, deletes, vectors.
+*/
+static void test_wal_durability(void)
+{
+char *dir = make_index_dir();
+char key[64], doc[256], letters[16], query[64], wal_name[4096];
+float va[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+float vb[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+long long i;
+struct stat wal_stat;
+
+/*
+	Session 1: durable index; one flushed segment; then unflushed churn
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(index->set_durable(1) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->wal_healthy());
+for (i = 0; i < 3; i++)
+	{
+	sprintf(key, "base-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc, va) >= 0);
+	}
+CHECK(index->flush() == 0);
+snprintf(wal_name, sizeof(wal_name), "%s/wal.log", dir);
+CHECK(stat(wal_name, &wal_stat) == 0);
+CHECK(wal_stat.st_size == 0);					// truncated by flush
+
+unique_term(letters, 10);
+sprintf(doc, "<DOC>fresh %s</DOC>", letters);
+CHECK(index->add_document("wal-add", doc, vb) >= 0);
+unique_term(letters, 0);
+sprintf(doc, "<DOC>revised %s</DOC>", letters);
+CHECK(index->update_document("base-0", doc, vb) >= 0);
+CHECK(index->delete_document("base-1") == 0);
+CHECK(stat(wal_name, &wal_stat) == 0);
+CHECK(wal_stat.st_size > 0);
+delete index;									// crash: no flush
+
+/*
+	Session 2: durable reopen replays the WAL
+*/
+ATIRE_segment_index *recovered = new ATIRE_segment_index();
+CHECK(recovered->set_durable(1) == 0);
+CHECK(recovered->open(dir) == 0);
+CHECK(recovered->get_document_count() == 3);	// 3 base - 1 deleted + 1 added, update net 0
+strcpy(query, "fresh");
+CHECK(recovered->search(query, 10) == 1);
+strcpy(query, "revised");
+CHECK(recovered->search(query, 10) == 1);
+unique_term(letters, 1);
+strcpy(query, letters);
+CHECK(recovered->search(query, 10) == 0);		// base-1 deleted
+/* vectors replayed: vb-direction query finds the two vb docs */
+CHECK(recovered->search_vector(vb, 10) >= 2);
+CHECK(strcmp(recovered->get_hit(0)->filename, "wal-add") == 0 || strcmp(recovered->get_hit(0)->filename, "base-0") == 0);
+/* replay did not re-log: WAL size unchanged after reopen */
+struct stat after_replay;
+CHECK(stat(wal_name, &after_replay) == 0);
+CHECK(after_replay.st_size == wal_stat.st_size);
+CHECK(recovered->flush() == 0);
+CHECK(stat(wal_name, &after_replay) == 0);
+CHECK(after_replay.st_size == 0);
+delete recovered;
+
+/*
+	Relaxed mode ignores an existing WAL (no replay, no deletion)
+*/
+ATIRE_segment_index *relaxed = new ATIRE_segment_index();
+CHECK(relaxed->open(dir) == 0);
+CHECK(relaxed->get_document_count() == 3);		// all durable now anyway
+delete relaxed;
+
+delete [] dir;
+printf("test_wal_durability OK\n");
+}
+
+/*
+	TEST_WAL_UNHEALTHY()
+	---------------------
+	When the WAL cannot be written to (directory made read-only), appends
+	fail silently (engine state stays authoritative) and wal_healthy()
+	reports 0; once writable again, flush() truncates and restores health.
+*/
+static void test_wal_unhealthy(void)
+{
+char *dir = make_index_dir();
+char key[64], doc[256], letters[16];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_durable(1) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->wal_healthy());
+
+unique_term(letters, 0);
+sprintf(key, "doc-0");
+sprintf(doc, "<DOC>common %s</DOC>", letters);
+CHECK(index->add_document(key, doc) >= 0);
+CHECK(index->wal_healthy());
+
+/*
+	Force a real WAL append() failure deterministically and portably.  The
+	"chmod the directory/file" approach does NOT work here: append()
+	writes through a FILE* that was already fopen()ed back in open() --
+	Unix permission checks happen at open() time only, so chmod'ing the
+	directory or wal.log afterwards has no effect on writes through the
+	already-open handle (verified empirically; this is standard POSIX
+	behaviour, not a test-environment quirk).  Instead, trip append()'s
+	own validation: it rejects (and marks unhealthy) any key longer than
+	8192 bytes -- a real, deterministic failure path with no OS trickery
+	and no risk of leaving files in a bad permission state.
+*/
+char oversized_key[8300];
+memset(oversized_key, 'k', sizeof(oversized_key) - 1);
+oversized_key[sizeof(oversized_key) - 1] = '\0';
+unique_term(letters, 1);
+sprintf(doc, "<DOC>common %s</DOC>", letters);
+CHECK(index->add_document(oversized_key, doc) >= 0);	// engine add succeeds regardless of WAL health
+CHECK(index->wal_healthy() == 0);
+
+CHECK(index->flush() == 0);
+CHECK(index->wal_healthy());
+
+delete index;
+delete [] dir;
+printf("test_wal_unhealthy OK\n");
+}
+
+/*
+	TEST_WAL_REPLAY_MID_AUTOFLUSH()
+	--------------------------------
+	The sharpest edge in the WAL/coordinator integration: if auto-flush
+	fires WHILE open() is replaying the WAL, flush()'s ordinary truncate()
+	would reopen (and so reset) the WAL file out from under the very
+	iteration reading it, silently dropping the untouched tail of the
+	replay.  Force this by setting a tiny flush_threshold so that a WAL
+	with more records than the threshold triggers at least one auto-flush
+	partway through replay; every document must still come back.
+*/
+static void test_wal_replay_mid_autoflush(void)
+{
+char *dir = make_index_dir();
+char key[64], doc[256], letters[16];
+long long i;
+const long long total_docs = 20;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_durable(1) == 0);
+index->set_flush_threshold(0);					// manual flush only while building up WAL churn
+CHECK(index->open(dir) == 0);
+for (i = 0; i < total_docs; i++)
+	{
+	sprintf(key, "midflush-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+CHECK(index->get_document_count() == total_docs);
+delete index;									// crash: nothing flushed, WAL holds all 20 adds
+
+/*
+	Reopen with a low auto-flush threshold: replay's own add_document()
+	calls will legitimately trigger flush() partway through -- exactly the
+	trap this test targets.  All 20 documents must still be recovered.
+*/
+ATIRE_segment_index *recovered = new ATIRE_segment_index();
+CHECK(recovered->set_durable(1) == 0);
+recovered->set_flush_threshold(5);				// forces >=1 auto-flush during the 20-record replay
+CHECK(recovered->open(dir) == 0);
+CHECK(recovered->get_document_count() == total_docs);
+for (i = 0; i < total_docs; i++)
+	{
+	sprintf(key, "midflush-%lld", i);
+	unique_term(letters, i);
+	strcpy(doc, letters);
+	CHECK(recovered->search(doc, 10) == 1);
+	}
+CHECK(recovered->flush() == 0);
+CHECK(recovered->get_document_count() == total_docs);
+delete recovered;
+
+delete [] dir;
+printf("test_wal_replay_mid_autoflush OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -2341,6 +2533,9 @@ test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_wal_durability();
+test_wal_unhealthy();
+test_wal_replay_mid_autoflush();
 printf("PASSED\n");
 return 0;
 }

@@ -20,6 +20,7 @@
 #include "../source/version.h"
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
+#include "../source/wal.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -64,6 +65,13 @@ writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
 writer_vectors_present = 0;
+
+durable = 0;
+wal_fsync_pending = 0;
+wal = NULL;
+wal_replaying = 0;
+wal_suppress_add = 0;
+wal_truncate_pending = 0;
 }
 
 /*
@@ -78,6 +86,7 @@ delete writer_engine;			// non-owning wrapper; leaves the writer's index alone
 delete writer;
 delete writer_tombstones;
 reset_writer_vectors();
+delete wal;
 
 for (which = 0; which < segment_count; which++)
 	{
@@ -213,6 +222,49 @@ pending_vector_dimension = dimension;
 pending_vector_metric = metric;
 vector_config_pending = 1;
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_DURABLE()
+	-----------------------------------
+	Opts into WAL-backed durability: every mutator append()s a record after
+	its engine-level success, and open() replays whatever the log holds
+	before serving the index.  Must be called before open() (like
+	set_vector_config()) -- there is no mechanism to retrofit replay-safe
+	logging onto an index that has already been mutating without one.
+*/
+long ATIRE_segment_index::set_durable(long on)
+{
+if (directory != NULL)
+	return 1;			// already open
+durable = on;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_WAL_FSYNC()
+	--------------------------------------
+	May be called before or after open(): before open() it is remembered
+	(wal_fsync_pending) and applied once the log is created; after open()
+	it is applied immediately if the log already exists.
+*/
+void ATIRE_segment_index::set_wal_fsync(long on)
+{
+wal_fsync_pending = on;
+if (wal != NULL)
+	wal->set_fsync(on);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WAL_HEALTHY()
+	-------------------------------------
+	1 when durability is disabled (nothing to be unhealthy about) or when
+	the WAL's own health flag is set; 0 once an append has failed.
+	truncate() (on flush()'s success path) restores health.
+*/
+long ATIRE_segment_index::wal_healthy(void)
+{
+return wal == NULL ? 1 : wal->healthy();
 }
 
 /*
@@ -611,6 +663,73 @@ if (start_new_writer() != 0)
 */
 refresh_global_statistics();
 
+/*
+	Durable mode: open the WAL (relaxed/non-durable indices never touch
+	wal.log at all -- an existing log from a previous durable session is
+	left exactly as it is, per the design's "relaxed mode ignores an
+	existing WAL" rule: no replay, no deletion).  Placed at the very end
+	of open() because vector_dimension_current is only known for certain
+	once load_vector_config() (above) has run, and every mutation this
+	replay is about to make must land in a fully-opened index (segments,
+	keymap and writer all live).
+*/
+if (durable)
+	{
+	wal = ANT_write_ahead_log::open(this->directory, vector_dimension_current);
+	if (wal == NULL)
+		return 1;
+	if (wal_fsync_pending)
+		wal->set_fsync(1);
+
+	/*
+		Replay through the PUBLIC methods so every ordinary invariant
+		(keymap update, vector buffer, auto-flush) is maintained exactly as
+		it would have been for the original caller.  wal_replaying
+		suppresses the append hooks below (replaying must not re-log what
+		is already durably on record in the very file being read) and also
+		tells flush() to defer any truncate() to below (see
+		wal_truncate_pending's declaration in the header) -- auto-flush
+		may legitimately fire partway through a long replay, and
+		truncating the log while replay_next() still holds a file position
+		into it would end the iteration early and silently drop the
+		untouched tail.
+	*/
+	wal_replaying = 1;
+	wal_truncate_pending = 0;
+	ANT_write_ahead_log::record record;
+	while (wal->replay_next(&record))
+		{
+		/*
+			Individual replay failures are ignored by design: they mirror
+			whatever the original caller already saw (e.g. a zero-term
+			document that add_document() rejected the first time round
+			would be rejected identically here), so the replayed state
+			ends up matching the pre-crash state either way.
+		*/
+		if (record.op == 'A')
+			add_document(record.key, record.document, record.vector);
+		else if (record.op == 'U')
+			update_document(record.key, record.document, record.vector);
+		else if (record.op == 'D')
+			delete_document(record.key);
+		}
+	wal_replaying = 0;
+
+	/*
+		Apply any truncate() that an auto-flush during replay deferred: the
+		replayed-and-flushed content is durable now (it is sitting in a
+		manifested disk segment), so the log recording it is safe to
+		empty.  Best-effort, same as flush()'s own truncate() -- failure
+		leaves records that will harmlessly replay again next time against
+		already-durable state.
+	*/
+	if (wal_truncate_pending)
+		{
+		wal->truncate();
+		wal_truncate_pending = 0;
+		}
+	}
+
 return 0;
 }
 
@@ -693,6 +812,31 @@ writer_documents++;
 writer_engine_stale = 1;
 
 keymap->add(key, writer_generation, docid);
+
+/*
+	WAL append: must happen here -- after the engine has fully committed
+	this document (indexer, vector buffer and keymap all updated) but
+	BEFORE the auto-flush check below.  Getting this backwards is the
+	sharpest trap in this integration: if the append happened after an
+	auto-flush, flush() would truncate() the log for a batch that does
+	NOT yet include this document, and only then would the append land --
+	so a crash after that point would replay this document a second time
+	against state where it is already durable (via the disk segment
+	flush() just wrote), corrupting document counts.  With the append
+	here, a flush() immediately below correctly truncates a log that
+	already includes this record.
+
+	wal_replaying: suppressed during open()'s replay (the record being
+	replayed is, by definition, already in the very file being read; the
+	log must not be extended while it is being consumed).  wal_suppress_add:
+	set by the public update_document() around its inner add_document()
+	call so an upsert logs exactly one 'U', not an 'A' followed by a 'U'.
+	Log the ORIGINAL key/document pointers the caller passed in -- not
+	key_copy/doc_copy above, which the indexer may have mutated in place
+	and which are freed by now regardless.
+*/
+if (wal != NULL && !wal_replaying && !wal_suppress_add)
+	wal->append('A', key, document, vector);
 
 /*
 	Handle must be computed BEFORE any auto-flush below: flush() hands the
@@ -807,9 +951,22 @@ long long ATIRE_segment_index::update_document(const char *key, const char *docu
 long long old_generation, old_docid;
 long had_old = keymap->find(key, &old_generation, &old_docid);
 
+/*
+	wal_suppress_add: the inner add_document() call below goes through
+	add_document_core(), whose WAL append hook would otherwise log an 'A'
+	for what is really an update.  Suppress it here and log the single
+	'U' record ourselves, after add_document() has succeeded, so an
+	upsert produces exactly one WAL record.
+*/
+wal_suppress_add = 1;
 long long handle = add_document(key, document, vector);		// also repoints the keymap at the new copy
+wal_suppress_add = 0;
 if (handle < 0)
 	return -1;
+
+if (wal != NULL && !wal_replaying)
+	wal->append('U', key, document, vector);
+
 if (had_old)
 	tombstone(old_generation, old_docid);
 return handle;
@@ -843,6 +1000,10 @@ if (tombstone(generation, docid) != 0)
 	return 1;
 
 keymap->remove(key);
+
+if (wal != NULL && !wal_replaying)
+	wal->append('D', key, NULL, NULL);
+
 return 0;
 }
 
@@ -980,6 +1141,32 @@ refresh_global_statistics();
 */
 if (auto_maintain)
 	maintain();
+
+/*
+	WAL truncation: everything the log held is now durable (it is sitting
+	in the disk segment just manifested above), so the log can be
+	emptied.  Best-effort -- a failed truncate() leaves records that will
+	harmlessly replay again next time against already-durable state (the
+	comment on truncate()'s declaration in wal.h covers this).
+
+	Deferred while a replay is in progress: open()'s replay loop calls
+	through add_document()/update_document()/delete_document(), whose
+	ordinary auto-flush logic may legitimately fire partway through a
+	long replay.  truncate() reopens the log file and resets its read
+	position to 0 -- doing that while open()'s replay_next() loop still
+	holds a position into the SAME file would end that iteration early
+	(replay_next() would see an empty file and report clean EOF),
+	silently losing every record after this point.  wal_truncate_pending
+	records the deferral; open() truncates once, after the whole replay
+	has been consumed.
+*/
+if (wal != NULL)
+	{
+	if (wal_replaying)
+		wal_truncate_pending = 1;
+	else
+		wal->truncate();
+	}
 
 return 0;
 }
