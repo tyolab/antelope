@@ -19,6 +19,7 @@
 #include "../source/search_engine_accumulator.h"
 #include "../source/version.h"
 #include "../source/index_merge.h"
+#include "../source/vector_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -50,6 +51,17 @@ auto_maintain = 0;					// off by default: Phase 1 behaviour unchanged unless req
 results = NULL;
 results_count = 0;
 results_allocated = 0;
+
+vector_dimension_current = 0;		// vectors disabled until set_vector_config()/an on-disk vector.config says otherwise
+vector_metric = 0;
+pending_vector_dimension = 0;
+pending_vector_metric = 0;
+vector_config_pending = 0;
+
+writer_vector_data = NULL;
+writer_vector_presence = NULL;
+writer_vector_capacity = 0;
+writer_vectors_present = 0;
 }
 
 /*
@@ -63,6 +75,7 @@ long long which;
 delete writer_engine;			// non-owning wrapper; leaves the writer's index alone
 delete writer;
 delete writer_tombstones;
+reset_writer_vectors();
 
 for (which = 0; which < segment_count; which++)
 	{
@@ -148,11 +161,152 @@ writer->init(options);
 writer_documents = 0;
 delete writer_tombstones;
 writer_tombstones = new ANT_index_tombstones(1024);
+reset_writer_vectors();
 
 delete writer_engine;
 writer_engine = NULL;
 writer_engine_stale = 1;
 
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
+	--------------------------------------------
+	Frees the memory-segment vector buffer and zeroes its bookkeeping.  Called
+	from start_new_writer() (a fresh segment starts with a fresh, empty
+	buffer -- docids are local to the segment) and from the destructor.  The
+	vector.config state (dimension/metric) is index-wide, not per-segment, and
+	is untouched here.
+*/
+void ATIRE_segment_index::reset_writer_vectors(void)
+{
+delete [] writer_vector_data;
+delete [] writer_vector_presence;
+writer_vector_data = NULL;
+writer_vector_presence = NULL;
+writer_vector_capacity = 0;
+writer_vectors_present = 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_VECTOR_CONFIG()
+	----------------------------------------
+	Must be called before open().  The configuration is fixed for the life of
+	the index; open() writes it to <dir>/vector.config on first use and
+	verifies it against an existing file on every later use.
+*/
+long ATIRE_segment_index::set_vector_config(long long dimension, long metric)
+{
+if (directory != NULL)
+	return 1;			// already open
+if (dimension < 1 || dimension > 65536)
+	return 1;
+if (metric != VECTOR_METRIC_DOT && metric != VECTOR_METRIC_COSINE && metric != VECTOR_METRIC_L2)
+	return 1;
+pending_vector_dimension = dimension;
+pending_vector_metric = metric;
+vector_config_pending = 1;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_VECTOR_CONFIG()
+	-----------------------------------------
+	Reads <dir>/vector.config (two lines: dimension, metric).  Absent file
+	leaves vectors disabled.  Garbage is treated as absent (defensive parsing
+	per house convention).
+*/
+long ATIRE_segment_index::load_vector_config(void)
+{
+char filename[4096], line[64];
+FILE *fp;
+long long dimension = 0;
+long metric = -1;
+
+snprintf(filename, sizeof(filename), "%s/vector.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fgets(line, sizeof(line), fp) != NULL)
+	dimension = atoll(line);
+if (fgets(line, sizeof(line), fp) != NULL)
+	metric = atol(line);
+fclose(fp);
+if (dimension < 1 || dimension > 65536 || metric < VECTOR_METRIC_DOT || metric > VECTOR_METRIC_L2)
+	return 0;			// corrupt: treat as absent
+vector_dimension_current = dimension;
+vector_metric = metric;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_VECTOR_CONFIG()
+	-----------------------------------------
+*/
+long ATIRE_segment_index::save_vector_config(void)
+{
+char filename[4096], temp_name[4200];
+FILE *fp;
+
+snprintf(filename, sizeof(filename), "%s/vector.config", directory);
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
+	return 1;
+if ((fp = fopen(temp_name, "wb")) == NULL)
+	return 1;
+fprintf(fp, "%lld\n%ld\n", vector_dimension_current, vector_metric);
+fclose(fp);
+if (rename(temp_name, filename) != 0)
+	{
+	remove(temp_name);
+	return 1;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_VECTOR_APPEND()
+	-------------------------------------------
+	Keeps the vector buffer parallel to the writer's docids: called exactly
+	once per successfully indexed document (NULL for lexical-only docs).  The
+	docid is passed explicitly by the caller (add_document_core(), before
+	writer_documents is incremented) rather than derived from writer_documents
+	here, so the ordering of the buffer append relative to that increment is
+	the caller's concern, not this function's.  Cosine-mode normalization
+	happens in the caller (add_document_core()) before this is reached.
+*/
+long ATIRE_segment_index::writer_vector_append(long long docid, const float *vector_or_null)
+{
+if (writer_vector_capacity == 0)
+	{
+	writer_vector_capacity = 1024;
+	writer_vector_data = new float[writer_vector_capacity * vector_dimension_current];
+	writer_vector_presence = new unsigned char[(writer_vector_capacity + 7) / 8];
+	memset(writer_vector_presence, 0, (size_t)((writer_vector_capacity + 7) / 8));
+	}
+if (docid >= writer_vector_capacity)
+	{
+	long long new_capacity = writer_vector_capacity * 2;
+	while (docid >= new_capacity)
+		new_capacity *= 2;
+	float *new_data = new float[new_capacity * vector_dimension_current];
+	unsigned char *new_presence = new unsigned char[(new_capacity + 7) / 8];
+	memset(new_presence, 0, (size_t)((new_capacity + 7) / 8));
+	memcpy(new_data, writer_vector_data, (size_t)(writer_vector_capacity * vector_dimension_current * sizeof(float)));
+	memcpy(new_presence, writer_vector_presence, (size_t)((writer_vector_capacity + 7) / 8));
+	delete [] writer_vector_data;
+	delete [] writer_vector_presence;
+	writer_vector_data = new_data;
+	writer_vector_presence = new_presence;
+	writer_vector_capacity = new_capacity;
+	}
+if (vector_or_null == NULL)
+	memset(writer_vector_data + docid * vector_dimension_current, 0, (size_t)(vector_dimension_current * sizeof(float)));
+else
+	{
+	memcpy(writer_vector_data + docid * vector_dimension_current, vector_or_null, (size_t)(vector_dimension_current * sizeof(float)));
+	writer_vector_presence[docid / 8] |= (unsigned char)(1 << (docid % 8));
+	writer_vectors_present++;
+	}
 return 0;
 }
 
@@ -272,6 +426,28 @@ char marker_name[4096];
 
 this->directory = new char[strlen(directory) + 1];
 strcpy(this->directory, directory);
+
+if (load_vector_config() != 0)
+	return 1;
+if (vector_config_pending)
+	{
+	if (vector_dimension_current != 0)
+		{
+		/*
+			An existing config must agree with the caller's -- silent
+			dimension/metric mixups corrupt results, so fail loudly.
+		*/
+		if (vector_dimension_current != pending_vector_dimension || vector_metric != pending_vector_metric)
+			return 1;
+		}
+	else
+		{
+		vector_dimension_current = pending_vector_dimension;
+		vector_metric = pending_vector_metric;
+		if (save_vector_config() != 0)
+			return 1;
+		}
+	}
 
 manifest = ANT_index_manifest::load(this->directory);
 
@@ -424,14 +600,21 @@ return 0;
 }
 
 /*
-	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT()
-	--------------------------------------
+	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT_CORE()
+	-----------------------------------------
 	The indexer's parser normalises tokens in place, so both the key and the
 	document must be writable heap buffers (string literals fault); we copy
 	both, index, then free the copies (the indexer keeps its own copies of
 	whatever it needs internally, e.g. the doclist).
+
+	Shared body for both add_document() overloads: `vector` is NULL for the
+	lexical-only two-arg path.  The vector-buffer append happens BEFORE the
+	auto-flush check below -- deliberately: the auto-flush may hand the
+	writer a brand new generation/segment (start_new_writer()), and by that
+	point this document's docid must already be recorded in ITS segment's
+	vector buffer, or the flush would serialise the segment without it.
 */
-long long ATIRE_segment_index::add_document(const char *key, const char *document)
+long long ATIRE_segment_index::add_document_core(const char *key, const char *document, const float *vector)
 {
 char *key_copy, *doc_copy;
 long long before, docid;
@@ -481,6 +664,16 @@ if (docid == before)		// zero terms -> indexer rolled docno back; nothing was in
 */
 docid -= 1;
 
+/*
+	Vector buffer append: must happen here, before keymap->add() and well
+	before the auto-flush check below, so this docid's vector (or its
+	explicit absence) is already in the buffer that flush() will serialise
+	for THIS segment.  NULL is a valid, meaningful append -- it records a
+	lexical-only row so the buffer stays parallel to the writer's docids.
+*/
+if (vector_dimension_current != 0)
+	writer_vector_append(docid, vector);
+
 writer_documents++;
 writer_engine_stale = 1;
 
@@ -509,6 +702,47 @@ long long handle = make_handle(writer_generation, docid);
 if (flush_after_documents > 0 && writer_documents >= flush_after_documents)
 	flush();
 
+return handle;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT()
+	--------------------------------------
+	Lexical-only path: no vector row.
+*/
+long long ATIRE_segment_index::add_document(const char *key, const char *document)
+{
+return add_document_core(key, document, NULL);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT()  (vector overload)
+	------------------------------------------------------
+	Cosine normalization and the disabled-index / zero-vector rejections
+	happen here, BEFORE add_document_core() is called, so a rejected vector
+	never touches the indexer, the keymap, or the vector buffer.
+*/
+long long ATIRE_segment_index::add_document(const char *key, const char *document, const float *vector)
+{
+float *normalized = NULL;
+long long handle;
+
+if (vector != NULL && vector_dimension_current == 0)
+	return -1;			// vectors on a non-vector index
+if (vector != NULL && vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, vector, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{
+		delete [] normalized;
+		return -1;		// zero vector is meaningless under cosine
+		}
+	vector = normalized;
+	}
+
+handle = add_document_core(key, document, vector);
+delete [] normalized;
 return handle;
 }
 
@@ -553,17 +787,27 @@ return 1;			// unknown segment: keymap and manifest disagree (should be impossib
 	tombstoned: the update is a no-op, which is the correct failure
 	semantics (preserve the old copy rather than lose the document).
 */
-long long ATIRE_segment_index::update_document(const char *key, const char *document)
+long long ATIRE_segment_index::update_document(const char *key, const char *document, const float *vector)
 {
 long long old_generation, old_docid;
 long had_old = keymap->find(key, &old_generation, &old_docid);
 
-long long handle = add_document(key, document);		// also repoints the keymap at the new copy
+long long handle = add_document(key, document, vector);		// also repoints the keymap at the new copy
 if (handle < 0)
 	return -1;
 if (had_old)
 	tombstone(old_generation, old_docid);
 return handle;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()
+	-----------------------------------------
+	Lexical-only path: one code path with the vector overload above.
+*/
+long long ATIRE_segment_index::update_document(const char *key, const char *document)
+{
+return update_document(key, document, NULL);
 }
 
 /*

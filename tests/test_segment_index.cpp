@@ -15,6 +15,7 @@
 #include "../source/search_engine.h"
 #include "../source/search_engine_btree_leaf.h"
 #include "../source/version.h"
+#include "../source/vector_store.h"
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
 
@@ -1714,6 +1715,70 @@ delete [] dir_oneshot;
 printf("test_compaction_equivalence OK\n");
 }
 
+/*
+	TEST_VECTOR_CONFIG_AND_ADD()
+	-----------------------------
+*/
+static void test_vector_config_and_add(void)
+{
+char *dir = make_index_dir();
+float v[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+
+/*
+	Enable vectors on a fresh index
+*/
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->vector_dimension() == 4);
+
+CHECK(index->add_document("doc-1", "<DOC>aardvark</DOC>", v) >= 0);
+CHECK(index->add_document("doc-2", "<DOC>zebra</DOC>", NULL) >= 0);		// lexical-only doc
+char query[64];
+strcpy(query, "aardvark");
+CHECK(index->search(query, 10) == 1);		// lexical search unchanged
+delete index;
+
+/*
+	Reopen without set_vector_config: config is read from disk
+*/
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->vector_dimension() == 4);
+delete reopened;
+
+/*
+	Mismatched set_vector_config on an existing index fails open
+*/
+ATIRE_segment_index *mismatch = new ATIRE_segment_index();
+CHECK(mismatch->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(mismatch->open(dir) != 0);
+delete mismatch;
+
+/*
+	Vectors on a non-enabled index are rejected; plain index unaffected
+*/
+char *plain_dir = make_index_dir();
+ATIRE_segment_index *plain = new ATIRE_segment_index();
+CHECK(plain->open(plain_dir) == 0);
+CHECK(plain->vector_dimension() == 0);
+CHECK(plain->add_document("doc-1", "<DOC>aardvark</DOC>", v) == -1);
+CHECK(plain->add_document("doc-1", "<DOC>aardvark</DOC>") >= 0);
+delete plain;
+
+/*
+	set_vector_config validation
+*/
+ATIRE_segment_index *bad = new ATIRE_segment_index();
+CHECK(bad->set_vector_config(0, ATIRE_segment_index::VECTOR_METRIC_DOT) != 0);
+CHECK(bad->set_vector_config(4, 99) != 0);
+delete bad;
+
+delete [] dir;
+delete [] plain_dir;
+printf("test_vector_config_and_add OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1738,6 +1803,7 @@ test_compact_subset_leaves_other_segment();
 test_compaction_crash_windows();
 test_maintain_policy();
 test_compaction_equivalence();
+test_vector_config_and_add();
 printf("PASSED\n");
 return 0;
 }

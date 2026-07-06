@@ -65,6 +65,18 @@ private:
 	hit *results;
 	long long results_count, results_allocated;
 
+	long long vector_dimension_current;		// 0 = vectors disabled
+	long vector_metric;
+	long long pending_vector_dimension;		// set_vector_config before open
+	long pending_vector_metric;
+	long vector_config_pending;
+
+	/* memory-segment vector buffer, parallel to the writer's docids */
+	float *writer_vector_data;
+	unsigned char *writer_vector_presence;
+	long long writer_vector_capacity;
+	long long writer_vectors_present;		// how many docs in the buffer HAVE vectors
+
 private:
 	long start_new_writer(void);		// 0 on success, 1 if the manifest cannot be saved
 	void rebuild_writer_engine(void);
@@ -85,14 +97,28 @@ private:
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
 	long rebuild_keymap(void);			// reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 
+	long long add_document_core(const char *key, const char *document, const float *vector);	// shared body; vector may be NULL
+
+	long load_vector_config(void);			// reads <dir>/vector.config; 0 = ok (absent is ok)
+	long save_vector_config(void);			// atomic write; 0 on success
+	long writer_vector_append(long long docid, const float *vector_or_null);
+	void reset_writer_vectors(void);
+
 public:
+	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
+
+	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
+	long long vector_dimension(void) { return vector_dimension_current; }
+
 	ATIRE_segment_index();
 	~ATIRE_segment_index();
 
 	long open(const char *directory);						// 0 on success
 
 	long long add_document(const char *key, const char *document);		// returns handle, -1 on error
+	long long add_document(const char *key, const char *document, const float *vector);		// returns handle, -1 on error (also on vector rejection)
 	long long update_document(const char *key, const char *document);	// upsert; returns new handle
+	long long update_document(const char *key, const char *document, const float *vector);	// upsert; returns new handle
 	long delete_document(const char *key);								// 0 on success, 1 if key unknown
 
 	long flush(void);										// memory segment -> disk segment; 0 on success
