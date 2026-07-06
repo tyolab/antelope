@@ -56,6 +56,7 @@ serialised_docids = (unsigned char *)serialisation_memory->malloc(serialised_doc
 serialised_tfs_size = 1;
 serialised_tfs = (unsigned short *)serialisation_memory->malloc(serialised_tfs_size);
 largest_docno = 0;
+decompress_buffer_capacity = 0;			// no decompress buffers allocated yet (see allocate_decompress_buffer)
 factory = new ANT_compression_factory;
 document_lengths = NULL;
 quantizer = NULL;
@@ -1412,11 +1413,44 @@ delete [] unique_term_vector;
 */
 void ANT_memory_index::allocate_decompress_buffer(void)
 {
-#ifdef IMPACT_HEADER
-	impact_header.postings_chain = 0;
-	impact_header.chain_length = 0;
-	impact_header.the_quantum_count = 0;
+long long capacity;
 
+#ifdef IMPACT_HEADER
+/*
+	These per-serialisation-pass counters are consumed as the postings are
+	re-encoded, so they must be reset on every call regardless of whether the
+	buffers below are reallocated.
+*/
+impact_header.postings_chain = 0;
+impact_header.chain_length = 0;
+impact_header.the_quantum_count = 0;
+#endif
+
+/*
+	Reuse the existing decompress buffers when they already cover the current
+	document count.  largest_docno only grows within a memory_index's lifetime,
+	so once the buffers are sized for it, repeated calls need not reallocate --
+	every NRT rebuild reaches here via open_from_memory_index().  Before this
+	guard each call orphaned a fresh buffer set into the shared serialisation
+	arena (which is the dictionary arena and cannot be reset without destroying
+	the dictionary), so the live segment's memory grew quadratically with the
+	number of add+search cycles until the next flush.
+*/
+if (decompress_buffer_capacity > 0 && largest_docno <= decompress_buffer_capacity)
+	return;
+
+/*
+	Grow geometrically so a stream of single-document adds interleaved with
+	searches amortises to O(final size) arena use (and O(log N) allocations),
+	not O(sum of sizes).  Orphaned older buffers are reclaimed only when the
+	arena is freed (at flush/segment teardown), so doubling bounds the wasted
+	space to at most the final buffer size.
+*/
+capacity = largest_docno;
+if (decompress_buffer_capacity * 2 > capacity)
+	capacity = decompress_buffer_capacity * 2;
+
+#ifdef IMPACT_HEADER
 	impact_value_size = sizeof(*impact_header.impact_value_start) * ANT_impact_header::NUM_OF_QUANTUMS;
 	doc_count_size = sizeof(*impact_header.doc_count_start) * ANT_impact_header::NUM_OF_QUANTUMS;
 	impact_offset_size = sizeof(*impact_header.impact_offset_start) * ANT_impact_header::NUM_OF_QUANTUMS;
@@ -1428,10 +1462,10 @@ void ANT_memory_index::allocate_decompress_buffer(void)
 	compressed_impact_header_size = (long long)1 + ANT_impact_header::INFO_SIZE + impact_header.header_size;
 	compressed_impact_header_buffer = (unsigned char *)serialisation_memory->malloc(compressed_impact_header_size);
 
-	decompressed_postings_list = (ANT_compressable_integer *)serialisation_memory->malloc(sizeof(*decompressed_postings_list) * largest_docno);
+	decompressed_postings_list = (ANT_compressable_integer *)serialisation_memory->malloc(sizeof(*decompressed_postings_list) * capacity);
 
 	// extra NUM_OF_QUANTUMS for compression scheme for each quantum, as they are encoded separately
-	compressed_postings_list_length = ANT_impact_header::NUM_OF_QUANTUMS + (sizeof(*decompressed_postings_list) * largest_docno);
+	compressed_postings_list_length = ANT_impact_header::NUM_OF_QUANTUMS + (sizeof(*decompressed_postings_list) * capacity);
 	compressed_postings_list = (unsigned char *)serialisation_memory->malloc(compressed_postings_list_length);
 
 	// 1 * NUM_OF_QUANTUMS because the TF in each list
@@ -1439,12 +1473,14 @@ void ANT_memory_index::allocate_decompress_buffer(void)
 
 	stats->bytes_for_decompression_recompression += impact_header.header_size * 2 + compressed_postings_list_length * 3 + (1 * ANT_impact_header::NUM_OF_QUANTUMS * sizeof(*decompressed_postings_list)) - ANT_impact_header::NUM_OF_QUANTUMS;
 #else
-	compressed_postings_list_length = 1 + (sizeof(*decompressed_postings_list) * largest_docno);
+	compressed_postings_list_length = 1 + (sizeof(*decompressed_postings_list) * capacity);
 	decompressed_postings_list = (ANT_compressable_integer *)serialisation_memory->malloc(compressed_postings_list_length - 1);
 	compressed_postings_list = (unsigned char *)serialisation_memory->malloc(compressed_postings_list_length);
 	impacted_postings = (ANT_compressable_integer *)serialisation_memory->malloc(compressed_postings_list_length + (512 * sizeof(*decompressed_postings_list)));		// 512 because the TF and the 0 at the end of each of 255 lists
 	stats->bytes_for_decompression_recompression += compressed_postings_list_length * 3 + 512 - 1;
 #endif
+
+decompress_buffer_capacity = capacity;
 }
 
 /*

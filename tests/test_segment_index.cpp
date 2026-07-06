@@ -11,6 +11,7 @@
 #include <math.h>
 #include <sys/stat.h>
 #include "../atire/atire_segment_index.h"
+#include "../source/memory_index.h"
 #include "../source/index_merge.h"
 #include "../source/index_tombstones.h"
 #include "../atire/atire_api.h"
@@ -2541,9 +2542,51 @@ delete [] dir;
 printf("test_wal_fsync_durability OK\n");
 }
 
+/*
+	TEST_DECOMPRESS_BUFFER_REUSE()
+	------------------------------
+	allocate_decompress_buffer() runs on every NRT rebuild (open_from_memory_index).
+	Before the reuse guard, each call orphaned a fresh set of decompress buffers into
+	the writer's shared serialisation arena, growing it without bound (quadratically
+	across adds) until the next flush.  This proves the buffers are reused: repeated
+	calls at a fixed document count grow the arena by zero bytes, and the reused
+	buffers still serve a correct search.
+*/
+static void test_decompress_buffer_reuse(void)
+{
+char *dir = make_index_dir();
+char query[64];
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+
+CHECK(index->add_document("d1", "<DOC>alpha beta gamma</DOC>") >= 0);
+CHECK(index->add_document("d2", "<DOC>beta gamma delta</DOC>") >= 0);
+CHECK(index->add_document("d3", "<DOC>gamma delta epsilon</DOC>") >= 0);
+
+strcpy(query, "gamma");
+CHECK(index->search(query, 10) == 3);		// forces the first rebuild + first buffer allocation
+
+ANT_memory_index *mi = index->writer_memory_index_for_test();
+CHECK(mi != NULL);
+
+long long before = mi->get_serialisation_bytes_used();
+for (int i = 0; i < 200; i++)
+	mi->allocate_decompress_buffer();		// simulate 200 NRT rebuilds at a fixed doc count
+long long after = mi->get_serialisation_bytes_used();
+CHECK(after == before);						// buffers reused: zero arena growth
+
+strcpy(query, "delta");
+CHECK(index->search(query, 10) == 2);		// reused buffers still serve a correct search
+
+delete index;
+delete [] dir;
+printf("test_decompress_buffer_reuse OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
+test_decompress_buffer_reuse();
 test_flush_and_reopen();
 test_multi_segment_growth();
 test_update_and_delete();

@@ -2190,3 +2190,8 @@ ANT_search_engine *ATIRE_segment_index::disk_segment_engine(long long which)
 {
 return segments[which].engine->get_search_engine();
 }
+
+ANT_memory_index *ATIRE_segment_index::writer_memory_index_for_test(void)
+{
+return writer == NULL ? NULL : writer->get_index();
+}

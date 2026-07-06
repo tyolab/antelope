@@ -76,6 +76,7 @@ private:
 	ANT_compressable_integer *decompressed_postings_list, *impacted_postings;
 	unsigned char *compressed_postings_list;
 	long long compressed_postings_list_length;
+	long long decompress_buffer_capacity;			// largest_docno the decompress buffers were last sized for; 0 = not yet allocated (see allocate_decompress_buffer)
 
 	long long static_prune_point;					// this is the maximum number of postings allowed in an impact (or tf) ordered postings list
 	long stop_word_removal_mode;					// remove cf-singletons or df-singletons (etc.)
@@ -205,6 +206,7 @@ public:
 
 	void add_to_document_repository(char *filename, char *compressed_document = NULL, long compressed_length = 0, long length = 0);
 	void allocate_decompress_buffer(void);
+	long long get_serialisation_bytes_used(void) { return serialisation_memory->bytes_used(); }		// test hook: the shared dictionary/serialisation arena's live byte count
 	long serialise(void);
 
 	void add_indexed_document(ANT_memory_index_one *index, long long docno);

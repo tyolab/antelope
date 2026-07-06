@@ -16,6 +16,7 @@ class ANT_index_manifest;
 class ANT_index_keymap;
 class ANT_index_tombstones;
 class ANT_search_engine;
+class ANT_memory_index;
 class ANT_vector_store;
 class ANT_write_ahead_log;
 struct ANT_vector_candidate;
@@ -174,6 +175,7 @@ public:
 	long long disk_segment_count(void) { return segment_count; }
 	long long disk_segment_generation(long long which) { return segments[which].generation; }
 	ANT_search_engine *disk_segment_engine(long long which);
+	ANT_memory_index *writer_memory_index_for_test(void);		// test hook: the live writer segment's memory index (NULL before open); used to observe decompress-buffer arena reuse
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the
