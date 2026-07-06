@@ -106,3 +106,47 @@ test('cosine zero-vector rejected', () => {
 	assert.throws(() => idx.addDocument('z', '<DOC>a b</DOC>', Float32Array.from([0, 0, 0])), /zero/);
 	idx.close();
 });
+
+test('flush persists; maintain compacts; both are Promises', async () => {
+	const dir = freshDir();
+	const idx = new SegmentIndex({ mergeFactor: 2, tombstoneRatio: 0.2 });
+	idx.open(dir);
+	for (let i = 0; i < 8; i++)
+		idx.addDocument(`doc-${i}`, `<DOC>common filler${'x'.repeat(i)}</DOC>`);
+	await idx.flush();
+	for (let i = 0; i < 5; i++)
+		assert.strictEqual(idx.deleteDocument(`doc-${i}`), true);
+	assert.strictEqual(idx.documentCount(), 3);
+	await idx.maintain();				// tombstone ratio 5/8 > 0.2 -> compaction
+	assert.strictEqual(idx.documentCount(), 3);
+	assert.strictEqual(idx.search('common', 100).length, 3);
+	idx.close();
+
+	const reopened = new SegmentIndex();
+	reopened.open(dir);
+	assert.strictEqual(reopened.documentCount(), 3);
+	reopened.close();
+});
+
+test('busy-guard: engine calls during maintenance throw', async () => {
+	const idx = new SegmentIndex();
+	idx.open(freshDir());
+	for (let i = 0; i < 50; i++)
+		idx.addDocument(`doc-${i}`, `<DOC>word${i} common</DOC>`);
+	// The guard is set synchronously inside flush() (state -> MAINTENANCE)
+	// BEFORE the AsyncWorker is queued and flush() returns the pending
+	// promise.  The state is only restored to OPEN from the worker's
+	// OnOK/OnError callbacks, which run on the event loop and therefore
+	// cannot execute until this synchronous test function body yields (at
+	// the first `await` below).  So the assertions between `idx.flush()`
+	// and that first `await` are deterministic regardless of how fast the
+	// underlying flush()/maintain() engine call actually completes.
+	const pending = idx.flush();		// state -> MAINTENANCE until settled
+	assert.throws(() => idx.addDocument('during', '<DOC>x y</DOC>'), /maintenance in progress/);
+	assert.throws(() => idx.search('common', 5), /maintenance in progress/);
+	assert.throws(() => idx.close(), /maintenance in progress/);
+	await assert.rejects(Promise.race([idx.maintain()]), /maintenance in progress/);
+	await pending;
+	assert.strictEqual(idx.search('common', 100).length, 50);	// usable again
+	idx.close();
+});

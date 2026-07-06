@@ -531,10 +531,101 @@ delete [] scratch;
 return hits_to_array(env, engine, count);
 }
 
-/* replaced in Task 4 */
-Napi::Value SegmentIndexWrap::Flush(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
-/* replaced in Task 4 */
-Napi::Value SegmentIndexWrap::Maintain(const Napi::CallbackInfo &info) { Napi::Error::New(info.Env(), "not implemented").ThrowAsJavaScriptException(); return info.Env().Undefined(); }
+/*
+	class MAINTENANCE_WORKER
+	------------------------
+	Runs flush() or maintain() off the event loop.  Holds a reference to the
+	wrapper so GC cannot finalize the engine mid-operation; restores IDLE and
+	settles the Promise on completion.
+*/
+class MaintenanceWorker : public Napi::AsyncWorker
+{
+public:
+	enum Operation { FLUSH, MAINTAIN };
+
+private:
+	SegmentIndexWrap *wrapper;
+	Napi::ObjectReference self;
+	Napi::Promise::Deferred deferred;
+	Operation operation;
+	long result;
+
+public:
+	MaintenanceWorker(Napi::Env env, SegmentIndexWrap *wrapper, Napi::Object js_object, Operation operation)
+		: Napi::AsyncWorker(env), wrapper(wrapper), self(Napi::Persistent(js_object)),
+		  deferred(Napi::Promise::Deferred::New(env)), operation(operation), result(1) {}
+
+	Napi::Promise Promise() { return deferred.Promise(); }
+
+	void Execute()		/* worker thread: NO JS access */
+	{
+	result = operation == FLUSH ? wrapper->engine->flush() : wrapper->engine->maintain();
+	}
+
+	void OnOK()
+	{
+	wrapper->state = SegmentIndexWrap::OPEN;
+	if (result == 0)
+		deferred.Resolve(Env().Undefined());
+	else
+		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : "maintain failed").Value());
+	}
+
+	void OnError(const Napi::Error &error)
+	{
+	wrapper->state = SegmentIndexWrap::OPEN;
+	deferred.Reject(error.Value());
+	}
+};
+
+/*
+	SEGMENTINDEXWRAP::FLUSH()
+	----------------------------
+	Promise-returning methods NEVER throw synchronously: if the index is not
+	OPEN (already CLOSED, still CONSTRUCTED, or MAINTENANCE already in
+	flight), the busy/error condition is reported as a REJECTED promise, not
+	a thrown exception.  Otherwise the state flips to MAINTENANCE
+	synchronously (before this call returns) so that any engine call made
+	before the AsyncWorker settles hits the busy-guard in require_open().
+*/
+Napi::Value SegmentIndexWrap::Flush(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::FLUSH);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
+	SEGMENTINDEXWRAP::MAINTAIN()
+	--------------------------------
+	Identical to Flush() except for the MaintenanceWorker::MAINTAIN
+	operation tag -- see Flush()'s banner comment for the busy-guard and
+	never-throw-synchronously rules, which apply identically here.
+*/
+Napi::Value SegmentIndexWrap::Maintain(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::MAINTAIN);
+worker->Queue();
+return worker->Promise();
+}
 
 /*
 	SEGMENTINDEXWRAP::REGISTER()
