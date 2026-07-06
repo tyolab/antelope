@@ -117,6 +117,8 @@ segment_filename(filename, sizeof(filename), generation, "aspt");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "del");
 remove(filename);
+segment_filename(filename, sizeof(filename), generation, "vec");
+remove(filename);
 }
 
 /*
@@ -1690,6 +1692,155 @@ for (which = 0; which < count; which++)
 	}
 
 delete [] best;
+return results_count;
+}
+
+/*
+	struct ANT_FUSED_CANDIDATE
+	---------------------------
+	Bundles the RRF-scored candidate with its filename so the two travel
+	together through qsort() (a parallel filename array desynchronizes from
+	the candidate array once qsort reorders one but not the other).
+*/
+struct ANT_fused_candidate
+{
+ANT_vector_candidate candidate;
+char *filename;		// owned; NULL only if not yet resolved (never published that way)
+} ;
+
+/*
+	ANT_FUSED_CANDIDATE_COMPARE()
+	-----------------------------
+	qsort comparator for fused candidates: score descending, ties broken by
+	(generation, docid) ascending, mirroring vector_candidate_compare().
+*/
+static int ANT_fused_candidate_compare(const void *a, const void *b)
+{
+const ANT_fused_candidate *one = (const ANT_fused_candidate *)a;
+const ANT_fused_candidate *two = (const ANT_fused_candidate *)b;
+
+if (one->candidate.score > two->candidate.score)
+	return -1;
+if (one->candidate.score < two->candidate.score)
+	return 1;
+if (one->candidate.generation != two->candidate.generation)
+	return one->candidate.generation < two->candidate.generation ? -1 : 1;
+if (one->candidate.docid != two->candidate.docid)
+	return one->candidate.docid < two->candidate.docid ? -1 : 1;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID()
+	------------------------------------
+	Reciprocal Rank Fusion of the lexical top-k and the vector top-k:
+	fused(d) = sum over lists containing d of 1 / (60 + rank_d), ranks
+	1-based.  60 is the standard RRF constant.  Either side may be absent;
+	the result degrades to the other side (still RRF-scored, order preserved).
+
+	The candidate and its filename are carried together in a single
+	ANT_fused_candidate[] array (see struct above, just up) so that qsort()
+	cannot desynchronize them; a parallel filename array would move the
+	ANT_vector_candidate rows without moving the corresponding filename rows.
+*/
+long long ATIRE_segment_index::search_hybrid(char *query_text, const float *query_vector, long long top_k)
+{
+long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
+char filename_buffer[4096];
+
+if (top_k < 1)
+	return 0;
+
+/*
+	Lexical side first: run the existing search and snapshot its hits (the
+	results array is shared, so the snapshot must deep-copy the filenames)
+	into the fused array before it gets overwritten.
+*/
+ANT_fused_candidate *fused = new ANT_fused_candidate[top_k * 2];
+
+if (query_text != NULL && *query_text != '\0')
+	lexical_count = search(query_text, top_k);
+for (which = 0; which < lexical_count; which++)
+	{
+	fused[fused_count].candidate.generation = results[which].generation;
+	fused[fused_count].candidate.docid = results[which].docid;
+	fused[fused_count].candidate.score = 1.0 / (60.0 + (double)(which + 1));
+	fused[fused_count].filename = new char[strlen(results[which].filename) + 1];
+	strcpy(fused[fused_count].filename, results[which].filename);
+	fused_count++;
+	}
+
+/*
+	Vector side: candidates + rank contribution, merged into the fused set
+	by (generation, docid) identity.
+*/
+if (query_vector != NULL && vector_dimension_current != 0)
+	{
+	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
+	vector_count = vector_candidates(query_vector, top_k, best);
+	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
+	for (which = 0; which < vector_count; which++)
+		{
+		double contribution = 1.0 / (60.0 + (double)(which + 1));
+		long found = false;
+		for (other = 0; other < fused_count; other++)
+			if (fused[other].candidate.generation == best[which].generation && fused[other].candidate.docid == best[which].docid)
+				{
+				fused[other].candidate.score += contribution;
+				found = true;
+				break;
+				}
+		if (!found)
+			{
+			fused[fused_count].candidate.generation = best[which].generation;
+			fused[fused_count].candidate.docid = best[which].docid;
+			fused[fused_count].candidate.score = contribution;
+			char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+			fused[fused_count].filename = new char[(filename != NULL ? strlen(filename) : 0) + 1];
+			strcpy(fused[fused_count].filename, filename != NULL ? filename : "");
+			fused_count++;
+			}
+		}
+	delete [] best;
+	}
+
+/*
+	Sort fused by score desc (ties: generation, docid asc) -- candidate and
+	filename move together, so this cannot desynchronize them -- then
+	truncate and publish into the shared results array.  The lexical
+	search() call above already freed the PREVIOUS results at its entry (or,
+	if query_text was NULL/empty, the results array is whatever it held
+	before this call); either way those filenames are snapshotted into
+	fused[] by now, so free them here before repopulating.
+*/
+qsort(fused, (size_t)fused_count, sizeof(*fused), ANT_fused_candidate_compare);
+
+for (which = 0; which < results_count; which++)
+	delete [] results[which].filename;
+results_count = 0;
+
+long long publish = fused_count < top_k ? fused_count : top_k;
+for (which = 0; which < publish; which++)
+	{
+	if (results_count >= results_allocated)
+		{
+		long long bigger_size = results_allocated == 0 ? 256 : results_allocated * 2;
+		hit *bigger = new hit[bigger_size];
+		memcpy(bigger, results, (size_t)(results_count * sizeof(*results)));
+		delete [] results;
+		results = bigger;
+		results_allocated = bigger_size;
+		}
+	results[results_count].generation = fused[which].candidate.generation;
+	results[results_count].docid = fused[which].candidate.docid;
+	results[results_count].score = fused[which].candidate.score;
+	results[results_count].filename = fused[which].filename;		/* ownership transfer */
+	fused[which].filename = NULL;
+	results_count++;
+	}
+for (which = publish; which < fused_count; which++)
+	delete [] fused[which].filename;
+delete [] fused;
 return results_count;
 }
 

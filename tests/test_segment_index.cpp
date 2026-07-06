@@ -1943,6 +1943,61 @@ delete [] dir_oneshot;
 printf("test_vector_compaction_equivalence OK\n");
 }
 
+/*
+	TEST_HYBRID_SEARCH_RRF()
+	------------------------
+	A document matching BOTH the keyword and the vector side must outrank
+	documents matching only one side; each side alone degrades cleanly.
+*/
+static void test_hybrid_search_rrf(void)
+{
+char *dir = make_index_dir();
+float both[4] = {1.0f, 0.0f, 0.0f, 0.0f};		// matches query vector strongly
+float vec_only[4] = {0.99f, 0.1f, 0.0f, 0.0f};	// nearly as strong
+float weak[4] = {0.0f, 0.0f, 1.0f, 0.0f};		// orthogonal
+float query_vec[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+char query_text[64];
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->add_document("doc-both", "<DOC>quokka wombat</DOC>", both) >= 0);
+CHECK(index->add_document("doc-text", "<DOC>quokka numbat</DOC>", weak) >= 0);
+CHECK(index->add_document("doc-vec", "<DOC>unrelated words</DOC>", vec_only) >= 0);
+
+/*
+	Keyword "quokka" matches doc-both + doc-text; vector matches doc-both +
+	doc-vec strongly.  doc-both is in both lists -> highest fused score.
+*/
+strcpy(query_text, "quokka");
+long long hits = index->search_hybrid(query_text, query_vec, 3);
+CHECK(hits == 3);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-both") == 0);
+CHECK(index->get_hit(0)->score > index->get_hit(1)->score);
+
+/*
+	Degradation both ways
+*/
+strcpy(query_text, "quokka");
+CHECK(index->search_hybrid(query_text, NULL, 3) == 2);			// pure lexical
+CHECK(index->search_hybrid(NULL, query_vec, 3) == 3);			// pure vector
+strcpy(query_text, "quokka");
+
+/*
+	Tombstones respected through fusion
+*/
+CHECK(index->delete_document("doc-both") == 0);
+strcpy(query_text, "quokka");
+hits = index->search_hybrid(query_text, query_vec, 3);
+CHECK(hits == 2);
+for (long long which = 0; which < hits; which++)
+	CHECK(strcmp(index->get_hit(which)->filename, "doc-both") != 0);
+
+delete index;
+delete [] dir;
+printf("test_hybrid_search_rrf OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1970,6 +2025,7 @@ test_compaction_equivalence();
 test_vector_config_and_add();
 test_vector_search_nrt_and_persistence();
 test_vector_compaction_equivalence();
+test_hybrid_search_rrf();
 printf("PASSED\n");
 return 0;
 }

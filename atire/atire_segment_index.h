@@ -158,6 +158,7 @@ public:
 
 	long long search(char *query, long long top_k);			// returns number of hits stored
 	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
+	long long search_hybrid(char *query_text, const float *query_vector, long long top_k);	// RRF fusion of lexical + vector top-k; either side may be absent
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents
