@@ -30,6 +30,8 @@ private:
 	long option_durable;				// 0/1 -- set_durable() before open()
 	long option_wal_fsync;				// 0/1 -- set_wal_fsync() before open()
 	long option_global_stats;			// 0/1, default 1 -- set_global_stats(0) before open() when false
+	long option_approx_bits;			// -1 = not requested; 0 = engine default (256); >0 = explicit
+	long option_approx_multiplier;		// 0 = unset; >0 = set_candidate_multiplier()
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -61,9 +63,12 @@ public:
 	Napi::Value Search(const Napi::CallbackInfo &info);
 	Napi::Value SearchVector(const Napi::CallbackInfo &info);
 	Napi::Value SearchHybrid(const Napi::CallbackInfo &info);
+	Napi::Value SearchVectorApprox(const Napi::CallbackInfo &info);
+	Napi::Value SearchHybridApprox(const Napi::CallbackInfo &info);
 	/* async maintenance (AsyncWorker-backed, Promise-returning) */
 	Napi::Value Flush(const Napi::CallbackInfo &info);
 	Napi::Value Maintain(const Napi::CallbackInfo &info);
+	Napi::Value BuildSignatures(const Napi::CallbackInfo &info);
 };
 
 /*
@@ -87,6 +92,8 @@ option_auto_maintain = 0;
 option_durable = 0;
 option_wal_fsync = 0;
 option_global_stats = 1;
+option_approx_bits = -1;			// not requested
+option_approx_multiplier = 0;		// unset
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -134,6 +141,13 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 		option_wal_fsync = options.Get("walFsync").ToBoolean().Value() ? 1 : 0;
 	if (options.Has("globalStats"))
 		option_global_stats = options.Get("globalStats").ToBoolean().Value() ? 1 : 0;
+	if (options.Has("approximate") && options.Get("approximate").IsObject())
+		{
+		Napi::Object approx = options.Get("approximate").As<Napi::Object>();
+		option_approx_bits = approx.Has("bits") ? (long)approx.Get("bits").As<Napi::Number>().Int64Value() : 0;	// 0 => engine default 256
+		if (approx.Has("multiplier"))
+			option_approx_multiplier = (long)approx.Get("multiplier").As<Napi::Number>().Int64Value();
+		}
 	}
 }
 
@@ -204,6 +218,14 @@ if (engine->open(directory.c_str()) != 0)
 	engine = NULL;
 	Napi::Error::New(env, "open failed: bad directory, corrupt index, or vector config mismatch").ThrowAsJavaScriptException();
 	return env.Undefined();
+	}
+/* approximate requires the index OPEN with a dimension; apply it here, and it
+   is NON-FATAL if it fails (approximate simply stays off -- do NOT throw). */
+if (option_approx_bits >= 0)
+	{
+	engine->set_approximate_config(option_approx_bits);		// non-fatal: approximate stays off on failure
+	if (option_approx_multiplier > 0)
+		engine->set_candidate_multiplier(option_approx_multiplier);
 	}
 state = OPEN;
 return env.Undefined();
@@ -581,6 +603,95 @@ return hits_to_array(env, engine, count);
 }
 
 /*
+	SEGMENTINDEXWRAP::SEARCHVECTORAPPROX()
+	------------------------------------------
+	Approximate (Hamming-prefiltered) counterpart of SearchVector() -- mirrors
+	it verbatim, changing ONLY the engine call to search_vector_approx(), which
+	transparently falls back to exact results for L2/unconfigured indexes.
+*/
+Napi::Value SegmentIndexWrap::SearchVectorApprox(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[1].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchVectorApprox(vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+long long top_k = info[1].As<Napi::Number>().Int64Value();
+long long dimension = engine->vector_dimension();
+if (dimension < 1)
+	return Napi::Array::New(env, 0);		// vectors not enabled: empty result, not a throw
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+float *scratch = NULL;
+const float *vector = extract_vector(env, info[0], dimension, &scratch);
+if (vector == NULL)
+	return env.Undefined();		// TypeError already thrown
+
+long long count = engine->search_vector_approx(vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
+	SEGMENTINDEXWRAP::SEARCHHYBRIDAPPROX()
+	------------------------------------------
+	Approximate counterpart of SearchHybrid() -- mirrors it verbatim, changing
+	ONLY the engine call to search_hybrid_approx(), whose vector leg is
+	signature-prefiltered (transparent exact fallback for L2/unconfigured).
+*/
+Napi::Value SegmentIndexWrap::SearchHybridApprox(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 3 || !info[2].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchHybridApprox(text, vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+bool has_text = !info[0].IsUndefined() && !info[0].IsNull();
+bool has_vector = !info[1].IsUndefined() && !info[1].IsNull();
+long long top_k = info[2].As<Napi::Number>().Int64Value();
+
+if (has_text && !info[0].IsString())
+	{
+	Napi::TypeError::New(env, "searchHybridApprox: text must be a string, null, or undefined").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+if (!has_text && !has_vector)
+	return Napi::Array::New(env, 0);
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+std::string mutable_query;
+char *text_ptr = NULL;
+if (has_text)
+	{
+	mutable_query = info[0].As<Napi::String>().Utf8Value();	// engine may modify the buffer
+	text_ptr = &mutable_query[0];
+	}
+
+float *scratch = NULL;
+const float *vector = NULL;
+if (has_vector)
+	{
+	vector = extract_vector(env, info[1], engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		return env.Undefined();		// TypeError already thrown
+	}
+
+long long count = engine->search_hybrid_approx(text_ptr, vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
 	class MAINTENANCE_WORKER
 	------------------------
 	Runs flush() or maintain() off the event loop.  Holds a reference to the
@@ -590,7 +701,7 @@ return hits_to_array(env, engine, count);
 class MaintenanceWorker : public Napi::AsyncWorker
 {
 public:
-	enum Operation { FLUSH, MAINTAIN };
+	enum Operation { FLUSH, MAINTAIN, BUILD };
 
 private:
 	SegmentIndexWrap *wrapper;
@@ -608,7 +719,12 @@ public:
 
 	void Execute()		/* worker thread: NO JS access */
 	{
-	result = operation == FLUSH ? wrapper->engine->flush() : wrapper->engine->maintain();
+	switch (operation)
+		{
+		case FLUSH:		result = wrapper->engine->flush(); break;
+		case MAINTAIN:	result = wrapper->engine->maintain(); break;
+		case BUILD:		result = wrapper->engine->build_signatures(); break;
+		}
 	}
 
 	void OnOK()
@@ -617,7 +733,7 @@ public:
 	if (result == 0)
 		deferred.Resolve(Env().Undefined());
 	else
-		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : "maintain failed").Value());
+		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : "maintain failed").Value());
 	}
 
 	void OnError(const Napi::Error &error)
@@ -677,6 +793,30 @@ return worker->Promise();
 }
 
 /*
+	SEGMENTINDEXWRAP::BUILDSIGNATURES()
+	--------------------------------------
+	Idempotent backfill of the approximate signature (.vsig) sidecars for
+	existing segments.  Identical to Maintain() except for the
+	MaintenanceWorker::BUILD operation tag -- see Flush()'s banner comment for
+	the busy-guard and never-throw-synchronously rules, which apply here too.
+*/
+Napi::Value SegmentIndexWrap::BuildSignatures(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::BUILD);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
 	SEGMENTINDEXWRAP::REGISTER()
 	-------------------------------
 	Defines the complete method shape of the class in one place; the
@@ -695,8 +835,11 @@ Napi::Function ctor = DefineClass(env, "SegmentIndex", {
 	InstanceMethod("search", &SegmentIndexWrap::Search),
 	InstanceMethod("searchVector", &SegmentIndexWrap::SearchVector),
 	InstanceMethod("searchHybrid", &SegmentIndexWrap::SearchHybrid),
+	InstanceMethod("searchVectorApprox", &SegmentIndexWrap::SearchVectorApprox),
+	InstanceMethod("searchHybridApprox", &SegmentIndexWrap::SearchHybridApprox),
 	InstanceMethod("flush", &SegmentIndexWrap::Flush),
 	InstanceMethod("maintain", &SegmentIndexWrap::Maintain),
+	InstanceMethod("buildSignatures", &SegmentIndexWrap::BuildSignatures),
 });
 exports.Set("SegmentIndex", ctor);
 return exports;

@@ -177,5 +177,43 @@ index.close();
 | `durable` | `boolean` | `false` | opt-in write-ahead log: writes since the last `flush()` survive a crash (process exit without `flush()`), replayed automatically on the next `open()` |
 | `walFsync` | `boolean` | `false` | `fsync()` every WAL append (not just `fflush()`) for stronger durability at the cost of write latency; only meaningful with `durable: true` |
 | `globalStats` | `boolean` | `true` | cross-segment N / mean-document-length ranking statistics; set `false` to rank each segment on its own local statistics instead |
+| `approximate` | `{ bits?, multiplier? }` | disabled | opt-in approximate vector search (see below) |
+
+### Approximate vector search (V2)
+
+For large vector indexes you can trade a little recall for a lot of speed with
+SimHash signatures: each document vector is reduced to a compact bit-signature,
+and a search prefilters candidates by cheap Hamming distance before an exact
+rerank of the survivors.
+
+Enable it with the `approximate` constructor option:
+
+```js
+const index = new SegmentIndex({
+  dimension: 768,
+  metric: 'cosine',
+  approximate: { bits: 256, multiplier: 4 }
+});
+index.open('/var/data/myindex');
+```
+
+- `bits` — signature width in bits (default `256`). Persisted on first enable and immutable afterwards.
+- `multiplier` — recall/speed knob (default `4`): the prefilter keeps `multiplier * k` candidates to rerank. Higher = better recall, slower.
+
+`await index.buildSignatures()` backfills signature sidecars for any existing
+segments that don't have them yet (idempotent) — call it once after enabling
+approximate on an index that already has data.
+
+Then query with the approximate variants, which mirror `searchVector` /
+`searchHybrid` exactly:
+
+```js
+const hits  = index.searchVectorApprox(queryEmbedding, 10);
+const mixed = index.searchHybridApprox('quokka food', queryEmbedding, 10);
+```
+
+Approximate search only applies to the `cosine` and `dot` metrics; an `l2`
+index (or one where `approximate` was never configured) transparently falls
+back to exact results, so these methods are always safe to call.
 
 TypeScript definitions are provided in `segment_index.d.ts`.
