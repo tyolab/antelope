@@ -21,7 +21,7 @@
 - Modify: `atire/atire_segment_index.cpp` (two trigger sites)
 - Test: `tests/test_index_keymap.cpp` (append), `tests/test_segment_index.cpp` (append `test_keymap_log_compaction`)
 
-- [ ] **Step 1: failing unit test — append to `tests/test_index_keymap.cpp` before the final PASSED:**
+- [x] **Step 1: failing unit test — append to `tests/test_index_keymap.cpp` before the final PASSED:**
 
 ```cpp
 /*
@@ -67,9 +67,9 @@ delete cl3;
 ```
 Add `#include <sys/stat.h>` at the top if absent.
 
-- [ ] **Step 2:** `make test_index_keymap` → FAIL (methods undeclared).
+- [x] **Step 2:** `make test_index_keymap` → FAIL (methods undeclared).
 
-- [ ] **Step 3: implement.** `source/index_keymap.h` additions (public):
+- [x] **Step 3: implement.** `source/index_keymap.h` additions (public):
 
 ```cpp
 	double log_dead_ratio(void);				// dead replayed records / total, from the last load()
@@ -147,11 +147,11 @@ return 0;
 ```
 `load()`: initialize `replayed_records = 0` in the ctor and increment it once per successfully applied A/D record during replay (place the increments beside the existing record handling; malformed/skipped records do NOT count).
 
-- [ ] **Step 4: coordinator triggers** (`atire/atire_segment_index.cpp`):
+- [x] **Step 4: coordinator triggers** (`atire/atire_segment_index.cpp`):
   1. In `open()`, immediately after the keymap-consistency block completes (after `retain_generations`/rebuild, before `start_new_writer()`): `if (keymap->log_dead_ratio() > 0.5) keymap->compact_log();` (best-effort — ignore the return; comment says why).
   2. In `maintain()`, track whether any `compact()` succeeded in the loop; before returning 0 after at least one success: same best-effort call, with a comment that compaction floods the log with remap records.
 
-- [ ] **Step 5: e2e test — append `test_keymap_log_compaction` to `tests/test_segment_index.cpp`, call from `main()`:**
+- [x] **Step 5: e2e test — append `test_keymap_log_compaction` to `tests/test_segment_index.cpp`, call from `main()`:**
 
 ```cpp
 /*
@@ -208,9 +208,9 @@ printf("test_keymap_log_compaction OK\n");
 ```
 (Add `#include <sys/stat.h>` to the test file if absent. If "round19" trips the letter/digit tokeniser split — digits! — replace the round marker with letter suffixes: `sprintf(doc, "<DOC>common r%c%c %s</DOC>", 'a'+round/26, 'a'+round%26, letters)` and query `"r"+letters-for-19` — the implementer adapts using the established unique_term approach. The assertion intent: the LATEST round's term matches all 5 docs.)
 
-- [ ] **Step 6:** `make test_index_keymap && ./bin/test_index_keymap` PASSED; `make test_segment_index && ./bin/test_segment_index` → 28 functions OK + PASSED; other five C++ binaries PASSED; `make internal` exit 0.
+- [x] **Step 6:** `make test_index_keymap && ./bin/test_index_keymap` PASSED; `make test_segment_index && ./bin/test_segment_index` → 28 functions OK + PASSED; other five C++ binaries PASSED; `make internal` exit 0.
 
-- [ ] **Step 7: Commit** — `feat: keymap log compaction with dead-ratio triggers`
+- [x] **Step 7: Commit** — `feat: keymap log compaction with dead-ratio triggers`
 
 ---
 
@@ -549,7 +549,7 @@ if (directory != NULL)
 ```
 Refresh points: end of `open()` (before returning 0), end of successful `flush()`, success path of `compact()` (after step 6), and in `rebuild_writer_engine()` immediately after the new wrapper is constructed. CHECK `get_document_lengths`'s exact signature/behavior on a segment engine (it returns the lengths array and writes the mean — confirm it's loaded for INDEX_IN_MEMORY segments; it is for the memory wrapper per the June work). NOTE the writer-without-wrapper case in the code above: on a fresh open with an empty writer this is moot (0 docs); after adds but before any search, disk engines get a slightly stale mean until the next refresh/search — acceptable, documented in the comment.
 
-- [x] **Step 6:** run the test → green. Then the FULL suite: this change alters default lexical scoring in multi-segment indexes — run `./bin/test_segment_index` (now 29 functions) and scrutinize any failure in EXISTING tests: membership/count assertions must be unaffected (scores aren't asserted lexically anywhere except vector/hybrid paths, which don't use lexical document statistics — if something fails, investigate rather than force; report findings). All seven binaries + `make internal`.
+- [x] **Step 6:** run the test → green. Then the FULL suite: this change alters default lexical scoring in multi-segment indexes — run `./bin/test_segment_index` (now 29 functions) and scrutinize any failure in EXISTING tests: membership/count assertions must be unaffected (scores aren't asserted lexically anywhere except vector/hybrid paths, which don't use lexical document statistics — if something fails, investigate rather than force; report findings). All eight binaries + `make internal`.
 
 - [x] **Step 7: Commit** — `feat: global document statistics across segments with ranking-function rebuild`
 
@@ -561,7 +561,7 @@ Refresh points: end of `open()` (before returning 0), end of successful `flush()
 - Create: `source/wal.h` / `source/wal.cpp`
 - Test: `tests/test_wal.cpp`
 
-- [ ] **Step 1: failing unit test:**
+- [x] **Step 1: failing unit test:**
 
 ```cpp
 /*
@@ -653,9 +653,9 @@ return 0;
 }
 ```
 
-- [ ] **Step 2:** `make test_wal` → compile FAILURE.
+- [x] **Step 2:** `make test_wal` → compile FAILURE.
 
-- [ ] **Step 3: implement.** `source/wal.h`:
+- [x] **Step 3: implement.** `source/wal.h`:
 
 ```cpp
 /*
@@ -728,9 +728,9 @@ public:
 - `size()`: fseek END + ftell (restore nothing — appends seek END anyway; replay seeks its own position).
 - dtor: fclose, free the three buffers.
 
-- [ ] **Step 4:** `make test_wal && ./bin/test_wal` → PASSED. Other suites unaffected; `make internal` exit 0.
+- [x] **Step 4:** `make test_wal && ./bin/test_wal` → PASSED. Other suites unaffected; `make internal` exit 0.
 
-- [ ] **Step 5: Commit** — `feat: write-ahead log with torn-tail-tolerant replay`
+- [x] **Step 5: Commit** — `feat: write-ahead log with torn-tail-tolerant replay`
 
 ---
 
@@ -740,7 +740,7 @@ public:
 - Modify: `atire/atire_segment_index.h` / `atire/atire_segment_index.cpp`
 - Test: `tests/test_segment_index.cpp` (append `test_wal_durability`)
 
-- [ ] **Step 1: failing test — append, call from `main()`:**
+- [x] **Step 1: failing test — append, call from `main()`:**
 
 ```cpp
 /*
@@ -828,9 +828,9 @@ printf("test_wal_durability OK\n");
 }
 ```
 
-- [ ] **Step 2:** run → FAIL (`set_durable` undeclared).
+- [x] **Step 2:** run → FAIL (`set_durable` undeclared).
 
-- [ ] **Step 3: implement.** Header: public `long set_durable(long on);` (before open, like set_vector_config — return 1 if already open), `void set_wal_fsync(long on);`, `long wal_healthy(void);` (1 when healthy OR disabled); private `long durable; long wal_fsync_pending; ANT_write_ahead_log *wal; long wal_replaying;` (ctor zeros; dtor deletes wal). Include `../source/wal.h`.
+- [x] **Step 3: implement.** Header: public `long set_durable(long on);` (before open, like set_vector_config — return 1 if already open), `void set_wal_fsync(long on);`, `long wal_healthy(void);` (1 when healthy OR disabled); private `long durable; long wal_fsync_pending; ANT_write_ahead_log *wal; long wal_replaying;` (ctor zeros; dtor deletes wal). Include `../source/wal.h`.
 
 Integration points in `atire/atire_segment_index.cpp`:
 1. `open()`: after everything else succeeds (global-stats refresh included), when `durable`: `wal = ANT_write_ahead_log::open(directory, vector_dimension_current);` (NULL → return 1); apply pending fsync flag; then replay: `wal_replaying = 1;` loop `replay_next` — 'A' → `add_document(record.key, record.document, record.vector)` (three-arg handles NULL vector), 'U' → `update_document(...)`, 'D' → `delete_document(record.key)`; ignore individual failures (comment: mirrors what the original caller saw); `wal_replaying = 0;`. IMPORTANT: replay uses the PUBLIC methods, whose append hooks must check `wal_replaying` (below).
@@ -842,11 +842,11 @@ Integration points in `atire/atire_segment_index.cpp`:
 3. `flush()`: on the success path (right before `return 0`), when `wal != NULL`: `wal->truncate()` (best-effort; failure leaves records that will harmlessly replay against already-durable state — comment this).
 4. `wal_healthy()`: `return wal == NULL ? 1 : wal->healthy();`
 
-- [ ] **Step 4: unhealthy-WAL test — append inside the same test function or as `test_wal_unhealthy` (implementer's choice, keep assertions):** open durable, add one doc, `chmod(dir, 0500)`, add another doc — CHECK it still returns a valid handle AND `wal_healthy() == 0`; `chmod(dir, 0700)` back; `flush()` succeeds; `wal_healthy() == 1` again.
+- [x] **Step 4: unhealthy-WAL test — append inside the same test function or as `test_wal_unhealthy` (implementer's choice, keep assertions):** open durable, add one doc, `chmod(dir, 0500)`, add another doc — CHECK it still returns a valid handle AND `wal_healthy() == 0`; `chmod(dir, 0700)` back; `flush()` succeeds; `wal_healthy() == 1` again.
 
-- [ ] **Step 5:** full suite: `test_segment_index` → 30 functions (or 31 with the separate unhealthy test) OK + PASSED; all seven binaries; `make internal` exit 0.
+- [x] **Step 5:** full suite: `test_segment_index` → 30 functions (or 31 with the separate unhealthy test) OK + PASSED; all eight binaries; `make internal` exit 0.
 
-- [ ] **Step 6: Commit** — `feat: WAL durable mode with replay, truncation, and health recovery`
+- [x] **Step 6: Commit** — `feat: WAL durable mode with replay, truncation, and health recovery`
 
 ---
 
@@ -857,7 +857,7 @@ Integration points in `atire/atire_segment_index.cpp`:
 - Modify: `nodejs/segment_index.d.ts`, `nodejs/README.md`
 - Test: `nodejs/test/segment_index.test.js` (append)
 
-- [ ] **Step 1: failing JS test — append:**
+- [x] **Step 1: failing JS test — append:**
 
 ```js
 test('durable mode recovers unflushed writes across sessions', async () => {
@@ -885,11 +885,11 @@ test('globalStats option round-trips', () => {
 });
 ```
 
-- [ ] **Step 2: implement.** In the wrapper constructor's options parsing: `durable` (bool → store; applied via `engine->set_durable(1)` in `Open()` BEFORE `engine->open`), `walFsync` (bool → `engine->set_wal_fsync(1)` after construction, before open is fine), `globalStats` (bool, default true → when false call `engine->set_global_stats(0)` before open). Update `segment_index.d.ts` (`durable?: boolean; walFsync?: boolean; globalStats?: boolean;`) and the README options table/paragraph.
+- [x] **Step 2: implement.** In the wrapper constructor's options parsing: `durable` (bool → store; applied via `engine->set_durable(1)` in `Open()` BEFORE `engine->open`), `walFsync` (bool → `engine->set_wal_fsync(1)` after construction, before open is fine), `globalStats` (bool, default true → when false call `engine->set_global_stats(0)` before open). Update `segment_index.d.ts` (`durable?: boolean; walFsync?: boolean; globalStats?: boolean;`) and the README options table/paragraph.
 
-- [ ] **Step 3: full sweep, paste outputs:** `make engine_lib && cd nodejs && npm run build:segment && npm run test:segment` → 11/11 (twice); all seven C++ binaries PASSED (`test_segment_index` at its new count, run twice); `make internal` exit 0; `git status --short` clean after commit.
+- [x] **Step 3: full sweep, paste outputs:** `make engine_lib && cd nodejs && npm run build:segment && npm run test:segment` → 11/11 (twice); all eight C++ binaries PASSED (`test_segment_index` at its new count, run twice); `make internal` exit 0; `git status --short` clean after commit.
 
-- [ ] **Step 4: Commit** — `feat: durable/walFsync/globalStats options in the Node binding`
+- [x] **Step 4: Commit** — `feat: durable/walFsync/globalStats options in the Node binding`
 
 ---
 

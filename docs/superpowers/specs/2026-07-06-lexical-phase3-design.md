@@ -142,7 +142,7 @@ README updated. No other binding surface changes.
 - **Keymap compaction:** heavy update churn → `log_dead_ratio()` high → after reopen (or
   post-maintain trigger) the log file shrinks measurably and a fresh reload reproduces
   the identical mapping; failure injection (read-only dir) leaves the old log usable.
-- **Regression:** all seven C++ suites + the 9 JS binding tests; the binding rider gets
+- **Regression:** all eight C++ suites + the 11 JS binding tests; the binding rider gets
   a durable-reopen JS test.
 
 ## 6. Out of scope
