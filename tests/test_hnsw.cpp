@@ -138,12 +138,63 @@ delete store; delete [] data; unlink(path);
 printf("test_degenerate_M OK\n");
 }
 
+static void test_save_load_roundtrip(void)
+{
+long long dim = 16, n = 200, k = 8, i, d;
+char vpath[64]; strcpy(vpath, "/tmp/ant_hnsw_v_XXXXXX"); { int fd=mkstemp(vpath); if(fd>=0) close(fd); }
+char gpath[64]; strcpy(gpath, "/tmp/ant_hnsw_g_XXXXXX"); { int fd=mkstemp(gpath); if(fd>=0) close(fd); unlink(gpath); }
+float *data = new float[n * dim]; srand(5);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 100 - 50);
+ANT_vector_store *store = make_store(vpath, dim, n, data);
+ANT_hnsw g; CHECK(g.build(store, 16, 200, ANT_vector_store::METRIC_L2) == 0);
+CHECK(g.save(gpath) == 0);
+ANT_hnsw *loaded = ANT_hnsw::load(gpath, 16, 200, n);
+CHECK(loaded->node_count() == n);
+CHECK(!loaded->empty());
+ANT_index_tombstones stones(n);
+float q[16]; for (d = 0; d < dim; d++) q[d] = (float)(rand() % 100 - 50);
+long long h1[8], h2[8]; double s1[8], s2[8];
+long long c1 = g.search(q, ANT_vector_store::METRIC_L2, 64, k, store, &stones, h1, s1);
+long long c2 = loaded->search(q, ANT_vector_store::METRIC_L2, 64, k, store, &stones, h2, s2);
+CHECK(c1 == c2);
+for (i = 0; i < c1; i++) { CHECK(h1[i] == h2[i]); }		/* loaded graph searches identically */
+delete loaded; delete store; delete [] data; unlink(vpath); unlink(gpath);
+printf("test_save_load_roundtrip OK\n");
+}
+
+static void test_load_degrade(void)
+{
+/* missing file -> empty graph */
+ANT_hnsw *missing = ANT_hnsw::load("/tmp/does_not_exist_hnsw", 16, 200, 10);
+CHECK(missing->node_count() == 0 && missing->empty());
+CHECK(missing->search(NULL, ANT_vector_store::METRIC_L2, 8, 4, NULL, NULL, NULL, NULL) == 0);
+delete missing;
+/* config mismatch -> empty graph */
+long long dim = 8, n = 20, i;
+char vpath[64]; strcpy(vpath, "/tmp/ant_hnsw_v2_XXXXXX"); { int fd=mkstemp(vpath); if(fd>=0) close(fd); }
+char gpath[64]; strcpy(gpath, "/tmp/ant_hnsw_g2_XXXXXX"); { int fd=mkstemp(gpath); if(fd>=0) close(fd); unlink(gpath); }
+float *data = new float[n * dim]; for (i = 0; i < n*dim; i++) data[i] = (float)(i % 5);
+ANT_vector_store *store = make_store(vpath, dim, n, data);
+ANT_hnsw g; CHECK(g.build(store, 8, 64, ANT_vector_store::METRIC_L2) == 0);
+CHECK(g.save(gpath) == 0);
+ANT_hnsw *wrong_M = ANT_hnsw::load(gpath, 16, 64, n);		/* M mismatch */
+CHECK(wrong_M->node_count() == 0 && wrong_M->empty());
+delete wrong_M;
+ANT_hnsw *wrong_n = ANT_hnsw::load(gpath, 8, 64, n + 1);		/* doc count mismatch */
+CHECK(wrong_n->node_count() == 0 && wrong_n->empty());
+delete wrong_n;
+delete store; delete [] data; unlink(vpath); unlink(gpath);
+printf("test_load_degrade OK\n");
+}
+
 int main(void)
 {
 test_recall_and_determinism();
 test_ef_monotonic();
 test_tombstone_filter();
 test_degenerate_M();
+test_save_load_roundtrip();
+test_load_degrade();
 printf("PASSED\n");
 return 0;
 }

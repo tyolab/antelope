@@ -50,8 +50,11 @@ public:
 		ANT_vector_store *vectors, ANT_index_tombstones *tombstones,
 		long long *out_docids, double *out_scores);
 
-	/* Task 2 will add: save()/load()/adopt of the CSR arrays. */
-	friend class ANT_hnsw_serialiser;		// Task 2 hook; harmless now
+	/* Persist the CSR to a seg_G.hnsw sidecar; 0 on success. */
+	long save(const char *filename);
+	/* Forgiving factory: read a sidecar back, degrading to an empty graph on ANY
+	   corruption or config mismatch.  Caller owns the returned pointer (delete). */
+	static ANT_hnsw *load(const char *filename, long long expected_M, long long expected_ef_construction, long long expected_documents);
 } ;
 
 #endif /* HNSW_H_ */

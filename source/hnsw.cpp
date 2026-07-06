@@ -2,6 +2,7 @@
 	HNSW.CPP
 */
 #include <math.h>
+#include <stdio.h>
 #include <string.h>
 #include <algorithm>
 #include <vector>
@@ -274,4 +275,90 @@ for (size_t i = 0; i < found.size() && out < top_k; i++)
 	out++;
 	}
 return out;
+}
+
+/*
+	SAVE / LOAD -- persist the CSR topology to a seg_G.hnsw sidecar.  On-disk:
+	header (magic u64, version u32, M i64, ef_construction i64, documents i64,
+	entry_point i64, max_level i64) == 52 bytes, then levels[documents] (i32),
+	offsets[documents+1] (i64), neighbours[offsets[documents]] (i32).
+*/
+#define ANT_HNSW_VERSION 1u
+
+static unsigned long long ant_hnsw_magic(void)
+{
+unsigned long long m; const char *s = "ANTHNSW1"; memcpy(&m, s, 8); return m;		/* endian-correct */
+}
+
+long ANT_hnsw::save(const char *filename)
+{
+char temp[4200]; FILE *fp;
+unsigned long long magic = ant_hnsw_magic();
+unsigned int version = ANT_HNSW_VERSION;
+long long neighbour_count = offsets != NULL ? offsets[documents] : 0;
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp)) return 1;
+if ((fp = fopen(temp, "wb")) == NULL) return 1;
+if (fwrite(&magic,sizeof(magic),1,fp)!=1 || fwrite(&version,sizeof(version),1,fp)!=1
+	|| fwrite(&M,sizeof(M),1,fp)!=1 || fwrite(&ef_construction,sizeof(ef_construction),1,fp)!=1
+	|| fwrite(&documents,sizeof(documents),1,fp)!=1 || fwrite(&entry_point,sizeof(entry_point),1,fp)!=1
+	|| fwrite(&max_level,sizeof(max_level),1,fp)!=1
+	|| fwrite(levels,sizeof(int),(size_t)documents,fp)!=(size_t)documents
+	|| fwrite(offsets,sizeof(long long),(size_t)(documents+1),fp)!=(size_t)(documents+1)
+	|| fwrite(neighbours,sizeof(int),(size_t)neighbour_count,fp)!=(size_t)neighbour_count)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0) { remove(temp); return 1; }
+return 0;
+}
+
+ANT_hnsw *ANT_hnsw::load(const char *filename, long long expected_M, long long expected_ef_construction, long long expected_documents)
+{
+ANT_hnsw *g = new ANT_hnsw();		/* empty by default (degraded) */
+FILE *fp; unsigned long long magic; unsigned int version;
+long long m, efc, docs, ep, maxl, i;
+if ((fp = fopen(filename, "rb")) == NULL) return g;
+
+/* Phase 1: fixed header + range checks (no big allocation yet) */
+if (fread(&magic,sizeof(magic),1,fp)!=1 || magic != ant_hnsw_magic()
+	|| fread(&version,sizeof(version),1,fp)!=1 || version != ANT_HNSW_VERSION
+	|| fread(&m,sizeof(m),1,fp)!=1 || fread(&efc,sizeof(efc),1,fp)!=1
+	|| fread(&docs,sizeof(docs),1,fp)!=1 || fread(&ep,sizeof(ep),1,fp)!=1
+	|| fread(&maxl,sizeof(maxl),1,fp)!=1
+	|| m != expected_M || efc != expected_ef_construction || docs != expected_documents
+	|| docs < 0 || docs > (1LL<<40) || ep < -1 || ep >= docs || maxl < -1 || maxl > 4096)
+	{ fclose(fp); return g; }
+
+/* read levels[] and offsets[] (bounded by docs, already range-checked) */
+int *lv = new int[docs > 0 ? docs : 1];
+long long *off = new long long[docs + 1];
+if (fread(lv,sizeof(int),(size_t)docs,fp)!=(size_t)docs
+	|| fread(off,sizeof(long long),(size_t)(docs+1),fp)!=(size_t)(docs+1))
+	{ delete [] lv; delete [] off; fclose(fp); return g; }
+
+/* Phase 2: validate offsets monotonic + exact file size before the big alloc */
+long long ncount = off[docs];
+long good = (off[0] == 0 && ncount >= 0 && ncount <= (docs + 1) * (2*16 + 1) * 64);	/* loose sane cap */
+for (i = 0; good && i < docs; i++)
+	{
+	if (off[i+1] < off[i]) good = 0;
+	if (lv[i] < -1 || lv[i] > maxl) good = 0;
+	}
+long long header = 52, expected_size = header + 4*docs + 8*(docs+1) + 4*ncount;
+if (good)
+	{
+	long long cur = ftell(fp), end;
+	if (fseek(fp, 0, SEEK_END) != 0 || (end = ftell(fp)) != expected_size) good = 0;
+	else fseek(fp, cur, SEEK_SET);
+	}
+if (!good) { delete [] lv; delete [] off; fclose(fp); return g; }
+
+int *nb = new int[ncount > 0 ? ncount : 1];
+if (fread(nb,sizeof(int),(size_t)ncount,fp)!=(size_t)ncount)
+	{ delete [] lv; delete [] off; delete [] nb; fclose(fp); return g; }
+fclose(fp);
+
+g->documents = docs; g->M = m; g->M0 = 2*m; g->ef_construction = efc;
+g->entry_point = ep; g->max_level = maxl;
+g->levels = lv; g->offsets = off; g->neighbours = nb;
+return g;
 }
