@@ -459,19 +459,19 @@ $(TESTS_EXES) : $(SOURCES_OBJECTS) $(TESTS_OBJECTS)
 
 
 $(SNAPPY_DIR)/libsnappy.a:
-	@(cd ./$(SNAPPY_DIR); $(MAKE) -f GNUmakefile.static USE_GCC_VERBOSE=$(USE_GCC_VERBOSE); cd $(BASE_DIR);)
+	@(cd ./$(SNAPPY_DIR); $(MAKE) -f GNUmakefile.static USE_GCC_VERBOSE=$(USE_GCC_VERBOSE) CFLAGS=-fPIC CXXFLAGS=-fPIC; cd $(BASE_DIR);)
 
 $(ZLIB_DIR)/libz.a:
-	@(cd ./$(ZLIB_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE); cd $(BASE_DIR);)
+	@(cd ./$(ZLIB_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE) CFLAGS=-fPIC; cd $(BASE_DIR);)
 
 $(BZIP_DIR)/libbz2.a:
-	@(cd ./$(BZIP_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE="$(USE_GCC_VERBOSE)"; cd $(BASE_DIR);)
+	@(cd ./$(BZIP_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE="$(USE_GCC_VERBOSE)" CFLAGS=-fPIC; cd $(BASE_DIR);)
 
 $(LZO_DIR)/liblzo2.a:
-	@(cd ./$(LZO_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE); cd $(BASE_DIR);)
+	@(cd ./$(LZO_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE) CFLAGS=-fPIC; cd $(BASE_DIR);)
 
 $(SNOWBALL_DIR)/libstemmer.a:
-	@(cd ./$(SNOWBALL_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE); cd $(BASE_DIR);)
+	@(cd ./$(SNOWBALL_DIR); $(MAKE) -f GNUmakefile USE_GCC_VERBOSE=$(USE_GCC_VERBOSE) CFLAGS="-fPIC -D_FILE_OFFSET_BITS=64"; cd $(BASE_DIR);)
 
 .PHONY : clean
 clean :
