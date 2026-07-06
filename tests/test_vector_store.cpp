@@ -127,6 +127,46 @@ corrupt->scan(query, ANT_vector_store::METRIC_DOT, no_deletes, 7, best, &best_co
 CHECK(best_count == 0);
 
 /*
+	Truncation bomb: a header claiming 2^39 documents with nothing behind it
+	must NOT drive an absurd allocation -- the size check rejects the file
+	and load degrades to empty.  expected_documents matches the lie so the
+	header validation alone would pass; the file-size check is the defence.
+*/
+char bomb_name[1024];
+sprintf(bomb_name, "%s/bomb.vec", dir);
+fp = fopen(bomb_name, "wb");
+unsigned long long bomb_magic = 0x3130434556544E41ULL;		// "ANTVEC01"
+long long bomb_dimension = 128, bomb_documents = 1LL << 39;
+CHECK(fwrite(&bomb_magic, sizeof(bomb_magic), 1, fp) == 1);
+CHECK(fwrite(&bomb_dimension, sizeof(bomb_dimension), 1, fp) == 1);
+CHECK(fwrite(&bomb_documents, sizeof(bomb_documents), 1, fp) == 1);
+fclose(fp);
+ANT_vector_store *bomb = ANT_vector_store::load(bomb_name, 128, 1LL << 39);
+CHECK(bomb != NULL);
+CHECK(!bomb->has(0));
+best_count = 0;
+bomb->scan(query, ANT_vector_store::METRIC_DOT, no_deletes, 7, best, &best_count, 3);
+CHECK(best_count == 0);
+
+/*
+	create() twice on one writer: second create resets state, no stale data
+*/
+char twice_name[1024];
+sprintf(twice_name, "%s/twice.vec", dir);
+ANT_vector_store_writer *reused = new ANT_vector_store_writer();
+CHECK(reused->create(filename, 3) == 0);
+CHECK(reused->append(v0) == 0);
+CHECK(reused->create(twice_name, 3) == 0);		// reset: earlier append discarded
+CHECK(reused->append(v1) == 0);
+CHECK(reused->finish() == 0);
+delete reused;
+ANT_vector_store *twice = ANT_vector_store::load(twice_name, 3, 1);
+CHECK(twice != NULL);
+CHECK(twice->document_count() == 1);
+CHECK(twice->has(0));
+CHECK(twice->get(0)[1] == 1.0f);
+
+/*
 	Dimension mismatch and missing file also degrade to empty
 */
 ANT_vector_store *wrong_dim = ANT_vector_store::load(filename, 5, 4);
@@ -138,6 +178,8 @@ CHECK(none != NULL && !none->has(0));
 
 delete store;
 delete corrupt;
+delete bomb;
+delete twice;
 delete wrong_dim;
 delete none;
 delete no_deletes;

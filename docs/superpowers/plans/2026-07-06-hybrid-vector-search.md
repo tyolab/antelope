@@ -360,7 +360,7 @@ ANT_vector_store *ANT_vector_store::load(const char *filename, long long expecte
 {
 FILE *fp;
 unsigned long long magic;
-long long stored_dimension, stored_documents, presence_bytes;
+long long stored_dimension, stored_documents, presence_bytes, file_size, expected_size;
 ANT_vector_store *result = new ANT_vector_store();
 
 if ((fp = fopen(filename, "rb")) == NULL)
@@ -379,6 +379,20 @@ if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != ANT_VECTOR_STORE_MAGIC
 	}
 
 presence_bytes = (stored_documents + 7) / 8;
+
+/*
+	The header's counts drive the allocations below, so a corrupt file lying
+	about them could trigger an absurd new[] and abort the process.  Verify
+	the actual file size matches exactly what the writer would have produced
+	before trusting the header.
+*/
+expected_size = 24 + presence_bytes + stored_documents * stored_dimension * (long long)sizeof(float);
+if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || fseek(fp, 24, SEEK_SET) != 0)
+	{
+	fclose(fp);
+	return result;
+	}
+
 unsigned char *presence_buffer = new unsigned char[presence_bytes > 0 ? presence_bytes : 1];
 float *vector_buffer = new float[stored_documents * stored_dimension > 0 ? stored_documents * stored_dimension : 1];
 if (fread(presence_buffer, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes
@@ -489,6 +503,7 @@ delete [] vectors;
 /*
 	ANT_VECTOR_STORE_WRITER::CREATE()
 	---------------------------------
+	Resets any prior state, so a writer may be reused across create() calls.
 */
 long ANT_vector_store_writer::create(const char *name, long long width)
 {
@@ -496,9 +511,11 @@ if (width < 1 || width > 65536)
 	return 1;
 if (snprintf(filename, sizeof(filename), "%s", name) >= (int)sizeof(filename))
 	return 1;
+delete [] presence;
+delete [] vectors;
 dimension = width;
 documents = 0;
-capacity = 1024;
+capacity = dimension > 4096 ? 64 : 1024;		// keep the up-front buffer modest for very wide vectors
 presence = new unsigned char[(capacity + 7) / 8];
 memset(presence, 0, (size_t)((capacity + 7) / 8));
 vectors = new float[capacity * dimension];
