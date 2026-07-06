@@ -1998,6 +1998,78 @@ delete [] dir;
 printf("test_hybrid_search_rrf OK\n");
 }
 
+/*
+	TEST_VECTOR_METRICS_AND_COMPAT()
+	--------------------------------
+*/
+static void test_vector_metrics_and_compat(void)
+{
+char *dir_cos = make_index_dir();
+char *dir_l2 = make_index_dir();
+float query[4] = {2.0f, 0.0f, 0.0f, 0.0f};		// deliberately unnormalized
+
+/*
+	Cosine: unnormalized inputs rank identically to their normalized forms;
+	zero vector rejected
+*/
+ATIRE_segment_index *cos_index = new ATIRE_segment_index();
+CHECK(cos_index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(cos_index->open(dir_cos) == 0);
+float big[4] = {10.0f, 0.0f, 0.0f, 0.0f};		// same direction as query, huge magnitude
+float small_off[4] = {0.1f, 0.1f, 0.0f, 0.0f};	// 45 degrees off
+CHECK(cos_index->add_document("doc-aligned", "<DOC>alpha</DOC>", big) >= 0);
+CHECK(cos_index->add_document("doc-off", "<DOC>beta</DOC>", small_off) >= 0);
+float zero[4] = {0.0f, 0.0f, 0.0f, 0.0f};
+CHECK(cos_index->add_document("doc-zero", "<DOC>gamma</DOC>", zero) == -1);
+CHECK(cos_index->search_vector(query, 2) == 2);
+CHECK(strcmp(cos_index->get_hit(0)->filename, "doc-aligned") == 0);
+CHECK(fabs(cos_index->get_hit(0)->score - 1.0) < 1e-5);		// cosine of aligned unit vectors
+CHECK(fabs(cos_index->get_hit(1)->score - 0.7071) < 1e-3);	// cos 45deg
+delete cos_index;
+
+/*
+	L2: nearest by euclidean distance wins; scores are negative squared distances
+*/
+ATIRE_segment_index *l2_index = new ATIRE_segment_index();
+CHECK(l2_index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(l2_index->open(dir_l2) == 0);
+float near[4] = {2.1f, 0.0f, 0.0f, 0.0f};
+float far_[4] = {5.0f, 5.0f, 0.0f, 0.0f};
+CHECK(l2_index->add_document("doc-near", "<DOC>alpha</DOC>", near) >= 0);
+CHECK(l2_index->add_document("doc-far", "<DOC>beta</DOC>", far_) >= 0);
+CHECK(l2_index->search_vector(query, 2) == 2);
+CHECK(strcmp(l2_index->get_hit(0)->filename, "doc-near") == 0);
+CHECK(fabs(l2_index->get_hit(0)->score - (-0.01)) < 1e-5);
+CHECK(l2_index->get_hit(1)->score < l2_index->get_hit(0)->score);
+delete l2_index;
+
+/*
+	Backward compatibility: a pre-vector index (no vector.config) opens,
+	searches lexically, and vector calls are safe no-ops
+*/
+char *plain_dir = make_index_dir();
+ATIRE_segment_index *plain = new ATIRE_segment_index();
+CHECK(plain->open(plain_dir) == 0);
+CHECK(plain->add_document("doc-1", "<DOC>aardvark</DOC>") >= 0);
+CHECK(plain->flush() == 0);
+delete plain;
+ATIRE_segment_index *plain_reopened = new ATIRE_segment_index();
+CHECK(plain_reopened->open(plain_dir) == 0);
+CHECK(plain_reopened->vector_dimension() == 0);
+char query_text[64];
+strcpy(query_text, "aardvark");
+CHECK(plain_reopened->search(query_text, 10) == 1);
+CHECK(plain_reopened->search_vector(query, 10) == 0);
+strcpy(query_text, "aardvark");
+CHECK(plain_reopened->search_hybrid(query_text, query, 10) == 1);	// degrades to lexical
+delete plain_reopened;
+
+delete [] dir_cos;
+delete [] dir_l2;
+delete [] plain_dir;
+printf("test_vector_metrics_and_compat OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -2026,6 +2098,7 @@ test_vector_config_and_add();
 test_vector_search_nrt_and_persistence();
 test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
+test_vector_metrics_and_compat();
 printf("PASSED\n");
 return 0;
 }
