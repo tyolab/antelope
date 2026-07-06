@@ -26,6 +26,7 @@ class ANT_vector_store;
 class ANT_write_ahead_log;
 class ANT_signature;
 class ANT_signature_store;
+class ANT_hnsw;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -91,6 +92,10 @@ private:
 	long long candidate_multiplier;			// rerank pool = top_k * this (default 4)
 	ANT_signature *query_signer;			// index-wide projection, built at open when configured (NULL otherwise)
 
+	long long hnsw_M_current;				// 0 = HNSW not configured
+	long long hnsw_ef_construction_current;
+	long long hnsw_ef_search;				// query knob; default 64
+
 	/* memory-segment vector buffer, parallel to the writer's docids */
 	float *writer_vector_data;
 	unsigned char *writer_vector_presence;
@@ -149,6 +154,9 @@ private:
 	long load_signature_config(void);
 	long save_signature_config(void);
 	void rebuild_query_signer(void);
+	long load_hnsw_config(void);
+	long save_hnsw_config(void);
+	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best);	// Task 7
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	void reset_writer_vectors(void);
 
@@ -169,6 +177,13 @@ public:
 	void set_candidate_multiplier(long long n);			// clamps to >= 1
 	long approximate_configured(void) { return signature_bits_current != 0; }
 	long build_signatures(void);						// idempotent backfill: .vsig for every disk segment with vectors but no valid signature sidecar; 0 on success (1 if approximate unconfigured)
+
+	long set_hnsw_config(long long M, long long ef_construction);	// M<2 => 16, ef_construction<=0 => 200; persists hnsw.config on first enable; 0 on success
+	void set_ef_search(long long ef);								// clamps >= 1; default 64
+	long hnsw_configured(void) { return hnsw_M_current != 0; }
+	long build_hnsw(void);											// Task 5
+	long long search_vector_hnsw(const float *query, long long top_k);						// Task 7
+	long long search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k);	// Task 8
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

@@ -2093,6 +2093,23 @@ delete [] dir;
 printf("test_approx_config_persists OK\n");
 }
 
+static void test_hnsw_config_persists(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *a = new ATIRE_segment_index();
+CHECK(a->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->set_hnsw_config(0, 0) == 0);			/* 0,0 => defaults M=16, ef_construction=200 */
+CHECK(a->hnsw_configured() == 1);
+delete a;
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+CHECK(b->hnsw_configured() == 1);				/* config reloads */
+delete b;
+delete [] dir;
+printf("test_hnsw_config_persists OK\n");
+}
+
 static void test_flush_writes_signatures(void)
 {
 char *dir = make_index_dir();
@@ -2881,6 +2898,7 @@ test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_approx_config_persists();
+test_hnsw_config_persists();
 test_flush_writes_signatures();
 test_build_signatures_backfill();
 test_segment_signatures_loaded();

@@ -30,6 +30,7 @@
 #include "../source/wal.h"
 #include "../source/signature.h"
 #include "../source/signature_store.h"
+#include "../source/hnsw.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -74,6 +75,10 @@ signature_bits_current = 0;
 signature_seed = 0;
 candidate_multiplier = 4;
 query_signer = NULL;
+
+hnsw_M_current = 0;
+hnsw_ef_construction_current = 0;
+hnsw_ef_search = 64;
 
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
@@ -323,6 +328,7 @@ if (load_vector_config() != 0)
 	return 1;
 load_signature_config();
 rebuild_query_signer();
+load_hnsw_config();
 if (vector_config_pending)
 	{
 	if (vector_dimension_current != 0)

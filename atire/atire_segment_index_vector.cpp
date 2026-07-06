@@ -220,6 +220,113 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::LOAD_HNSW_CONFIG()
+	----------------------------------------
+	Reads <dir>/hnsw.config (magic/version/M/ef_construction).  Absent => HNSW
+	stays unconfigured.  Garbage => treated as absent (defensive parse, mirrors
+	load_signature_config).
+*/
+long ATIRE_segment_index::load_hnsw_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long M, efc;
+const char *tag = "ANTHNSW1";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/hnsw.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&M, sizeof(M), 1, fp) != 1 || fread(&efc, sizeof(efc), 1, fp) != 1
+	|| M < 1 || M > 4096 || efc < 1 || efc > 100000)
+	{ fclose(fp); return 0; }
+fclose(fp);
+hnsw_M_current = M;
+hnsw_ef_construction_current = efc;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_HNSW_CONFIG()
+	------------------------------------------
+	Atomic write (temp + rename) of the index-wide HNSW config.
+*/
+long ATIRE_segment_index::save_hnsw_config(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long M = hnsw_M_current, efc = hnsw_ef_construction_current;
+const char *tag = "ANTHNSW1";
+
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/hnsw.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&M, sizeof(M), 1, fp) != 1 || fwrite(&efc, sizeof(efc), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_HNSW_CONFIG()
+	-----------------------------------------
+	Enable the HNSW graph index.  Requires the index open with vectors
+	enabled.  First enable picks M (default 16) + ef_construction (default
+	200) and persists them; the config is immutable thereafter (a second
+	call is a no-op success).
+
+	M < 2 is clamped to 16 (NOT just M <= 0): ANT_hnsw::build() internally
+	clamps M < 2 => 16 (M == 1 makes mL = 1/ln(1) = inf, which crashes the
+	build).  If this setter persisted M=1 to hnsw.config while build() will
+	actually use M=16, ANT_hnsw::load(..., expected_M=1, ...) would mismatch
+	the graph's real stored M=16 and silently degrade every segment to an
+	empty result.  Clamping identically here keeps the persisted config in
+	lockstep with what build() will actually construct.
+*/
+long ATIRE_segment_index::set_hnsw_config(long long M, long long ef_construction)
+{
+if (directory == NULL)
+	return 1;					// must be open (needs directory + dimension)
+if (vector_dimension_current == 0)
+	return 1;					// HNSW requires vectors enabled
+if (hnsw_M_current != 0)
+	return 0;					// already configured; immutable
+if (M < 2)
+	M = 16;						// matches ANT_hnsw::build()'s M>=2 clamp; keeps config == built graph
+if (ef_construction <= 0)
+	ef_construction = 200;
+if (M > 4096 || ef_construction > 100000)
+	return 1;
+hnsw_M_current = M;
+hnsw_ef_construction_current = ef_construction;
+if (save_hnsw_config() != 0)
+	{ hnsw_M_current = 0; hnsw_ef_construction_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_EF_SEARCH()
+	----------------------------------------
+	Query-time knob; clamps to >= 1.  May be called before or after open().
+*/
+void ATIRE_segment_index::set_ef_search(long long ef)
+{
+hnsw_ef_search = ef < 1 ? 1 : ef;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::SET_CANDIDATE_MULTIPLIER()
 	-----------------------------------------------
 */
