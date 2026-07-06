@@ -2131,6 +2131,22 @@ delete [] dir;
 printf("test_flush_writes_signatures OK\n");
 }
 
+static void test_flush_builds_hnsw(void)
+{
+char *dir = make_index_dir(); char hnsw[4096]; float v[8] = {1,0,0,0,0,0,0,0};
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+CHECK(idx->add_document("d1", "<DOC>alpha</DOC>", v) >= 0);
+CHECK(idx->flush() == 0);
+long long g = idx->disk_segment_generation(0);
+snprintf(hnsw, sizeof(hnsw), "%s/seg_%06lld.hnsw", dir, g);
+FILE *fp = fopen(hnsw, "rb"); CHECK(fp != NULL); fclose(fp);
+delete idx; delete [] dir;
+printf("test_flush_builds_hnsw OK\n");
+}
+
 static void test_build_signatures_backfill(void)
 {
 char *dir = make_index_dir();
@@ -2900,6 +2916,7 @@ test_vector_metrics_and_compat();
 test_approx_config_persists();
 test_hnsw_config_persists();
 test_flush_writes_signatures();
+test_flush_builds_hnsw();
 test_build_signatures_backfill();
 test_segment_signatures_loaded();
 test_approx_recall();

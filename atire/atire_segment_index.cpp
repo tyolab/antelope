@@ -965,6 +965,26 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 			sig_writer.abandon();
 		delete [] sig;
 		}
+
+	/*
+		V3: build the HNSW graph sidecar alongside .vec.  Non-fatal to the
+		flush -- a failure leaves the segment graph-less (exact-scanned) until
+		build_hnsw()/compaction.
+	*/
+	if (hnsw_M_current != 0)
+		{
+		char hnsw_name[4096], vec_reload[4096];
+		segment_filename(hnsw_name, sizeof(hnsw_name), flushed_vector_generation, "hnsw");
+		segment_filename(vec_reload, sizeof(vec_reload), flushed_vector_generation, "vec");
+		ANT_vector_store *v = ANT_vector_store::load(vec_reload, vector_dimension_current, flushed_document_count);
+		if (v->document_count() == flushed_document_count && flushed_document_count > 0)
+			{
+			ANT_hnsw graph;
+			if (graph.build(v, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
+				graph.save(hnsw_name);
+			}
+		delete v;
+		}
 	}
 
 segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");
