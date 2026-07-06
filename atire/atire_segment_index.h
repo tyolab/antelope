@@ -16,6 +16,8 @@ class ANT_index_manifest;
 class ANT_index_keymap;
 class ANT_index_tombstones;
 class ANT_search_engine;
+class ANT_vector_store;
+struct ANT_vector_candidate;
 
 class ATIRE_segment_index
 {
@@ -36,6 +38,7 @@ public:
 	long long generation;
 	ATIRE_API *engine;
 	ANT_index_tombstones *tombstones;
+	ANT_vector_store *vectors;		// NULL when vectors are disabled for this index
 	} ;
 
 private:
@@ -104,6 +107,9 @@ private:
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	void reset_writer_vectors(void);
 
+	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
+	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
+
 public:
 	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
 
@@ -151,6 +157,7 @@ public:
 	void set_flush_threshold(long long documents) { flush_after_documents = documents; }
 
 	long long search(char *query, long long top_k);			// returns number of hits stored
+	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents

@@ -81,6 +81,7 @@ for (which = 0; which < segment_count; which++)
 	{
 	delete segments[which].engine;
 	delete segments[which].tombstones;
+	delete segments[which].vectors;
 	}
 delete [] segments;
 
@@ -873,6 +874,40 @@ writer_engine_stale = 1;
 if (writer->finish() == 0)		// docno <= 0 (shouldn't happen: writer_documents > 0 above) or serialise() failed
 	return 1;
 
+/*
+	Persist the memory segment's vectors alongside its postings (only when
+	vectors are enabled and at least one document in this segment actually
+	has one).  Must run here, while writer_vector_data/writer_vector_presence
+	are still alive -- the teardown below zeroes writer_documents, and
+	start_new_writer() (further down) calls reset_writer_vectors(), which
+	frees the buffer outright.  Locals are captured up front so this block
+	does not depend on writer_generation/writer_documents surviving past this
+	point.  Same crash contract as every other segment file: written fully
+	before the manifest references the generation; failure here degrades per
+	flush()'s existing pre-manifest contract.
+*/
+if (vector_dimension_current != 0 && writer_vectors_present > 0)
+	{
+	char vec_filename[1024];
+	long long flushed_document_count = writer_documents;
+	long long flushed_vector_generation = writer_generation;
+	ANT_vector_store_writer vec_writer;
+	long vec_failed;
+	long long docid;
+
+	segment_filename(vec_filename, sizeof(vec_filename), flushed_vector_generation, "vec");
+	vec_failed = vec_writer.create(vec_filename, vector_dimension_current) != 0;
+	for (docid = 0; !vec_failed && docid < flushed_document_count; docid++)
+		{
+		const float *row = (writer_vector_presence[docid / 8] & (1 << (docid % 8))) ? writer_vector_data + docid * vector_dimension_current : NULL;
+		vec_failed = vec_writer.append(row) != 0;
+		}
+	if (!vec_failed)
+		vec_failed = vec_writer.finish() != 0;
+	if (vec_failed)
+		return 1;		// pre-manifest failure: degraded per flush()'s existing contract
+	}
+
 segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");
 if (writer_tombstones->count() > 0)
 	if (writer_tombstones->save(del_filename) != 0)
@@ -1091,6 +1126,7 @@ for (input = 0; input < input_count; input++)
 			{
 			delete segments[which].engine;
 			delete segments[which].tombstones;
+			delete segments[which].vectors;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
 				segments[shuffle] = segments[shuffle + 1];
 			segment_count--;
@@ -1232,13 +1268,14 @@ return 0;						// safety cap: good enough, next maintain() continues
 */
 long ATIRE_segment_index::append_segment(long long generation)
 {
-char index_filename[1024], doclist_filename[1024], del_filename[1024];
+char index_filename[1024], doclist_filename[1024], del_filename[1024], vec_filename[1024];
 ATIRE_API *engine;
 long long which;
 
 segment_filename(index_filename, sizeof(index_filename), generation, "aspt");
 segment_filename(doclist_filename, sizeof(doclist_filename), generation, "doclist");
 segment_filename(del_filename, sizeof(del_filename), generation, "del");
+segment_filename(vec_filename, sizeof(vec_filename), generation, "vec");
 
 engine = new ATIRE_API();
 
@@ -1272,6 +1309,7 @@ if (segment_count >= segments_allocated)
 segments[segment_count].generation = generation;
 segments[segment_count].engine = engine;
 segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
+segments[segment_count].vectors = vector_dimension_current != 0 ? ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()) : NULL;
 segment_count++;
 
 return 0;
@@ -1447,6 +1485,161 @@ if (results_count > top_k)
 	results_count = top_k;
 	}
 
+return results_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES()
+	----------------------------------------
+	Exact top-k across every disk segment's vector store and the live memory
+	buffer.  In cosine mode the query is normalized here (stored vectors were
+	normalized at insertion -- see add_document_core()).  Returns the
+	candidate count; caller supplies best[top_k].
+*/
+long long ATIRE_segment_index::vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best)
+{
+long long which, docid, best_count = 0;
+float *normalized = NULL;
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+if (vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, query, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{
+		delete [] normalized;
+		return 0;
+		}
+	query = normalized;
+	}
+
+for (which = 0; which < segment_count; which++)
+	if (segments[which].vectors != NULL)
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+
+for (docid = 0; docid < writer_documents; docid++)
+	{
+	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
+		continue;
+	if (writer_tombstones->is_deleted(docid))
+		continue;
+	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
+	}
+
+delete [] normalized;
+return best_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::RESOLVE_HIT_FILENAME()
+	--------------------------------------------
+	Memory-segment docs resolve through the writer's doc list; disk segments
+	through the engine's filename-index accessor (see search_one_segment()'s
+	banner for why the two engines need different accessors).
+*/
+char *ATIRE_segment_index::resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size)
+{
+long long which, count;
+char **doc_list;
+
+if (writer != NULL && generation == writer_generation)
+	{
+	doc_list = writer->get_doc_list(&count);
+	if (docid < count && doc_list[docid] != NULL)
+		{
+		snprintf(buffer, (size_t)buffer_size, "%s", doc_list[docid]);
+		return buffer;
+		}
+	return NULL;
+	}
+for (which = 0; which < segment_count; which++)
+	if (segments[which].generation == generation)
+		return segments[which].engine->get_document_filename(buffer, docid);
+return NULL;
+}
+
+/*
+	VECTOR_CANDIDATE_COMPARE()
+	---------------------------
+	qsort comparator for vector-search results: score descending, ties broken
+	by (generation, docid) ascending for deterministic output.
+*/
+static int vector_candidate_compare(const void *a, const void *b)
+{
+const ANT_vector_candidate *one = (const ANT_vector_candidate *)a;
+const ANT_vector_candidate *two = (const ANT_vector_candidate *)b;
+
+if (one->score > two->score)
+	return -1;
+if (one->score < two->score)
+	return 1;
+if (one->generation != two->generation)
+	return one->generation < two->generation ? -1 : 1;
+return one->docid < two->docid ? -1 : (one->docid == two->docid ? 0 : 1);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR()
+	--------------------------------------
+	Exact top-k dense-vector search across the live memory buffer and every
+	open disk segment's vector store.  Mirrors search()'s results[] contract
+	(prior hits' filenames freed at entry) -- results[]/results_count are
+	shared with search(); only one of the two result sets exists at a time.
+*/
+long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
+{
+char filename_buffer[4096];
+long long which, count;
+ANT_vector_candidate *best;
+
+for (which = 0; which < results_count; which++)
+	delete [] results[which].filename;
+results_count = 0;
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+best = new ANT_vector_candidate[top_k];
+count = vector_candidates(query, top_k, best);
+qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
+
+for (which = 0; which < count; which++)
+	{
+	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+
+	/* grow results[] by doubling, as search()/search_one_segment() do */
+	if (results_count >= results_allocated)
+		{
+		long long new_cap = results_allocated == 0 ? 16 : results_allocated * 2;
+		hit *new_results = new hit[new_cap];
+		long long i;
+		for (i = 0; i < results_count; i++)
+			new_results[i] = results[i];
+		delete [] results;
+		results = new_results;
+		results_allocated = new_cap;
+		}
+
+	results[results_count].generation = best[which].generation;
+	results[results_count].docid = best[which].docid;
+	results[results_count].score = best[which].score;
+	if (filename != NULL)
+		{
+		results[results_count].filename = new char[strlen(filename) + 1];
+		strcpy(results[results_count].filename, filename);
+		}
+	else
+		{
+		results[results_count].filename = new char[1];
+		results[results_count].filename[0] = '\0';
+		}
+	results_count++;
+	}
+
+delete [] best;
 return results_count;
 }
 

@@ -1779,6 +1779,79 @@ delete [] plain_dir;
 printf("test_vector_config_and_add OK\n");
 }
 
+/*
+	TEST_VECTOR_SEARCH_NRT_AND_PERSISTENCE()
+	----------------------------------------
+*/
+static void test_vector_search_nrt_and_persistence(void)
+{
+char *dir = make_index_dir();
+float va[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+float vb[4] = {0.9f, 0.1f, 0.0f, 0.0f};
+float vc[4] = {0.0f, 1.0f, 0.0f, 0.0f};
+float query[4] = {1.0f, 0.0f, 0.0f, 0.0f};
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->add_document("doc-a", "<DOC>alpha content</DOC>", va) >= 0);
+CHECK(index->add_document("doc-b", "<DOC>beta content</DOC>", vb) >= 0);
+CHECK(index->add_document("doc-c", "<DOC>gamma content</DOC>", vc) >= 0);
+CHECK(index->add_document("doc-d", "<DOC>delta lexical only</DOC>") >= 0);
+
+/*
+	NRT: searchable before any flush; ranked by similarity; lexical-only
+	doc-d absent
+*/
+CHECK(index->search_vector(query, 3) == 3);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-a") == 0);
+CHECK(strcmp(index->get_hit(1)->filename, "doc-b") == 0);
+CHECK(strcmp(index->get_hit(2)->filename, "doc-c") == 0);
+CHECK(index->get_hit(0)->score > index->get_hit(1)->score);
+CHECK(index->get_hit(1)->score > index->get_hit(2)->score);
+
+/*
+	Delete removes from vector results immediately; update replaces the vector
+*/
+CHECK(index->delete_document("doc-c") == 0);
+CHECK(index->search_vector(query, 10) == 2);
+float vb2[4] = {0.0f, 0.0f, 1.0f, 0.0f};
+CHECK(index->update_document("doc-b", "<DOC>beta revised</DOC>", vb2) >= 0);
+CHECK(index->search_vector(query, 10) == 2);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-a") == 0);	// doc-b now orthogonal, ranks below
+CHECK(index->get_hit(1)->score < 0.5);
+
+/*
+	Flush + same-session search spans disk store + fresh memory buffer
+*/
+CHECK(index->flush() == 0);
+CHECK(index->search_vector(query, 10) == 2);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-a") == 0);
+float ve[4] = {0.95f, 0.0f, 0.0f, 0.0f};
+CHECK(index->add_document("doc-e", "<DOC>epsilon</DOC>", ve) >= 0);
+CHECK(index->search_vector(query, 10) == 3);
+CHECK(strcmp(index->get_hit(0)->filename, "doc-a") == 0);
+CHECK(strcmp(index->get_hit(1)->filename, "doc-e") == 0);
+delete index;			// doc-e unflushed: lost (relaxed durability)
+
+/*
+	Reopen: vectors persisted
+*/
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->vector_dimension() == 4);
+CHECK(reopened->search_vector(query, 10) == 2);
+CHECK(strcmp(reopened->get_hit(0)->filename, "doc-a") == 0);
+
+/*
+	search_vector on a vector-less index / NULL query
+*/
+CHECK(reopened->search_vector(NULL, 10) == 0);
+delete reopened;
+delete [] dir;
+printf("test_vector_search_nrt_and_persistence OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1804,6 +1877,7 @@ test_compaction_crash_windows();
 test_maintain_policy();
 test_compaction_equivalence();
 test_vector_config_and_add();
+test_vector_search_nrt_and_persistence();
 printf("PASSED\n");
 return 0;
 }
