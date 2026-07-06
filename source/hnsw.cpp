@@ -61,7 +61,7 @@ delete [] levels; delete [] offsets; delete [] neighbours;
 levels = NULL; offsets = NULL; neighbours = NULL;
 
 documents = n;
-M = M_in < 1 ? 16 : M_in;
+M = M_in < 2 ? 16 : M_in;
 M0 = 2 * M;
 ef_construction = ef_construction_in < 1 ? 200 : ef_construction_in;
 entry_point = -1;

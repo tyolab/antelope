@@ -119,11 +119,31 @@ delete store; delete [] data; unlink(path);
 printf("test_tombstone_filter OK\n");
 }
 
+static void test_degenerate_M(void)
+{
+long long dim = 8, n = 30, i, d;
+char path[64]; strcpy(path, "/tmp/ant_hnsw_M_XXXXXX"); { int fd=mkstemp(path); if(fd>=0) close(fd); }
+float *data = new float[n * dim];
+for (i = 0; i < n * dim; i++) data[i] = (float)(i % 5);
+ANT_vector_store *store = make_store(path, dim, n, data);
+ANT_hnsw g;
+CHECK(g.build(store, /*M=*/1, 64, ANT_vector_store::METRIC_L2) == 0);	/* must NOT crash; M<2 -> default */
+CHECK(g.get_M() == 16);							/* fell back to the default */
+ANT_index_tombstones stones(n);
+float q[8]; for (d = 0; d < dim; d++) q[d] = (float)(d % 5);
+long long h[5]; double s[5];
+long long c = g.search(q, ANT_vector_store::METRIC_L2, 16, 5, store, &stones, h, s);
+CHECK(c == 5);
+delete store; delete [] data; unlink(path);
+printf("test_degenerate_M OK\n");
+}
+
 int main(void)
 {
 test_recall_and_determinism();
 test_ef_monotonic();
 test_tombstone_filter();
+test_degenerate_M();
 printf("PASSED\n");
 return 0;
 }
