@@ -1221,3 +1221,14 @@ for (which = 0; which < segment_count; which++)
 
 return total;
 }
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_ENGINE()
+	-------------------------------------------
+	Test-only accessor: the ANT_search_engine underlying a given disk segment,
+	for postings-level comparisons (df/cf) that go beneath the search API.
+*/
+ANT_search_engine *ATIRE_segment_index::disk_segment_engine(long long which)
+{
+return segments[which].engine->get_search_engine();
+}

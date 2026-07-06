@@ -15,6 +15,7 @@ class ATIRE_indexer;
 class ANT_index_manifest;
 class ANT_index_keymap;
 class ANT_index_tombstones;
+class ANT_search_engine;
 
 class ATIRE_segment_index
 {
@@ -104,6 +105,7 @@ public:
 	void set_auto_maintain(long on) { auto_maintain = on; }
 	long long disk_segment_count(void) { return segment_count; }
 	long long disk_segment_generation(long long which) { return segments[which].generation; }
+	ANT_search_engine *disk_segment_engine(long long which);
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the

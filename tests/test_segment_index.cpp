@@ -1590,6 +1590,130 @@ delete [] dir;
 printf("test_maintain_policy OK\n");
 }
 
+/*
+	TEST_COMPACTION_EQUIVALENCE()
+	-----------------------------
+	The parent spec's section 5 equivalence, now at postings level: a messy
+	history compacted to one segment must match a one-shot index of the
+	surviving collection on document count, per-term df AND cf -- not just
+	visible search results.  Also proves merge-of-merges composability.
+*/
+static void test_compaction_equivalence(void)
+{
+char *dir_messy = make_index_dir();
+char *dir_oneshot = make_index_dir();
+char query[64], key[64], doc[256], letters[16];
+long long i;
+
+/*
+	Messy history: 20 docs over several flushes, evens 0-8 updated,
+	15-19 deleted; two rounds of compaction (composability).
+*/
+ATIRE_segment_index *messy = new ATIRE_segment_index();
+CHECK(messy->open(dir_messy) == 0);
+messy->set_flush_threshold(6);
+messy->set_merge_factor(2);
+for (i = 0; i < 20; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common body%s</DOC>", letters);
+	CHECK(messy->add_document(key, doc) >= 0);
+	}
+for (i = 0; i < 10; i += 2)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common revised%s</DOC>", letters);
+	CHECK(messy->update_document(key, doc) >= 0);
+	}
+for (i = 15; i < 20; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	CHECK(messy->delete_document(key) == 0);
+	}
+CHECK(messy->flush() == 0);
+CHECK(messy->maintain() == 0);				// round 1
+CHECK(messy->maintain() == 0);				// round 2: idempotent / composes
+CHECK(messy->disk_segment_count() == 1);
+
+/*
+	One-shot: the surviving logical collection, single segment
+*/
+ATIRE_segment_index *oneshot = new ATIRE_segment_index();
+CHECK(oneshot->open(dir_oneshot) == 0);
+for (i = 0; i < 15; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	if (i < 10 && i % 2 == 0)
+		sprintf(doc, "<DOC>common revised%s</DOC>", letters);
+	else
+		sprintf(doc, "<DOC>common body%s</DOC>", letters);
+	CHECK(oneshot->add_document(key, doc) >= 0);
+	}
+CHECK(oneshot->flush() == 0);
+
+/*
+	Postings-level comparison via the underlying engines
+*/
+CHECK(messy->get_document_count() == oneshot->get_document_count());
+
+/* both have exactly one disk segment; compare per-term stats */
+ANT_search_engine_btree_leaf messy_leaf, oneshot_leaf;
+ANT_search_engine *m = messy->disk_segment_engine(0);
+ANT_search_engine *o = oneshot->disk_segment_engine(0);
+
+CHECK(m->get_postings_details((char *)"common", &messy_leaf) != NULL);
+CHECK(o->get_postings_details((char *)"common", &oneshot_leaf) != NULL);
+CHECK(messy_leaf.local_document_frequency == oneshot_leaf.local_document_frequency);
+CHECK(messy_leaf.local_collection_frequency == oneshot_leaf.local_collection_frequency);
+
+for (i = 0; i < 15; i++)
+	{
+	unique_term(letters, i);
+	char probe[64];
+	if (i < 10 && i % 2 == 0)
+		sprintf(probe, "revised%s", letters);
+	else
+		sprintf(probe, "body%s", letters);
+	CHECK(m->get_postings_details(probe, &messy_leaf) != NULL);
+	CHECK(o->get_postings_details(probe, &oneshot_leaf) != NULL);
+	CHECK(messy_leaf.local_document_frequency == oneshot_leaf.local_document_frequency);
+	CHECK(messy_leaf.local_collection_frequency == oneshot_leaf.local_collection_frequency);
+	}
+/* dead terms absent from BOTH */
+for (i = 15; i < 20; i++)
+	{
+	unique_term(letters, i);
+	char probe[64];
+	sprintf(probe, "body%s", letters);
+	CHECK(m->get_postings_details(probe, &messy_leaf) == NULL);
+	CHECK(o->get_postings_details(probe, &oneshot_leaf) == NULL);
+	}
+
+/*
+	Search membership identical for every surviving doc
+*/
+for (i = 0; i < 15; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	if (i < 10 && i % 2 == 0)
+		sprintf(query, "revised%s", letters);
+	else
+		sprintf(query, "body%s", letters);
+	CHECK(messy->search(query, 10) == 1);
+	CHECK(strcmp(messy->get_hit(0)->filename, key) == 0);
+	}
+
+delete messy;
+delete oneshot;
+delete [] dir_messy;
+delete [] dir_oneshot;
+printf("test_compaction_equivalence OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1613,6 +1737,7 @@ test_compact_basic();
 test_compact_subset_leaves_other_segment();
 test_compaction_crash_windows();
 test_maintain_policy();
+test_compaction_equivalence();
 printf("PASSED\n");
 return 0;
 }
