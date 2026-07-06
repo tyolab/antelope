@@ -23,6 +23,8 @@
 #include "../source/version.h"
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
+#include "../source/signature.h"
+#include "../source/signature_store.h"
 #include "../source/wal.h"
 
 /*
@@ -214,6 +216,39 @@ for (docid = 0; docid < output_segment->engine->get_document_count(); docid++)
 	}
 
 /*
+	V2: rebuild the merged segment's signature sidecar by signing the merged
+	DENSE vectors just written (re-load the fresh output .vec) so signatures
+	stay aligned to the compacted docids.  Best-effort: a failure leaves the
+	output signature-less (exact-scanned), never aborts a successful merge.
+	This must run BEFORE Step 6's shuffle, which invalidates output_segment.
+*/
+if (signature_bits_current != 0 && query_signer != NULL)
+	{
+	char out_vec[4096], out_vsig[4096];
+	segment_filename(out_vec, sizeof(out_vec), output_generation, "vec");
+	segment_filename(out_vsig, sizeof(out_vsig), output_generation, "vsig");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);
+	if (out_vectors->document_count() == out_docs && out_docs > 0)
+		{
+		ANT_signature_store_writer sig_writer;
+		unsigned char *sig = new unsigned char[query_signer->signature_bytes()];
+		long failed = sig_writer.create(out_vsig, signature_bits_current) != 0;
+		for (long long d = 0; !failed && d < out_docs; d++)
+			{
+			if (out_vectors->has(d)) { query_signer->sign(out_vectors->get(d), sig); failed = sig_writer.append(sig) != 0; }
+			else failed = sig_writer.append(NULL) != 0;
+			}
+		if (!failed) sig_writer.finish(); else sig_writer.abandon();
+		delete [] sig;
+		}
+	delete out_vectors;
+	/* refresh the in-memory cache so THIS session's search_vector_approx engages the prefilter */
+	delete output_segment->signatures;
+	output_segment->signatures = ANT_signature_store::load(out_vsig, signature_bits_current, output_segment->engine->get_document_count());
+	}
+
+/*
 	Step 5: atomic manifest swap.  See the banner above for what happens
 	if save() fails here -- the keymap is already remapped, so we proceed
 	to step 6's in-memory removal regardless, but skip the file deletions
@@ -239,6 +274,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].engine;
 			delete segments[which].tombstones;
 			delete segments[which].vectors;
+			delete segments[which].signatures;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
 				segments[shuffle] = segments[shuffle + 1];
 			segment_count--;
