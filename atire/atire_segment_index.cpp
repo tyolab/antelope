@@ -710,7 +710,7 @@ return 0;
 	in-process view is fully consistent (output live, inputs gone, keymap
 	correct); the on-disk manifest still lists the old inputs (and not the
 	output); and the leftover "compacting" marker forces open()'s
-	marker-triggered keymap rebuild (Task 6) on the next open, which
+	marker-triggered keymap rebuild in open(), which
 	reconstructs everything from whichever segments the reloaded manifest
 	actually names. This is returned as failure (1) so the caller knows
 	the on-disk state was not durably swapped, even though the running

@@ -47,7 +47,7 @@ public:
 	FILENAME_INDEX + IMPACT_HEADER build.  All failures return nonzero and
 	delete the partial output; no exit().  merge() is re-entrant: every
 	allocation it makes is freed before it returns, so a single instance may
-	drive many sequential merges (Task 7's maintain()).
+	drive many sequential merges (maintain() runs several per invocation).
 */
 class ANT_index_merger
 {
