@@ -25,6 +25,7 @@ class ANT_memory_index;
 class ANT_vector_store;
 class ANT_write_ahead_log;
 class ANT_signature;
+class ANT_signature_store;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -47,6 +48,7 @@ public:
 	ATIRE_API *engine;
 	ANT_index_tombstones *tombstones;
 	ANT_vector_store *vectors;		// NULL when vectors are disabled for this index
+	ANT_signature_store *signatures;	// NULL when absent/degraded/approximate-off
 	} ;
 
 private:
@@ -193,6 +195,7 @@ public:
 	void set_auto_maintain(long on) { auto_maintain = on; }
 	long long disk_segment_count(void) { return segment_count; }
 	long long disk_segment_generation(long long which) { return segments[which].generation; }
+	long disk_segment_has_signatures(long long which);
 	ANT_search_engine *disk_segment_engine(long long which);
 	ANT_memory_index *writer_memory_index_for_test(void);		// test hook: the live writer segment's memory index (NULL before open); used to observe decompress-buffer arena reuse
 

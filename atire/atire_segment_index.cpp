@@ -108,6 +108,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].engine;
 	delete segments[which].tombstones;
 	delete segments[which].vectors;
+	delete segments[which].signatures;
 	}
 delete [] segments;
 
@@ -144,6 +145,8 @@ remove(filename);
 segment_filename(filename, sizeof(filename), generation, "del");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vec");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "vsig");
 remove(filename);
 }
 
@@ -1072,7 +1075,7 @@ return 0;
 */
 long ATIRE_segment_index::append_segment(long long generation)
 {
-char index_filename[1024], doclist_filename[1024], del_filename[1024], vec_filename[1024];
+char index_filename[1024], doclist_filename[1024], del_filename[1024], vec_filename[1024], vsig_filename[1024];
 ATIRE_API *engine;
 long long which;
 
@@ -1080,6 +1083,7 @@ segment_filename(index_filename, sizeof(index_filename), generation, "aspt");
 segment_filename(doclist_filename, sizeof(doclist_filename), generation, "doclist");
 segment_filename(del_filename, sizeof(del_filename), generation, "del");
 segment_filename(vec_filename, sizeof(vec_filename), generation, "vec");
+segment_filename(vsig_filename, sizeof(vsig_filename), generation, "vsig");
 
 engine = new ATIRE_API();
 
@@ -1114,6 +1118,7 @@ segments[segment_count].generation = generation;
 segments[segment_count].engine = engine;
 segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
 segments[segment_count].vectors = vector_dimension_current != 0 ? ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()) : NULL;
+segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;
 segment_count++;
 
 return 0;
@@ -1194,6 +1199,19 @@ return total;
 ANT_search_engine *ATIRE_segment_index::disk_segment_engine(long long which)
 {
 return segments[which].engine->get_search_engine();
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_HAS_SIGNATURES()
+	---------------------------------------------------
+	Test-only accessor: whether the given disk segment has a cached, non-empty
+	signature store loaded (i.e. its .vsig sidecar was present and valid at
+	open/append time). Defined here (rather than inline in the header) so the
+	header can stay include-free (forward-declares ANT_signature_store only).
+*/
+long ATIRE_segment_index::disk_segment_has_signatures(long long which)
+{
+return segments[which].signatures != NULL && segments[which].signatures->document_count() > 0;
 }
 
 ANT_memory_index *ATIRE_segment_index::writer_memory_index_for_test(void)
