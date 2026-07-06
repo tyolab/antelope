@@ -43,6 +43,10 @@ writer_engine_stale = 1;
 
 flush_after_documents = 10000;		// 0 = manual flush only; bounds NRT arena growth of the live segment
 
+merge_factor = 10;					// tier trigger default (design spec section 4)
+tombstone_compact_ratio = 0.25;		// tombstone trigger default (design spec section 4)
+auto_maintain = 0;					// off by default: Phase 1 behaviour unchanged unless requested
+
 results = NULL;
 results_count = 0;
 results_allocated = 0;
@@ -661,7 +665,23 @@ manifest->add_segment(flushed_generation);
 if (manifest->save() != 0)
 	return 1;			// degraded: read-only until a successful flush()/reopen
 
-return start_new_writer();
+if (start_new_writer() != 0)
+	return 1;
+
+/*
+	Opportunistic maintenance: only runs when the caller has opted in via
+	set_auto_maintain() (default off, so Phase 1 callers are unaffected).
+	Best-effort -- maintain()'s own failure is not propagated from flush():
+	the flush this call is finishing has already fully succeeded (the new
+	segment is durable and the next writer is live), so a maintenance
+	failure here just means the index is left with more disk segments than
+	the policy would like, not that anything was lost.  The next flush() (or
+	an explicit maintain() call) will retry.
+*/
+if (auto_maintain)
+	maintain();
+
+return 0;
 }
 
 /*
@@ -705,11 +725,22 @@ if (input_count < 1)
 	return 1;
 
 /*
-	Resolve the inputs to open segments (all must exist and be distinct)
+	Resolve the inputs to open segments (all must exist and be distinct).  A
+	duplicate generation in input_generations[] would feed the same engine
+	into merge() twice -- merge()'s N-way walk has no notion of "the same
+	document seen through two inputs", so it would emit that segment's live
+	documents a second time (duplicated postings, doubled document count),
+	silently corrupting the output.  Reject before doing any work.
 */
 segment **inputs = new segment *[input_count];
 for (input = 0; input < input_count; input++)
 	{
+	for (which = 0; which < input; which++)
+		if (input_generations[which] == input_generations[input])
+			{
+			delete [] inputs;
+			return 1;
+			}
 	inputs[input] = NULL;
 	for (which = 0; which < segment_count; which++)
 		if (segments[which].generation == input_generations[input])
@@ -836,6 +867,99 @@ for (input = 0; input < input_count; input++)
 remove(marker_name);
 
 return 0;
+}
+
+/*
+	TIER_OF()
+	---------
+	Size tier = number of decimal digits in the live-document count
+	(1-9 -> tier 1, 10-99 -> tier 2, ...).  File-local: only maintain() uses it.
+*/
+static long tier_of(long long live_documents)
+{
+long tier = 1;
+
+while (live_documents >= 10)
+	{
+	live_documents /= 10;
+	tier++;
+	}
+return tier;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::MAINTAIN()
+	-------------------------------
+	Run the tiered merge policy (design spec section 4) to quiescence, over
+	disk segments only -- the live writer is never a compact() input.
+
+	Triggers, evaluated fresh on every iteration (segment_count/generations
+	change after each compact()):
+	1. Tier trigger: bucket disk segments by tier_of(live document count);
+	   the first tier holding >= merge_factor members has ALL of its members
+	   merged in one compact() call.
+	2. Tombstone trigger: any segment whose tombstones->count()/document_count
+	   exceeds tombstone_compact_ratio joins the candidate set too (added
+	   after the tier trigger, deduplicated against it) -- if the tier
+	   trigger did not fire, an over-deleted segment is compacted alone
+	   (a 1-way "merge", which just rewrites it without its dead documents;
+	   see ANT_index_merger::merge()'s N-way walk, which degrades to N=1
+	   without any special-casing).
+
+	Stops when neither trigger fires (0 candidates -> quiescent) or after a
+	safety cap of 10 iterations, so a pathological inventory that keeps
+	re-triggering cannot loop maintain() forever; a later maintain() call
+	picks up where this one left off.
+*/
+long ATIRE_segment_index::maintain(void)
+{
+long long candidates[1024];
+long long candidate_count, which, other;
+long iteration;
+
+for (iteration = 0; iteration < 10; iteration++)
+	{
+	candidate_count = 0;
+
+	/*
+		Tier trigger: find the first tier with >= merge_factor members
+	*/
+	for (which = 0; which < segment_count && candidate_count == 0; which++)
+		{
+		long long in_tier = 0;
+		long tier = tier_of(segments[which].engine->get_document_count() - segments[which].tombstones->count());
+		for (other = 0; other < segment_count; other++)
+			if (tier_of(segments[other].engine->get_document_count() - segments[other].tombstones->count()) == tier)
+				in_tier++;
+		if (in_tier >= merge_factor)
+			for (other = 0; other < segment_count && candidate_count < 1024; other++)
+				if (tier_of(segments[other].engine->get_document_count() - segments[other].tombstones->count()) == tier)
+					candidates[candidate_count++] = segments[other].generation;
+		}
+
+	/*
+		Tombstone trigger: over-deleted segments join (or run alone)
+	*/
+	for (which = 0; which < segment_count && candidate_count < 1024; which++)
+		{
+		long long docs = segments[which].engine->get_document_count();
+		if (docs > 0 && (double)segments[which].tombstones->count() / (double)docs > tombstone_compact_ratio)
+			{
+			long already_in = false;
+			for (other = 0; other < candidate_count; other++)
+				if (candidates[other] == segments[which].generation)
+					already_in = true;
+			if (!already_in)
+				candidates[candidate_count++] = segments[which].generation;
+			}
+		}
+
+	if (candidate_count == 0)
+		return 0;					// quiescent
+	if (compact(candidates, candidate_count) != 0)
+		return 1;
+	}
+return 0;						// safety cap: good enough, next maintain() continues
 }
 
 /*

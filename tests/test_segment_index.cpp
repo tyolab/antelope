@@ -1520,6 +1520,76 @@ delete [] dir;
 printf("test_compaction_crash_windows OK\n");
 }
 
+/*
+	TEST_MAINTAIN_POLICY()
+	----------------------
+	Tier trigger: merge_factor segments in one size tier collapse to one.
+	Tombstone trigger: a segment above the deletion ratio gets rewritten.
+*/
+static void test_maintain_policy(void)
+{
+char *dir = make_index_dir();
+char query[64], key[64], doc[256], letters[16];
+long long i, batch;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+index->set_merge_factor(3);
+
+/*
+	Three 4-doc segments (same size tier) -> tier trigger fires -> 1 segment
+*/
+for (batch = 0; batch < 3; batch++)
+	{
+	for (i = 0; i < 4; i++)
+		{
+		sprintf(key, "doc-%lld", batch * 4 + i);
+		unique_term(letters, batch * 4 + i);
+		sprintf(doc, "<DOC>common %s</DOC>", letters);
+		CHECK(index->add_document(key, doc) >= 0);
+		}
+	CHECK(index->flush() == 0);
+	}
+CHECK(index->disk_segment_count() == 3);
+CHECK(index->maintain() == 0);
+CHECK(index->disk_segment_count() == 1);
+CHECK(index->get_document_count() == 12);
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 12);
+
+/*
+	Tombstone trigger: delete 7 of 12 (58% > default 25%) -> maintain
+	rewrites the segment without them
+*/
+for (i = 0; i < 7; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	CHECK(index->delete_document(key) == 0);
+	}
+CHECK(index->maintain() == 0);
+CHECK(index->disk_segment_count() == 1);
+CHECK(index->get_document_count() == 5);
+strcpy(query, "common");
+CHECK(index->search(query, 100) == 5);
+/*
+	The rewrite dropped the tombstones physically: no .del file remains
+*/
+long long only_generation = index->disk_segment_generation(0);
+char del_name[4096];
+snprintf(del_name, sizeof(del_name), "%s/seg_%06lld.del", dir, only_generation);
+CHECK(access(del_name, F_OK) != 0);
+
+/*
+	Idempotent: nothing left to do
+*/
+CHECK(index->maintain() == 0);
+CHECK(index->disk_segment_count() == 1);
+
+delete index;
+delete [] dir;
+printf("test_maintain_policy OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1542,6 +1612,7 @@ test_merger_repeated_merge();
 test_compact_basic();
 test_compact_subset_leaves_other_segment();
 test_compaction_crash_windows();
+test_maintain_policy();
 printf("PASSED\n");
 return 0;
 }

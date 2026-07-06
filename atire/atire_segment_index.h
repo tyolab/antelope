@@ -57,6 +57,10 @@ private:
 
 	long long flush_after_documents;	// 0 = manual flush only; default 10000 bounds memory growth of the live segment
 
+	long merge_factor;					// tier trigger: a size tier with >= this many disk segments gets merged
+	double tombstone_compact_ratio;	// tombstone trigger: a segment whose tombstones/documents exceeds this gets rewritten
+	long auto_maintain;					// 0 = off (Phase 1 behaviour): flush() does not call maintain() unless set
+
 	hit *results;
 	long long results_count, results_allocated;
 
@@ -93,6 +97,13 @@ public:
 	long flush(void);										// memory segment -> disk segment; 0 on success
 
 	long compact(long long *input_generations, long long input_count);	// merge those disk segments into one; 0 on success
+
+	long maintain(void);								// run the tiered merge policy to quiescence; 0 = success
+	void set_merge_factor(long segments_per_tier) { merge_factor = segments_per_tier; }
+	void set_tombstone_compact_ratio(double ratio) { tombstone_compact_ratio = ratio; }
+	void set_auto_maintain(long on) { auto_maintain = on; }
+	long long disk_segment_count(void) { return segment_count; }
+	long long disk_segment_generation(long long which) { return segments[which].generation; }
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the
