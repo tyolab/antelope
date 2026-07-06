@@ -1067,6 +1067,56 @@ if (merge_result != 0)
 	}
 
 /*
+	Step 2b: rewrite the vector sidecar for the merged output.  The
+	renumbering below is byte-identical to the merger's: both are built from
+	the same tombstones in the same input order (ANT_docid_renumberer is
+	deterministic).  Inputs without vectors contribute absent rows.  A .vec
+	failure aborts the compaction pre-marker, leaving the index untouched
+	(the output .aspt is removed like any pre-step-3 failure).
+*/
+if (vector_dimension_current != 0)
+	{
+	long any_vectors = false;
+	for (input = 0; input < input_count; input++)
+		if (inputs[input]->vectors != NULL && inputs[input]->vectors->document_count() > 0)
+			any_vectors = true;
+	if (any_vectors)
+		{
+		ANT_index_tombstones **stone_list = new ANT_index_tombstones *[input_count];
+		long long *doc_counts = new long long[input_count];
+		for (input = 0; input < input_count; input++)
+			{
+			stone_list[input] = inputs[input]->tombstones;
+			doc_counts[input] = inputs[input]->engine->get_document_count();
+			}
+		ANT_docid_renumberer *vec_renumberer = new ANT_docid_renumberer(stone_list, doc_counts, input_count);
+		char vec_name[4096];
+		segment_filename(vec_name, sizeof(vec_name), output_generation, "vec");
+		ANT_vector_store_writer vec_writer;
+		long vec_failed = vec_writer.create(vec_name, vector_dimension_current) != 0;
+		for (input = 0; !vec_failed && input < input_count; input++)
+			for (docid = 0; !vec_failed && docid < doc_counts[input]; docid++)
+				{
+				if (vec_renumberer->renumber(input, docid) < 0)
+					continue;		/* tombstoned: dropped, exactly like its postings */
+				const float *row = (inputs[input]->vectors != NULL && inputs[input]->vectors->has(docid)) ? inputs[input]->vectors->get(docid) : NULL;
+				vec_failed = vec_writer.append(row) != 0;
+				}
+		if (!vec_failed)
+			vec_failed = vec_writer.finish() != 0;
+		delete vec_renumberer;
+		delete [] stone_list;
+		delete [] doc_counts;
+		if (vec_failed)
+			{
+			remove(output_name);
+			delete [] inputs;
+			return 1;
+			}
+		}
+	}
+
+/*
 	Step 3: marker -- from here until removal, a crash makes the next
 	open() rebuild the keymap from the segments rather than trust the log
 */

@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <math.h>
 #include "../atire/atire_segment_index.h"
 #include "../source/index_merge.h"
 #include "../source/index_tombstones.h"
@@ -1852,6 +1853,96 @@ delete [] dir;
 printf("test_vector_search_nrt_and_persistence OK\n");
 }
 
+/*
+	TEST_VECTOR_COMPACTION_EQUIVALENCE()
+	------------------------------------
+	After a messy history + maintain(), vector search results (keys and
+	scores) must equal a one-shot index of the surviving collection.
+*/
+static void test_vector_compaction_equivalence(void)
+{
+char *dir_messy = make_index_dir();
+char *dir_oneshot = make_index_dir();
+char key[64], doc[256], letters[16];
+long long i, which;
+float vecs[12][4];
+float query[4] = {0.7f, 0.7f, 0.1f, 0.0f};
+
+for (i = 0; i < 12; i++)
+	{
+	vecs[i][0] = (float)(i + 1) / 12.0f;
+	vecs[i][1] = 1.0f - (float)i / 12.0f;
+	vecs[i][2] = (float)(i % 3) / 3.0f;
+	vecs[i][3] = 0.0f;
+	}
+
+ATIRE_segment_index *messy = new ATIRE_segment_index();
+CHECK(messy->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(messy->open(dir_messy) == 0);
+messy->set_flush_threshold(4);
+messy->set_merge_factor(2);
+for (i = 0; i < 12; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(messy->add_document(key, doc, vecs[i]) >= 0);
+	}
+/* update doc-2's vector, delete docs 9-11 */
+float revised[4] = {0.0f, 0.0f, 0.0f, 1.0f};
+unique_term(letters, 2);
+sprintf(doc, "<DOC>common revised %s</DOC>", letters);
+CHECK(messy->update_document("doc-2", doc, revised) >= 0);
+for (i = 9; i < 12; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	CHECK(messy->delete_document(key) == 0);
+	}
+CHECK(messy->flush() == 0);
+CHECK(messy->maintain() == 0);
+CHECK(messy->maintain() == 0);
+CHECK(messy->disk_segment_count() == 1);
+
+ATIRE_segment_index *oneshot = new ATIRE_segment_index();
+CHECK(oneshot->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(oneshot->open(dir_oneshot) == 0);
+for (i = 0; i < 9; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	if (i == 2)
+		{
+		sprintf(doc, "<DOC>common revised %s</DOC>", letters);
+		CHECK(oneshot->add_document(key, doc, revised) >= 0);
+		}
+	else
+		{
+		sprintf(doc, "<DOC>common %s</DOC>", letters);
+		CHECK(oneshot->add_document(key, doc, vecs[i]) >= 0);
+		}
+	}
+CHECK(oneshot->flush() == 0);
+
+/*
+	Same result sets: keys AND scores, top-9 (everything live)
+*/
+long long messy_hits = messy->search_vector(query, 9);
+long long oneshot_hits = oneshot->search_vector(query, 9);
+CHECK(messy_hits == 9);
+CHECK(messy_hits == oneshot_hits);
+for (which = 0; which < messy_hits; which++)
+	{
+	CHECK(strcmp(messy->get_hit(which)->filename, oneshot->get_hit(which)->filename) == 0);
+	CHECK(fabs(messy->get_hit(which)->score - oneshot->get_hit(which)->score) < 1e-6);
+	}
+
+delete messy;
+delete oneshot;
+delete [] dir_messy;
+delete [] dir_oneshot;
+printf("test_vector_compaction_equivalence OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -1878,6 +1969,7 @@ test_maintain_policy();
 test_compaction_equivalence();
 test_vector_config_and_add();
 test_vector_search_nrt_and_persistence();
+test_vector_compaction_equivalence();
 printf("PASSED\n");
 return 0;
 }
