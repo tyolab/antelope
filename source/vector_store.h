@@ -62,6 +62,7 @@ public:
 	static ANT_vector_store *load(const char *filename, long long expected_dimension, long long expected_documents);
 
 	long long document_count(void) { return documents; }
+	long long get_dimension(void) { return dimension; }
 	long has(long long docid) { return presence != NULL && (presence[docid / 8] & (1 << (docid % 8))) != 0; }
 	const float *get(long long docid) { return vectors + docid * dimension; }
 
