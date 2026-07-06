@@ -28,6 +28,8 @@
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
 #include "../source/wal.h"
+#include "../source/signature.h"
+#include "../source/signature_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -68,6 +70,11 @@ pending_vector_dimension = 0;
 pending_vector_metric = 0;
 vector_config_pending = 0;
 
+signature_bits_current = 0;
+signature_seed = 0;
+candidate_multiplier = 4;
+query_signer = NULL;
+
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
@@ -93,6 +100,7 @@ delete writer_engine;			// non-owning wrapper; leaves the writer's index alone
 delete writer;
 delete writer_tombstones;
 reset_writer_vectors();
+delete query_signer;
 delete wal;
 
 for (which = 0; which < segment_count; which++)
@@ -310,6 +318,8 @@ strcpy(this->directory, directory);
 
 if (load_vector_config() != 0)
 	return 1;
+load_signature_config();
+rebuild_query_signer();
 if (vector_config_pending)
 	{
 	if (vector_dimension_current != 0)

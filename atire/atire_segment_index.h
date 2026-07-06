@@ -24,6 +24,7 @@ class ANT_search_engine;
 class ANT_memory_index;
 class ANT_vector_store;
 class ANT_write_ahead_log;
+class ANT_signature;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -83,6 +84,11 @@ private:
 	long pending_vector_metric;
 	long vector_config_pending;
 
+	long long signature_bits_current;		// 0 = approximate not configured
+	unsigned long long signature_seed;
+	long long candidate_multiplier;			// rerank pool = top_k * this (default 4)
+	ANT_signature *query_signer;			// index-wide projection, built at open when configured (NULL otherwise)
+
 	/* memory-segment vector buffer, parallel to the writer's docids */
 	float *writer_vector_data;
 	unsigned char *writer_vector_presence;
@@ -138,6 +144,9 @@ private:
 
 	long load_vector_config(void);			// reads <dir>/vector.config; 0 = ok (absent is ok)
 	long save_vector_config(void);			// atomic write; 0 on success
+	long load_signature_config(void);
+	long save_signature_config(void);
+	void rebuild_query_signer(void);
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	void reset_writer_vectors(void);
 
@@ -152,6 +161,10 @@ public:
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
+
+	long set_approximate_config(long long bits);		// bits<=0 => default 256; persists signature.config on first enable; 0 on success
+	void set_candidate_multiplier(long long n);			// clamps to >= 1
+	long approximate_configured(void) { return signature_bits_current != 0; }
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

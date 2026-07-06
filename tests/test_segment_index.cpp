@@ -2073,6 +2073,27 @@ printf("test_vector_metrics_and_compat OK\n");
 }
 
 /*
+	TEST_APPROX_CONFIG_PERSISTS()
+	------------------------------
+*/
+static void test_approx_config_persists(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *a = new ATIRE_segment_index();
+CHECK(a->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->set_approximate_config(0) == 0);		// 0 => default 256 bits
+CHECK(a->approximate_configured() == 1);
+delete a;
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->open(dir) == 0);
+CHECK(b->approximate_configured() == 1);		// config reloads
+delete b;
+delete [] dir;
+printf("test_approx_config_persists OK\n");
+}
+
+/*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
 	Update churn bloats keymap.log; reopen compacts it; state intact.
@@ -2613,6 +2634,7 @@ test_vector_search_nrt_and_persistence();
 test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
+test_approx_config_persists();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();

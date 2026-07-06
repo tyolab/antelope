@@ -11,6 +11,7 @@
 #include <string.h>
 #include <dirent.h>
 #include <unistd.h>
+#include <time.h>
 
 #include "atire_segment_index.h"
 #include "atire_api.h"
@@ -25,6 +26,8 @@
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
 #include "../source/wal.h"
+#include "../source/signature.h"
+#include "../source/signature_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -117,6 +120,112 @@ if (rename(temp_name, filename) != 0)
 	return 1;
 	}
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_SIGNATURE_CONFIG()
+	--------------------------------------------
+	Reads <dir>/signature.config (magic/version/bits/seed).  Absent => approximate
+	stays unconfigured.  Garbage => treated as absent (defensive parse).
+*/
+long ATIRE_segment_index::load_signature_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, seed;
+unsigned int version;
+long long bits;
+
+snprintf(filename, sizeof(filename), "%s/signature.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != 0x3130474953544E41ULL
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&bits, sizeof(bits), 1, fp) != 1
+	|| fread(&seed, sizeof(seed), 1, fp) != 1
+	|| bits < 8 || bits > 65536 || (bits % 8) != 0)
+	{ fclose(fp); return 0; }
+fclose(fp);
+signature_bits_current = bits;
+signature_seed = seed;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_SIGNATURE_CONFIG()
+	--------------------------------------------
+	Atomic write (temp + rename) of the index-wide signature config.
+*/
+long ATIRE_segment_index::save_signature_config(void)
+{
+char filename[4096], temp_name[4200];
+FILE *fp;
+unsigned long long magic = 0x3130474953544E41ULL, seed = signature_seed;
+unsigned int version = 1u;
+long long bits = signature_bits_current;
+
+snprintf(filename, sizeof(filename), "%s/signature.config", directory);
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
+	return 1;
+if ((fp = fopen(temp_name, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&bits, sizeof(bits), 1, fp) != 1 || fwrite(&seed, sizeof(seed), 1, fp) != 1)
+	{ fclose(fp); remove(temp_name); return 1; }
+fclose(fp);
+if (rename(temp_name, filename) != 0)
+	{ remove(temp_name); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::REBUILD_QUERY_SIGNER()
+	-------------------------------------------
+	(Re)materialize the index-wide projection in RAM from the loaded config.
+	No-op when approximate is unconfigured or vectors are disabled.
+*/
+void ATIRE_segment_index::rebuild_query_signer(void)
+{
+delete query_signer;
+query_signer = NULL;
+if (signature_bits_current != 0 && vector_dimension_current != 0)
+	query_signer = new ANT_signature(vector_dimension_current, signature_bits_current, signature_seed);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_APPROXIMATE_CONFIG()
+	---------------------------------------------
+	Enable the signature prefilter.  Requires the index open with vectors enabled.
+	First enable picks bits (default 256) + a projection seed and persists them;
+	the config is immutable thereafter (a second call is a no-op success).
+*/
+long ATIRE_segment_index::set_approximate_config(long long bits)
+{
+if (directory == NULL)
+	return 1;					// must be open (needs directory + dimension)
+if (vector_dimension_current == 0)
+	return 1;					// approximate requires vectors enabled
+if (signature_bits_current != 0)
+	return 0;					// already configured; immutable
+if (bits <= 0)
+	bits = 256;
+if (bits > 65536 || (bits % 8) != 0)
+	return 1;
+signature_bits_current = bits;
+signature_seed = (unsigned long long)time(NULL) ^ ((unsigned long long)bits << 32) ^ 0x9E3779B97F4A7C15ULL;
+if (save_signature_config() != 0)
+	{ signature_bits_current = 0; signature_seed = 0; return 1; }
+rebuild_query_signer();
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_CANDIDATE_MULTIPLIER()
+	-----------------------------------------------
+*/
+void ATIRE_segment_index::set_candidate_multiplier(long long n)
+{
+candidate_multiplier = n < 1 ? 1 : n;
 }
 
 /*
