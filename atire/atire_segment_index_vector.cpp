@@ -242,7 +242,7 @@ if ((fp = fopen(filename, "rb")) == NULL)
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
 	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
 	|| fread(&M, sizeof(M), 1, fp) != 1 || fread(&efc, sizeof(efc), 1, fp) != 1
-	|| M < 1 || M > 4096 || efc < 1 || efc > 100000)
+	|| M < 2 || M > 4096 || efc < 1 || efc > 100000)
 	{ fclose(fp); return 0; }
 fclose(fp);
 hnsw_M_current = M;
