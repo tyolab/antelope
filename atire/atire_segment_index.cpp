@@ -596,6 +596,9 @@ else
 	delete [] manifest_generations;
 	}
 
+if (keymap->log_dead_ratio() > 0.5)
+	keymap->compact_log();				// best-effort: ignore any failure
+
 if (start_new_writer() != 0)
 	return 1;
 
@@ -1248,6 +1251,7 @@ long ATIRE_segment_index::maintain(void)
 long long candidates[1024];
 long long candidate_count, which, other;
 long iteration;
+long any_compacted = 0;
 
 for (iteration = 0; iteration < 10; iteration++)
 	{
@@ -1287,10 +1291,17 @@ for (iteration = 0; iteration < 10; iteration++)
 		}
 
 	if (candidate_count == 0)
+		{
+		if (any_compacted)
+			keymap->compact_log();		// best-effort; compaction floods log with remap records
 		return 0;					// quiescent
+		}
 	if (compact(candidates, candidate_count) != 0)
 		return 1;
+	any_compacted = 1;
 	}
+if (any_compacted)
+	keymap->compact_log();				// best-effort; compaction floods log with remap records
 return 0;						// safety cap: good enough, next maintain() continues
 }
 

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "index_keymap.h"
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
@@ -269,6 +270,47 @@ CHECK(ANT_index_keymap::log_exists(exists_dir) == 1);
 map_exists->add("some-key", 1, 0);
 CHECK(ANT_index_keymap::log_exists(exists_dir) == 1);
 delete map_exists;
+
+/*
+	compact_log(): rewrite the append-only log keeping only live entries
+*/
+char cl_template[] = "/tmp/ant_keymap_XXXXXX";
+char *cl_dir = mkdtemp(cl_template);
+CHECK(cl_dir != NULL);
+ANT_index_keymap *cl = ANT_index_keymap::load(cl_dir);
+long long cl_gen, cl_docid;
+char cl_key[64];
+for (long long i = 0; i < 100; i++)
+	{
+	sprintf(cl_key, "churn-%lld", i % 10);		// 10 keys, updated 10x each
+	cl->add(cl_key, 1, i);
+	}
+delete cl;
+
+ANT_index_keymap *cl2 = ANT_index_keymap::load(cl_dir);
+CHECK(cl2->log_dead_ratio() > 0.8);				// 100 records, 10 live
+char cl_log[1200];
+snprintf(cl_log, sizeof(cl_log), "%s/keymap.log", cl_dir);
+struct stat before_stat;
+CHECK(stat(cl_log, &before_stat) == 0);
+CHECK(cl2->compact_log() == 0);
+struct stat after_stat;
+CHECK(stat(cl_log, &after_stat) == 0);
+CHECK(after_stat.st_size < before_stat.st_size / 2);
+/* state preserved and still appendable */
+for (long long i = 0; i < 10; i++)
+	{
+	sprintf(cl_key, "churn-%lld", i);
+	CHECK(cl2->find(cl_key, &cl_gen, &cl_docid) && cl_docid == 90 + i);
+	}
+cl2->add("post-compact", 2, 7);
+delete cl2;
+ANT_index_keymap *cl3 = ANT_index_keymap::load(cl_dir);
+CHECK(cl3->log_dead_ratio() < 0.1);
+CHECK(cl3->find("post-compact", &cl_gen, &cl_docid) && cl_gen == 2 && cl_docid == 7);
+sprintf(cl_key, "churn-%lld", (long long)4);
+CHECK(cl3->find(cl_key, &cl_gen, &cl_docid) && cl_docid == 94);
+delete cl3;
 
 printf("PASSED\n");
 return 0;

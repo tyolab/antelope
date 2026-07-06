@@ -20,6 +20,7 @@ table = new slot[slots_allocated];
 memset(table, 0, (size_t)(slots_allocated * sizeof(slot)));
 slots_used = 0;
 log = NULL;
+replayed_records = 0;
 }
 
 /*
@@ -271,6 +272,7 @@ while ((status = read_keymap_line(fp, line, sizeof(line))) != 0)
 			continue;		// invalid key: skip record
 
 		result->insert_no_log(key, generation, docid);
+		result->replayed_records++;
 		}
 	else if (line[0] == 'D' && line[1] == '\t')
 		{
@@ -297,6 +299,7 @@ while ((status = read_keymap_line(fp, line, sizeof(line))) != 0)
 		slot *s = result->find_slot(key);
 		if (s->key != NULL)
 			s->docid = -1;		// mark removed
+		result->replayed_records++;
 		}
 	}
 
@@ -439,4 +442,69 @@ for (i = 0; i < slots_allocated; i++)
 			}
 		}
 	}
+}
+
+/*
+	ANT_INDEX_KEYMAP::LOG_DEAD_RATIO()
+	----------------------------------
+	Proportion of the replayed log that no longer contributes a live entry.
+	0 when the log was empty.
+*/
+double ANT_index_keymap::log_dead_ratio(void)
+{
+long long live = 0, which;
+
+if (replayed_records == 0)
+	return 0.0;
+for (which = 0; which < slots_allocated; which++)
+	if (table[which].key != NULL && table[which].docid >= 0)
+		live++;
+return (double)(replayed_records - live) / (double)replayed_records;
+}
+
+/*
+	ANT_INDEX_KEYMAP::COMPACT_LOG()
+	-------------------------------
+	Write a fresh log holding one A record per live entry (temp + rename),
+	then reopen the append handle.  On any failure the old log remains
+	fully usable -- merely uncompacted, never lost.
+*/
+long ANT_index_keymap::compact_log(void)
+{
+char filename[4096], temp_name[4200];
+FILE *fresh;
+long long which, live = 0;
+
+snprintf(filename, sizeof(filename), "%s/keymap.log", directory);
+if (snprintf(temp_name, sizeof(temp_name), "%s.compact", filename) >= (int)sizeof(temp_name))
+	return 1;
+if ((fresh = fopen(temp_name, "wb")) == NULL)
+	return 1;
+for (which = 0; which < slots_allocated; which++)
+	if (table[which].key != NULL && table[which].docid >= 0)
+		{
+		if (fprintf(fresh, "A\t%lld\t%lld\t%s\n", table[which].generation, table[which].docid, table[which].key) < 0)
+			{
+			fclose(fresh);
+			remove(temp_name);
+			return 1;
+			}
+		live++;
+		}
+fclose(fresh);
+
+if (log != NULL)
+	{
+	fclose(log);
+	log = NULL;
+	}
+if (rename(temp_name, filename) != 0)
+	{
+	remove(temp_name);
+	log = fopen(filename, "ab");		// reopen the old log; state unchanged
+	return 1;
+	}
+log = fopen(filename, "ab");
+replayed_records = live;
+return 0;
 }

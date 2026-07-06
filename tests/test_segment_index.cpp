@@ -9,6 +9,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <math.h>
+#include <sys/stat.h>
 #include "../atire/atire_segment_index.h"
 #include "../source/index_merge.h"
 #include "../source/index_tombstones.h"
@@ -2070,6 +2071,58 @@ delete [] plain_dir;
 printf("test_vector_metrics_and_compat OK\n");
 }
 
+/*
+	TEST_KEYMAP_LOG_COMPACTION()
+	----------------------------
+	Update churn bloats keymap.log; reopen compacts it; state intact.
+*/
+static void test_keymap_log_compaction(void)
+{
+char *dir = make_index_dir();
+char key[64], doc[256], letters[16], log_name[4096];
+long long i, round;
+struct stat bloated, compacted;
+
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->open(dir) == 0);
+for (i = 0; i < 5; i++)
+	{
+	sprintf(key, "doc-%lld", i);
+	unique_term(letters, i);
+	sprintf(doc, "<DOC>common %s</DOC>", letters);
+	CHECK(index->add_document(key, doc) >= 0);
+	}
+CHECK(index->flush() == 0);
+for (round = 0; round < 20; round++)
+	for (i = 0; i < 5; i++)
+		{
+		sprintf(key, "doc-%lld", i);
+		unique_term(letters, i);
+		sprintf(doc, "<DOC>common ra%c%c %s</DOC>", (int)('a' + round / 26), (int)('a' + round % 26), letters);
+		CHECK(index->update_document(key, doc) >= 0);
+		}
+CHECK(index->flush() == 0);
+delete index;
+
+snprintf(log_name, sizeof(log_name), "%s/keymap.log", dir);
+CHECK(stat(log_name, &bloated) == 0);
+
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->open(dir) == 0);				// dead ratio >> 0.5 -> compacts
+CHECK(stat(log_name, &compacted) == 0);
+CHECK(compacted.st_size < bloated.st_size / 2);
+CHECK(reopened->get_document_count() == 5);
+unique_term(letters, 3);
+char query[64];
+sprintf(query, "ra%c%c", (int)('a' + 19 / 26), (int)('a' + 19 % 26));
+CHECK(reopened->search(query, 10) == 5);		// newest bodies live
+CHECK(reopened->delete_document("doc-3") == 0);	// keymap still correct
+CHECK(reopened->get_document_count() == 4);
+delete reopened;
+delete [] dir;
+printf("test_keymap_log_compaction OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -2099,6 +2152,7 @@ test_vector_search_nrt_and_persistence();
 test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
+test_keymap_log_compaction();
 printf("PASSED\n");
 return 0;
 }

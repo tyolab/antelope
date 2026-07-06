@@ -82,6 +82,27 @@ public:
 		next reload too.
 	*/
 	void retain_generations(const long long *generations, long long generation_count);
+
+	/*
+		ANT_INDEX_KEYMAP::LOG_DEAD_RATIO()
+		----------------------------------
+		Proportion of the replayed log that no longer contributes a live entry.
+		Dead count is (total replayed - live); live count is the number of
+		entries with docid >= 0.  Returns 0 when the log was empty.
+	*/
+	double log_dead_ratio(void);
+
+	/*
+		ANT_INDEX_KEYMAP::COMPACT_LOG()
+		-------------------------------
+		Write a fresh log holding one A record per live entry (temp + rename),
+		then reopen the append handle.  On any failure the old log remains
+		fully usable -- merely uncompacted, never lost.  Returns 0 on success.
+	*/
+	long compact_log(void);
+
+private:
+	long long replayed_records;		// count of A/D records successfully replayed in load()
 } ;
 
 #endif /* INDEX_KEYMAP_H_ */
