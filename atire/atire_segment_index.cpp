@@ -924,6 +924,38 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 		vec_failed = vec_writer.finish() != 0;
 	if (vec_failed)
 		return 1;		// pre-manifest failure: degraded per flush()'s existing contract
+
+	/*
+		V2: write the signature sidecar alongside the .vec just written, signing
+		each present vector with the index-wide projection.  Best-effort: a
+		failure here is non-fatal to the flush -- the segment is simply
+		exact-scanned until build_signatures()/compaction rebuilds it.
+	*/
+	if (signature_bits_current != 0 && query_signer != NULL)
+		{
+		char vsig_filename[1024];
+		ANT_signature_store_writer sig_writer;
+		unsigned char *sig = new unsigned char[query_signer->signature_bytes()];
+		long sig_failed;
+
+		segment_filename(vsig_filename, sizeof(vsig_filename), flushed_vector_generation, "vsig");
+		sig_failed = sig_writer.create(vsig_filename, signature_bits_current) != 0;
+		for (docid = 0; !sig_failed && docid < flushed_document_count; docid++)
+			{
+			if (writer_vector_presence[docid / 8] & (1 << (docid % 8)))
+				{
+				query_signer->sign(writer_vector_data + docid * vector_dimension_current, sig);
+				sig_failed = sig_writer.append(sig) != 0;
+				}
+			else
+				sig_failed = sig_writer.append(NULL) != 0;
+			}
+		if (!sig_failed)
+			sig_writer.finish();
+		else
+			sig_writer.abandon();
+		delete [] sig;
+		}
 	}
 
 segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");

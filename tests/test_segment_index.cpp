@@ -2093,6 +2093,27 @@ delete [] dir;
 printf("test_approx_config_persists OK\n");
 }
 
+static void test_flush_writes_signatures(void)
+{
+char *dir = make_index_dir();
+char vsig[4096];
+float v[8] = {1,0,0,0,0,0,0,0};
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(8, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_approximate_config(64) == 0);
+CHECK(idx->add_document("d1", "<DOC>alpha</DOC>", v) >= 0);
+CHECK(idx->flush() == 0);
+long long g = idx->disk_segment_generation(0);
+snprintf(vsig, sizeof(vsig), "%s/seg_%06lld.vsig", dir, g);
+FILE *fp = fopen(vsig, "rb");
+CHECK(fp != NULL);				// signature sidecar written at flush
+fclose(fp);
+delete idx;
+delete [] dir;
+printf("test_flush_writes_signatures OK\n");
+}
+
 /*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
@@ -2635,6 +2656,7 @@ test_vector_compaction_equivalence();
 test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_approx_config_persists();
+test_flush_writes_signatures();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();
