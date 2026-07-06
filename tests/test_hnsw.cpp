@@ -187,6 +187,31 @@ delete store; delete [] data; unlink(vpath); unlink(gpath);
 printf("test_load_degrade OK\n");
 }
 
+static void test_load_content_corruption(void)
+{
+long long dim = 8, n = 60, i;
+char vpath[64]; strcpy(vpath, "/tmp/ant_hnsw_cv_v_XXXXXX"); { int fd=mkstemp(vpath); if(fd>=0) close(fd); }
+char gpath[64]; strcpy(gpath, "/tmp/ant_hnsw_cv_g_XXXXXX"); { int fd=mkstemp(gpath); if(fd>=0) close(fd); unlink(gpath); }
+float *data = new float[n * dim]; srand(21);
+for (i = 0; i < n*dim; i++) data[i] = (float)(rand() % 50 - 25);
+ANT_vector_store *store = make_store(vpath, dim, n, data);
+ANT_hnsw g; CHECK(g.build(store, 16, 200, ANT_vector_store::METRIC_L2) == 0);
+CHECK(g.save(gpath) == 0);
+/* the neighbours region starts at header(52) + 4*n (levels) + 8*(n+1) (offsets).
+   The first int there is node 0's layer-0 [count]; the next ints are its docids.
+   Overwrite the first neighbour docid with an out-of-range value, same file size. */
+long long neigh_off = 52 + 4*n + 8*(n+1);
+FILE *fp = fopen(gpath, "r+b"); CHECK(fp != NULL);
+CHECK(fseek(fp, neigh_off + 4, SEEK_SET) == 0);		/* skip the first [count], hit the first docid */
+int bad = (int)(n + 1000);							/* out of [0, n) */
+CHECK(fwrite(&bad, sizeof(bad), 1, fp) == 1);
+fclose(fp);
+ANT_hnsw *loaded = ANT_hnsw::load(gpath, 16, 200, n);
+CHECK(loaded->node_count() == 0 && loaded->empty());	/* content-corrupt sidecar degrades, no crash */
+delete loaded; delete store; delete [] data; unlink(vpath); unlink(gpath);
+printf("test_load_content_corruption OK\n");
+}
+
 int main(void)
 {
 test_recall_and_determinism();
@@ -195,6 +220,7 @@ test_tombstone_filter();
 test_degenerate_M();
 test_save_load_roundtrip();
 test_load_degrade();
+test_load_content_corruption();
 printf("PASSED\n");
 return 0;
 }

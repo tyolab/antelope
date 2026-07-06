@@ -357,6 +357,32 @@ if (fread(nb,sizeof(int),(size_t)ncount,fp)!=(size_t)ncount)
 	{ delete [] lv; delete [] off; delete [] nb; fclose(fp); return g; }
 fclose(fp);
 
+/* content validation: every node's packed [count][docid...] layers must land
+   exactly on off[node+1], every count must be non-negative and fit, and
+   every neighbour docid must be in [0, docs).  A corrupt CSR would
+   otherwise drive out-of-bounds indexing in search(); degrade instead. */
+long content_ok = 1;
+for (i = 0; content_ok && i < docs; i++)
+	{
+	long long p = off[i], end = off[i + 1];
+	if (lv[i] < 0)
+		{ if (end != p) content_ok = 0; continue; }		/* not-in-graph node must have an empty slice */
+	for (long long layer = 0; content_ok && layer <= lv[i]; layer++)
+		{
+		if (p >= end) { content_ok = 0; break; }			/* ran out of slice before all layers */
+		long long cnt = nb[p++];
+		if (cnt < 0 || p + cnt > end) { content_ok = 0; break; }
+		for (long long z = 0; z < cnt; z++)
+			{
+			int d = nb[p + z];
+			if (d < 0 || d >= docs) { content_ok = 0; break; }
+			}
+		p += cnt;
+		}
+	if (content_ok && p != end) content_ok = 0;				/* must consume the slice exactly */
+	}
+if (!content_ok) { delete [] lv; delete [] off; delete [] nb; return g; }
+
 g->documents = docs; g->M = m; g->M0 = 2*m; g->ef_construction = efc;
 g->entry_point = ep; g->max_level = maxl;
 g->levels = lv; g->offsets = off; g->neighbours = nb;
