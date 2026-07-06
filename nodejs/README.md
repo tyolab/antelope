@@ -128,13 +128,13 @@ modern Node. Until that legacy guard is relaxed, load the addon directly:
 const { SegmentIndex } = require('antelope-search/build/Release/antelope_segment.node');
 ```
 
-`nodejs/index.js` also exposes a lazy `SegmentIndex` export (via
-`Object.defineProperty`) for the future/degenerate case where the legacy
-top-level code path does not throw — e.g. if a consumer patches or forks
-`index.js` to drop the old version guard — but on an unmodified checkout
-running under a modern Node, `require('antelope-search')` fails before that
-export is ever reached. Prefer the direct `build/Release/antelope_segment.node`
-require shown above.
+`nodejs/index.js` also exposes a lazy `SegmentIndex` export, defined (via
+`Object.defineProperty`) on the final `module.exports` object at the bottom
+of the file. It takes effect whenever the file evaluates to completion —
+i.e. on legacy Node (≤ 14), where `require('antelope-search').SegmentIndex`
+works alongside the legacy API without loading the segment addon until first
+access. On modern Node the version guard throws before that point, so use
+the direct `build/Release/antelope_segment.node` require shown above.
 
 ### Building
 

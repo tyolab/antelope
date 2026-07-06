@@ -1,16 +1,3 @@
-// Lazy export for the modern Node-API SegmentIndex binding. Defined FIRST,
-// before any of the legacy addon loading below, so that (where the legacy
-// path doesn't itself throw during module evaluation) `SegmentIndex` is
-// reachable without ever touching the legacy `.node` addon. NOTE: on modern
-// Node this module still throws synchronously a few lines down (the
-// node_version guard), which means `require('./index.js')` is unreachable
-// end-to-end on modern Node regardless of this placement — see README for
-// the documented direct-require fallback.
-Object.defineProperty(exports, 'SegmentIndex', {
-	enumerable: true,
-	get() { return require('./build/Release/antelope_segment.node').SegmentIndex; }
-});
-
 var antelope = null;
 const fs = require('fs');
 const path = require('path');
@@ -152,3 +139,15 @@ antelope.create_engine_from_indexer = function (indexer, opts) {
 }
 
 module.exports = antelope;
+
+// Lazy export for the modern Node-API SegmentIndex binding. Defined on the
+// final module.exports object (the `antelope` reassignment above replaces the
+// original `exports`), so the getter survives to consumers. This line is only
+// reached when the file evaluates to completion — i.e. on legacy Node (≤ 14)
+// where the version guard above doesn't throw. On modern Node,
+// require('./index.js') throws at the guard before getting here; load the
+// addon directly instead — see the README's SegmentIndex section.
+Object.defineProperty(module.exports, 'SegmentIndex', {
+	enumerable: true,
+	get() { return require('./build/Release/antelope_segment.node').SegmentIndex; }
+});

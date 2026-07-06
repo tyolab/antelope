@@ -28,7 +28,7 @@ private:
 	double option_tombstone_ratio;		// < 0 = default
 	long option_auto_maintain;			// 0/1
 
-	friend class MaintenanceWorker;		// Task 4
+	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
 	/* guards; each returns false after throwing */
 	bool require_open(Napi::Env env)
@@ -51,14 +51,14 @@ public:
 	Napi::Value Close(const Napi::CallbackInfo &info);
 	Napi::Value DocumentCount(const Napi::CallbackInfo &info);
 	Napi::Value VectorDimension(const Napi::CallbackInfo &info);
-	/* Task 3 */
+	/* write path + synchronous searches */
 	Napi::Value AddDocument(const Napi::CallbackInfo &info);
 	Napi::Value UpdateDocument(const Napi::CallbackInfo &info);
 	Napi::Value DeleteDocument(const Napi::CallbackInfo &info);
 	Napi::Value Search(const Napi::CallbackInfo &info);
 	Napi::Value SearchVector(const Napi::CallbackInfo &info);
 	Napi::Value SearchHybrid(const Napi::CallbackInfo &info);
-	/* Task 4 */
+	/* async maintenance (AsyncWorker-backed, Promise-returning) */
 	Napi::Value Flush(const Napi::CallbackInfo &info);
 	Napi::Value Maintain(const Napi::CallbackInfo &info);
 };
@@ -324,6 +324,18 @@ if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
 	vector = extract_vector(env, info[2], engine->vector_dimension(), &scratch);
 	if (vector == NULL)
 		return env.Undefined();		// TypeError already thrown
+	if (option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE)
+		{
+		double norm = 0.0;
+		for (long long which = 0; which < engine->vector_dimension(); which++)
+			norm += (double)vector[which] * (double)vector[which];
+		if (norm == 0.0)
+			{
+			delete [] scratch;
+			Napi::Error::New(env, "zero vector is not valid under the cosine metric").ThrowAsJavaScriptException();
+			return env.Undefined();
+			}
+		}
 	}
 
 long long handle = vector != NULL
@@ -333,9 +345,7 @@ delete [] scratch;
 
 if (handle < 0)
 	{
-	Napi::Error::New(env, vector != NULL && option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE
-		? "document rejected: empty/unparseable text, zero vector under cosine, or degraded index"
-		: "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
+	Napi::Error::New(env, "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
 	return env.Undefined();
 	}
 Napi::Object ref = Napi::Object::New(env);
@@ -370,6 +380,18 @@ if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
 	vector = extract_vector(env, info[2], engine->vector_dimension(), &scratch);
 	if (vector == NULL)
 		return env.Undefined();		// TypeError already thrown
+	if (option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE)
+		{
+		double norm = 0.0;
+		for (long long which = 0; which < engine->vector_dimension(); which++)
+			norm += (double)vector[which] * (double)vector[which];
+		if (norm == 0.0)
+			{
+			delete [] scratch;
+			Napi::Error::New(env, "zero vector is not valid under the cosine metric").ThrowAsJavaScriptException();
+			return env.Undefined();
+			}
+		}
 	}
 
 long long handle = vector != NULL
@@ -379,9 +401,7 @@ delete [] scratch;
 
 if (handle < 0)
 	{
-	Napi::Error::New(env, vector != NULL && option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE
-		? "document rejected: empty/unparseable text, zero vector under cosine, or degraded index"
-		: "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
+	Napi::Error::New(env, "document rejected: empty or unparseable text, or index is in a degraded read-only state").ThrowAsJavaScriptException();
 	return env.Undefined();
 	}
 Napi::Object ref = Napi::Object::New(env);
@@ -535,7 +555,7 @@ return hits_to_array(env, engine, count);
 	class MAINTENANCE_WORKER
 	------------------------
 	Runs flush() or maintain() off the event loop.  Holds a reference to the
-	wrapper so GC cannot finalize the engine mid-operation; restores IDLE and
+	wrapper so GC cannot finalize the engine mid-operation; restores OPEN and
 	settles the Promise on completion.
 */
 class MaintenanceWorker : public Napi::AsyncWorker
@@ -630,8 +650,8 @@ return worker->Promise();
 /*
 	SEGMENTINDEXWRAP::REGISTER()
 	-------------------------------
-	Defines the full method shape now (Task 3/4 methods stubbed above) so
-	later tasks only swap implementations, never touch this list.
+	Defines the complete method shape of the class in one place; the
+	implementations live above.
 */
 Napi::Object SegmentIndexWrap::Register(Napi::Env env, Napi::Object exports)
 {
