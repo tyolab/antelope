@@ -170,7 +170,7 @@ private:
 		must be read with get_document_filename_from_doclist() (the in-memory
 		doc_list accessor) instead.
 	*/
-	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index);
+	void search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index, const unsigned char *filter_bits = NULL);
 	long append_segment(long long generation);
 	void segment_filename(char *buffer, long long buffer_size, long long generation, const char *extension);
 	void delete_segment_files(long long generation);	// best-effort unlink of seg_G.aspt / seg_G.del
@@ -307,6 +307,7 @@ public:
 	void set_flush_threshold(long long documents) { flush_after_documents = documents; }
 
 	long long search(char *query, long long top_k);			// returns number of hits stored
+	long long search(char *query, long long top_k, const ANT_filter *filter);	// filtered lexical; over-pulls so a selective filter never under-returns
 	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
 	long long search_vector(const float *query, long long top_k, const ANT_filter *filter);	// filtered exact
 	long long search_vector_approx(const float *query, long long top_k);	// signature-prefiltered top-k; transparently falls back to exact for L2 / unconfigured

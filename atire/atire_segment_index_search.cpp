@@ -25,6 +25,7 @@
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
 #include "../source/wal.h"
+#include "../source/filter.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_RESULTS()
@@ -78,17 +79,20 @@ return &results[results_count - 1];
 	generation, docid, filename) results into the shared results[] array,
 	skipping any docid that segment's tombstones mark deleted.
 */
-void ATIRE_segment_index::search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index)
+void ATIRE_segment_index::search_one_segment(ATIRE_API *engine, ANT_index_tombstones *tombstones, long long generation, char *query, long long top_k, long use_filename_index, const unsigned char *filter_bits)
 {
 char query_copy[MAX_TERM_LENGTH];
-long long fetch, hits, which, docid, list_len;
+long long fetch, hits, which, docid, list_len, published = 0;
 ANT_search_engine *se;
 ANT_search_engine_result *list;
 ANT_search_engine_accumulator *accumulator;
 char *filename;
 char filename_index_buffer[4096];		// used only when use_filename_index (disk segments)
 
-fetch = top_k + (tombstones ? tombstones->count() : 0);
+if (filter_bits != NULL)
+	fetch = engine->get_document_count();		/* over-pull all ranked hits so a selective filter can still fill top_k */
+else
+	fetch = top_k + (tombstones ? tombstones->count() : 0);	/* unchanged unfiltered behaviour */
 
 strncpy(query_copy, query, sizeof(query_copy) - 1);
 query_copy[sizeof(query_copy) - 1] = '\0';
@@ -101,10 +105,15 @@ list_len = list->results_list_length;
 
 for (which = 0; which < hits && which < fetch && which < list_len; which++)
 	{
+	if (filter_bits != NULL && published >= top_k)		/* enough admitted from this segment (filtered mode only) */
+		break;
 	accumulator = list->accumulator_pointers[which];
 	docid = accumulator - list->accumulator;
 
 	if (tombstones != NULL && tombstones->is_deleted(docid))
+		continue;
+
+	if (filter_bits != NULL && !(filter_bits[docid >> 3] & (1 << (docid & 7))))	/* not admitted by the filter */
 		continue;
 
 	/*
@@ -132,6 +141,9 @@ for (which = 0; which < hits && which < fetch && which < list_len; which++)
 		}
 	else
 		slot->filename = NULL;
+
+	if (filter_bits != NULL)
+		published++;
 	}
 }
 
@@ -181,6 +193,47 @@ if (results_count > top_k)
 		free loop at the top of this method and the destructor only walk
 		[0, results_count), so anything past top_k would otherwise leak.
 	*/
+	for (which = top_k; which < results_count; which++)
+		delete [] results[which].filename;
+	results_count = top_k;
+	}
+
+return results_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH() (filtered)
+	-------------------------------------------
+	Like the unfiltered search(), but every segment/live pass is gated by a
+	per-docid match bitset so a selective filter never under-returns: each
+	search_one_segment() over-pulls all ranked hits and publishes only admitted
+	ones, up to top_k per segment, before the global merge+truncate.
+*/
+long long ATIRE_segment_index::search(char *query, long long top_k, const ANT_filter *filter)
+{
+long long which;
+
+reset_results();
+
+for (which = 0; which < segment_count; which++)
+	{
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
+	search_one_segment(segments[which].engine, segments[which].tombstones, segments[which].generation, query, top_k, /*use_filename_index=*/1, fbits);
+	delete [] fbits;
+	}
+
+rebuild_writer_engine();
+if (writer_engine != NULL)
+	{
+	unsigned char *lbits = evaluate_filter_for_live(filter);
+	search_one_segment(writer_engine, writer_tombstones, writer_generation, query, top_k, /*use_filename_index=*/0, lbits);
+	delete [] lbits;
+	}
+
+qsort(results, (size_t)results_count, sizeof(*results), ATIRE_segment_index_hit_cmp);
+
+if (results_count > top_k)
+	{
 	for (which = top_k; which < results_count; which++)
 		delete [] results[which].filename;
 	results_count = top_k;

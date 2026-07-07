@@ -3057,6 +3057,48 @@ delete [] dir_single;
 printf("test_global_stats_score_equality OK\n");
 }
 
+static void test_filtered_lexical_search(void)
+{
+	char *dir = make_index_dir();
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s; s.add_field("tag", ANT_attribute_schema::TYPE_STRING, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	long long i;
+	/* 30 docs all containing "apple"; docs 0..19 tag=skip, docs 20..29 tag=keep.
+	   Identical term => tied lexical score => tie-break by docid ascending, so a naive
+	   top-10 returns the skip docs (0..9). The filter must over-pull to find the 10 keep docs. */
+	for (i = 0; i < 30; i++)
+		{
+		ANT_attribute_set A(ix->attribute_schema());
+		A.set_string(0, i >= 20 ? "keep" : "skip");
+		char key[16]; sprintf(key, "d%lld", i);
+		CHECK(ix->add_document(key, "<DOC>apple</DOC>", NULL, NULL, 0, &A) >= 0);
+		}
+	CHECK(ix->flush() == 0);
+	char qbuf[16]; strcpy(qbuf, "apple");
+	/* unfiltered top-10 exists */
+	CHECK(ix->search(qbuf, 10) == 10);
+	ANT_filter *f = ANT_filter::eq_string("tag", "keep");
+	CHECK(f->build(ix->attribute_schema()) == 0);
+	long long got = ix->search(qbuf, 10, f);
+	CHECK(got == 10);							/* filled despite 20 higher-ranked skip docs -> no under-fill */
+	for (i = 0; i < got; i++)
+		{
+		long long idx = atoll(ix->get_hit(i)->filename + 1);
+		CHECK(idx >= 20);						/* every returned doc is tag=keep */
+		}
+	/* a filter matching only 3 docs returns exactly 3 (not padded, not under-filled elsewhere) */
+	delete f;
+	const char *kv[1] = {"keep"};
+	ANT_filter *f2 = ANT_filter::in_string("tag", kv, 1);	/* still 10 */
+	CHECK(f2->build(ix->attribute_schema()) == 0);
+	CHECK(ix->search(qbuf, 3, f2) == 3);		/* top_k=3 over keep docs */
+	delete f2;
+	delete ix; delete [] dir;
+	printf("test_filtered_lexical_search OK\n");
+}
+
 /*
 	TEST_FILTERED_VECTOR_SCAN()
 	---------------------------
@@ -3856,6 +3898,7 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_filtered_lexical_search();
 test_filtered_hnsw_no_underfill();
 test_filtered_vector_scan();
 test_payload_on_hits();
