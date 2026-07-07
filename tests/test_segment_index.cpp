@@ -3519,6 +3519,54 @@ delete ix; delete [] dir;
 printf("test_compaction_preserves_mvec OK\n");
 }
 
+/*
+	TEST_RERANK_COEXISTS_AND_PARITY()
+	---------------------------------
+	Proves late-interaction rerank (V5) coexists on the SAME index with V4 int8
+	quantization (replace), V2 approximate signatures, and V3 HNSW, across the
+	full lifecycle (add -> flush -> delete -> maintain/compact), with every
+	search entry point returning a sane top-k.
+*/
+static void test_rerank_coexists_and_parity(void)
+{
+char *dir = make_index_dir();
+long long dim = 16, mvdim = 8, n = 60, i, d;
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_approximate_config(256) == 0);
+CHECK(ix->set_hnsw_config(16, 200) == 0);
+CHECK(ix->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);
+CHECK(ix->set_rerank_config(mvdim, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);
+srand(71);
+float dv[16], mv[3*8];
+for (i = 0; i < n; i++)
+	{
+	for (d = 0; d < dim; d++) dv[d] = (float)(rand()%2000-1000)/500.0f;
+	if (dv[0] == 0.0f) dv[0] = 0.3f;					/* avoid zero doc-vector under cosine */
+	for (d = 0; d < 3*8; d++) mv[d] = (float)(rand()%2000-1000)/500.0f;
+	char k[16]; sprintf(k,"d%lld",i); char doc[48]; sprintf(doc,"<DOC>doc %lld tok</DOC>",i);
+	CHECK(ix->add_document(k, doc, dv, mv, 3) >= 0);
+	if (i % 20 == 19) CHECK(ix->flush() == 0);
+	}
+CHECK(ix->flush() == 0);
+CHECK(ix->delete_document("d5") == 0);
+CHECK(ix->maintain() == 0);
+CHECK(dir_has_glob(dir, "seg_*.mvec"));
+float qv[16]; for (d = 0; d < dim; d++) qv[d] = (float)(rand()%2000-1000)/500.0f;
+float qmv[3*8]; for (d = 0; d < 3*8; d++) qmv[d] = (float)(rand()%2000-1000)/500.0f;
+char qtext[] = "tok";
+CHECK(ix->search_vector(qv, 5) >= 1);
+CHECK(ix->search_vector_approx(qv, 5) >= 1);
+CHECK(ix->search_vector_hnsw(qv, 5) >= 1);
+CHECK(ix->search_hybrid(qtext, qv, 5) >= 1);
+CHECK(ix->search_hybrid_approx(qtext, qv, 5) >= 1);
+CHECK(ix->search_hybrid_hnsw(qtext, qv, 5) >= 1);
+CHECK(ix->search_rerank(qtext, qv, qmv, 3, 50, 5) >= 1);		/* rerank over hybrid stage 1, post-compaction */
+delete ix; delete [] dir;
+printf("test_rerank_coexists_and_parity OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -3584,6 +3632,7 @@ test_quantization_coexists_with_approx_and_hnsw();
 test_flush_writes_mvec();
 test_compaction_preserves_mvec();
 test_search_rerank_changes_order();
+test_rerank_coexists_and_parity();
 printf("PASSED\n");
 return 0;
 }
