@@ -3494,6 +3494,26 @@ delete ix; delete [] dir;
 printf("test_search_rerank_changes_order OK\n");
 }
 
+static void test_search_rerank_no_first_stage_is_safe(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_rerank_config(4, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+float dv[4] = {1,0,0,0}, mv[4] = {1,0,0,0};
+CHECK(ix->add_document("A", "<DOC>alpha</DOC>", dv, mv, 1) >= 0);
+CHECK(ix->flush() == 0);
+float qmv[4] = {0,0,1,0};
+/* neither text nor vector -> no first stage -> must return 0, NOT crash */
+CHECK(ix->search_rerank(NULL, NULL, qmv, 1, 10, 5) == 0);
+/* sanity: with a vector it still reranks normally */
+float qv[4] = {1,0,0,0};
+CHECK(ix->search_rerank(NULL, qv, qmv, 1, 10, 5) >= 1);
+delete ix; delete [] dir;
+printf("test_search_rerank_no_first_stage_is_safe OK\n");
+}
+
 static void test_compaction_preserves_mvec(void)
 {
 char *dir = make_index_dir();
@@ -3632,6 +3652,7 @@ test_quantization_coexists_with_approx_and_hnsw();
 test_flush_writes_mvec();
 test_compaction_preserves_mvec();
 test_search_rerank_changes_order();
+test_search_rerank_no_first_stage_is_safe();
 test_rerank_coexists_and_parity();
 printf("PASSED\n");
 return 0;

@@ -1001,6 +1001,13 @@ Napi::Object options = (info.Length() >= 2 && info[1].IsObject()) ? info[1].As<N
 bool has_text = options.Has("text") && !options.Get("text").IsUndefined() && !options.Get("text").IsNull();
 bool has_vector = options.Has("vector") && !options.Get("vector").IsUndefined() && !options.Get("vector").IsNull();
 
+if (!has_text && !has_vector)
+	{
+	delete [] mv_scratch;
+	Napi::TypeError::New(env, "searchRerank requires options.text and/or options.vector for the first stage").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
 if (has_text && !options.Get("text").IsString())
 	{
 	delete [] mv_scratch;

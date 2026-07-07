@@ -739,6 +739,7 @@ return 0;
 long ATIRE_segment_index::writer_multivector_append(long long docid, const float *multivector, long long num_vectors)
 {
 long long row;
+long long appended = (num_vectors > 0 && multivector != NULL && rerank_dimension_current > 0) ? num_vectors : 0;
 
 if (writer_multivector_counts_capacity == 0)
 	{
@@ -759,19 +760,19 @@ if (docid >= writer_multivector_counts_capacity)
 	writer_multivector_counts_capacity = new_capacity;
 	}
 
-writer_multivector_counts[docid] = (int)num_vectors;
+writer_multivector_counts[docid] = (int)appended;
 
-if (num_vectors > 0 && multivector != NULL && rerank_dimension_current > 0)
+if (appended > 0)
 	{
 	if (writer_multivector_capacity == 0)
 		{
 		writer_multivector_capacity = 1024;
 		writer_multivector_data = new float[writer_multivector_capacity * rerank_dimension_current];
 		}
-	if (writer_multivector_total + num_vectors > writer_multivector_capacity)
+	if (writer_multivector_total + appended > writer_multivector_capacity)
 		{
 		long long new_capacity = writer_multivector_capacity * 2;
-		while (writer_multivector_total + num_vectors > new_capacity)
+		while (writer_multivector_total + appended > new_capacity)
 			new_capacity *= 2;
 		float *new_data = new float[new_capacity * rerank_dimension_current];
 		memcpy(new_data, writer_multivector_data, (size_t)(writer_multivector_total * rerank_dimension_current * sizeof(float)));
@@ -780,7 +781,7 @@ if (num_vectors > 0 && multivector != NULL && rerank_dimension_current > 0)
 		writer_multivector_capacity = new_capacity;
 		}
 
-	for (row = 0; row < num_vectors; row++)
+	for (row = 0; row < appended; row++)
 		{
 		float *dst = writer_multivector_data + writer_multivector_total * rerank_dimension_current;
 		memcpy(dst, multivector + row * rerank_dimension_current, (size_t)(rerank_dimension_current * sizeof(float)));
@@ -1382,6 +1383,9 @@ qn = new float[num_query_vecs * dim];
 memcpy(qn, query_multivector, (size_t)(num_query_vecs * dim) * sizeof(float));
 for (i = 0; i < num_query_vecs; i++)
 	ANT_vector_store::normalize(qn + i * dim, dim);
+
+if (query_text == NULL && query_vector == NULL)
+	{ delete [] qn; return 0; }		// no first stage possible -- nothing to rerank
 
 /* stage 1 -> results[] */
 if (query_text != NULL && query_vector != NULL)

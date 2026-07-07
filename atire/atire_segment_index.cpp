@@ -673,7 +673,8 @@ docid -= 1;
 */
 if (vector_dimension_current != 0)
 	writer_vector_append(docid, vector);
-writer_multivector_append(docid, multivector, num_vectors);
+if (rerank_configured())
+	writer_multivector_append(docid, multivector, num_vectors);
 
 writer_documents++;
 writer_engine_stale = 1;
