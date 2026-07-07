@@ -404,6 +404,94 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::LOAD_RERANK_CONFIG()
+	--------------------------------------------
+	Reads <dir>/rerank.config (magic/version/dimension/quant).  Absent =>
+	leaves rerank_dimension_current unchanged (unconfigured).  Garbage =>
+	treated as absent (defensive parse, mirrors load_quantization_config).
+*/
+long ATIRE_segment_index::load_rerank_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long dimension, quant;
+const char *tag = "ANTRR001";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/rerank.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&dimension, sizeof(dimension), 1, fp) != 1
+	|| fread(&quant, sizeof(quant), 1, fp) != 1
+	|| dimension < 1 || dimension > 65536
+	|| (quant != RERANK_QUANT_FLOAT && quant != RERANK_QUANT_INT8))
+	{ fclose(fp); return 0; }
+fclose(fp);
+rerank_dimension_current = dimension;
+rerank_quant_current = (long)quant;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_RERANK_CONFIG()
+	----------------------------------------------
+	Atomic write (temp + rename) of the index-wide rerank config.
+*/
+long ATIRE_segment_index::save_rerank_config(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long dimension = rerank_dimension_current, quant = rerank_quant_current;
+const char *tag = "ANTRR001";
+
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/rerank.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&dimension, sizeof(dimension), 1, fp) != 1 || fwrite(&quant, sizeof(quant), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_RERANK_CONFIG()
+	-----------------------------------------------
+	Configure the index-wide late-interaction rerank multi-vector dimension +
+	quantization mode.  Requires the index to be open.  Once set, both are
+	immutable: setting the SAME (dimension, quant) pair again is a no-op
+	success (idempotent), but any change is rejected.  Mirrors
+	set_quantization()'s "first enable wins, reject different" contract.
+*/
+long ATIRE_segment_index::set_rerank_config(long long dimension, long quant)
+{
+if (directory == NULL)
+	return 1;					// must be open
+if (dimension < 1 || dimension > 65536)
+	return 1;
+if (quant != RERANK_QUANT_FLOAT && quant != RERANK_QUANT_INT8)
+	return 1;
+if (rerank_dimension_current != 0)			// already set: immutable
+	return (rerank_dimension_current == dimension && rerank_quant_current == quant) ? 0 : 1;
+rerank_dimension_current = dimension;
+rerank_quant_current = quant;
+if (save_rerank_config() != 0)
+	{ rerank_dimension_current = 0; rerank_quant_current = 0; return 1; }
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::SET_EF_SEARCH()
 	----------------------------------------
 	Query-time knob; clamps to >= 1.  May be called before or after open().

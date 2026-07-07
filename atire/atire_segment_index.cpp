@@ -82,6 +82,9 @@ hnsw_ef_search = 64;
 
 quantization_current = 0;
 
+rerank_dimension_current = 0;
+rerank_quant_current = 0;
+
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
@@ -338,6 +341,7 @@ load_signature_config();
 rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
+load_rerank_config();
 if (vector_config_pending)
 	{
 	if (vector_dimension_current != 0)

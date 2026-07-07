@@ -100,6 +100,9 @@ private:
 
 	long quantization_current;				// 0 = off (QUANTIZE_OFF)
 
+	long long rerank_dimension_current;		// 0 = rerank not configured
+	long rerank_quant_current;				// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+
 	/* memory-segment vector buffer, parallel to the writer's docids */
 	float *writer_vector_data;
 	unsigned char *writer_vector_presence;
@@ -181,6 +184,7 @@ private:
 public:
 	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
 	enum { QUANTIZE_OFF = 0, QUANTIZE_REPLACE = 1, QUANTIZE_EXACT = 2 };
+	enum { RERANK_QUANT_FLOAT = 0, RERANK_QUANT_INT8 = 1 };
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
@@ -202,6 +206,12 @@ public:
 	long save_quantization_config(void);
 	long set_quantization(long mode);		// enable quantization; persists quantization.config. Idempotent for the same mode; returns nonzero if already set to a DIFFERENT mode (immutable), or if mode invalid / vectors not configured.
 	long quantization_mode(void) { return quantization_current; }
+
+	long load_rerank_config(void);
+	long save_rerank_config(void);
+	long set_rerank_config(long long dimension, long quant_mode);	// immutable once set; 0 on success
+	long rerank_configured(void) { return rerank_dimension_current != 0; }
+	long long rerank_dimension(void) { return rerank_dimension_current; }
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

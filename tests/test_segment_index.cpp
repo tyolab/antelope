@@ -2144,6 +2144,30 @@ delete [] dir;
 printf("test_quantization_config_persist OK\n");
 }
 
+static void test_rerank_config_persist(void)
+{
+char *dir = make_index_dir();
+{
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->rerank_configured() == 0);							/* default off */
+	CHECK(ix->set_rerank_config(128, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);
+	CHECK(ix->rerank_configured() != 0);
+	CHECK(ix->set_rerank_config(128, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);	/* same: idempotent */
+	CHECK(ix->set_rerank_config(64, ATIRE_segment_index::RERANK_QUANT_INT8) != 0);	/* different dim: rejected */
+	delete ix;
+}
+{
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->rerank_configured() != 0);							/* persisted across reopen */
+	CHECK(ix->set_rerank_config(64, ATIRE_segment_index::RERANK_QUANT_FLOAT) != 0);	/* different: rejected */
+	delete ix;
+}
+delete [] dir;
+printf("test_rerank_config_persist OK\n");
+}
+
 static void test_flush_writes_signatures(void)
 {
 char *dir = make_index_dir();
@@ -3430,6 +3454,7 @@ test_vector_metrics_and_compat();
 test_approx_config_persists();
 test_hnsw_config_persists();
 test_quantization_config_persist();
+test_rerank_config_persist();
 test_flush_writes_signatures();
 test_flush_builds_hnsw();
 test_build_signatures_backfill();
