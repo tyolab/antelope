@@ -477,6 +477,28 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::SCAN_LIVE_BUFFER_EXACT()
+	---------------------------------------------
+	Exact-scan the live memory buffer (never signature/graph-indexed) into best[],
+	skipping absent and tombstoned slots.  Shared verbatim by all three
+	vector_candidates_* gatherers, so it lives here once.  Expects query already
+	normalized in cosine mode (each gatherer normalizes up front).
+*/
+void ATIRE_segment_index::scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k)
+{
+long long docid;
+
+for (docid = 0; docid < writer_documents; docid++)
+	{
+	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
+		continue;
+	if (writer_tombstones->is_deleted(docid))
+		continue;
+	ANT_vector_candidate_insert(best, best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
+	}
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES()
 	----------------------------------------
 	Exact top-k across every disk segment's vector store and the live memory
@@ -486,7 +508,7 @@ return 0;
 */
 long long ATIRE_segment_index::vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best)
 {
-long long which, docid, best_count = 0;
+long long which, best_count = 0;
 float *normalized = NULL;
 
 if (vector_dimension_current == 0 || query == NULL || top_k < 1)
@@ -508,14 +530,7 @@ for (which = 0; which < segment_count; which++)
 	if (segments[which].vectors != NULL)
 		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
 
-for (docid = 0; docid < writer_documents; docid++)
-	{
-	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
-		continue;
-	if (writer_tombstones->is_deleted(docid))
-		continue;
-	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
-	}
+scan_live_buffer_exact(query, best, &best_count, top_k);
 
 delete [] normalized;
 return best_count;
@@ -542,14 +557,16 @@ return one->docid < two->docid ? -1 : (one->docid == two->docid ? 0 : 1);
 }
 
 /*
-	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR()
-	--------------------------------------
-	Exact top-k dense-vector search across the live memory buffer and every
-	open disk segment's vector store.  Mirrors search()'s results[] contract
-	(prior hits' filenames freed at entry) -- results[]/results_count are
-	shared with search(); only one of the two result sets exists at a time.
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR_IMPL()
+	-----------------------------------------
+	Unified dense-vector top-k across the live memory buffer and every open disk
+	segment.  The mode selects the candidate gatherer (exact / signature-prefiltered
+	/ HNSW graph); the downstream (sort + resolve + publish) is identical for all
+	three, so it lives here once.  Mirrors search()'s results[] contract (prior
+	hits' filenames freed at entry) -- results[]/results_count are shared with
+	search(); only one of the two result sets exists at a time.
 */
-long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
+long long ATIRE_segment_index::search_vector_impl(const float *query, long long top_k, vector_search_mode mode)
 {
 char filename_buffer[4096];
 long long which, count;
@@ -561,7 +578,9 @@ if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 	return 0;
 
 best = new ANT_vector_candidate[top_k];
-count = vector_candidates(query, top_k, best);
+count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best)
+	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best)
+	: vector_candidates(query, top_k, best);
 qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
 
 for (which = 0; which < count; which++)
@@ -587,6 +606,17 @@ for (which = 0; which < count; which++)
 
 delete [] best;
 return results_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR()
+	--------------------------------------
+	Exact top-k dense-vector search across the live memory buffer and every
+	open disk segment's vector store.
+*/
+long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
+{
+return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);
 }
 
 /*
@@ -638,14 +668,7 @@ for (which = 0; which < segment_count; which++)
 		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
 	}
 
-for (docid = 0; docid < writer_documents; docid++)		// live memory buffer: always exact (mirrors vector_candidates())
-	{
-	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
-		continue;
-	if (writer_tombstones->is_deleted(docid))
-		continue;
-	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
-	}
+scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never signature-indexed)
 
 delete [] normalized;
 delete [] query_sig;
@@ -656,54 +679,17 @@ return best_count;
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR_APPROX()
 	-------------------------------------------
-	Signature-prefiltered dense-vector top-k.  Shares search_vector()'s
-	downstream (sort + resolve + publish) verbatim so approximate and exact
-	rankings are identical modulo the shortlist; only the candidate gatherer
-	differs.  Transparently falls back to the exact path when approximate is
+	Signature-prefiltered dense-vector top-k: search_vector_impl() with the
+	APPROX gatherer, so approximate and exact rankings are identical modulo the
+	shortlist.  Transparently falls back to the exact path when approximate is
 	unconfigured or the metric is L2 (SimHash tracks angular, not Euclidean,
 	distance) -- giving byte-identical results in those cases.
 */
 long long ATIRE_segment_index::search_vector_approx(const float *query, long long top_k)
 {
-char filename_buffer[4096];
-long long which, count;
-ANT_vector_candidate *best;
-
 if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
-	return search_vector(query, top_k);			// transparent fallback
-
-reset_results();
-
-if (vector_dimension_current == 0 || query == NULL || top_k < 1)
-	return 0;
-
-best = new ANT_vector_candidate[top_k];
-count = vector_candidates_approx(query, top_k, best);
-qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
-
-for (which = 0; which < count; which++)
-	{
-	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
-
-	hit *slot = append_result();
-
-	slot->generation = best[which].generation;
-	slot->docid = best[which].docid;
-	slot->score = best[which].score;
-	if (filename != NULL)
-		{
-		slot->filename = new char[strlen(filename) + 1];
-		strcpy(slot->filename, filename);
-		}
-	else
-		{
-		slot->filename = new char[1];
-		slot->filename[0] = '\0';
-		}
-	}
-
-delete [] best;
-return results_count;
+	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);		// transparent fallback
+return search_vector_impl(query, top_k, VECTOR_MODE_APPROX);
 }
 
 /*
@@ -717,7 +703,7 @@ return results_count;
 */
 long long ATIRE_segment_index::vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best)
 {
-long long which, docid, best_count = 0;
+long long which, best_count = 0;
 long long ef = hnsw_ef_search < top_k ? top_k : hnsw_ef_search;
 float *normalized = NULL;
 long long *cand_docids = new long long[ef > 0 ? ef : 1];
@@ -748,14 +734,7 @@ for (which = 0; which < segment_count; which++)
 		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
 	}
 
-for (docid = 0; docid < writer_documents; docid++)		// live memory buffer: always exact (mirrors vector_candidates())
-	{
-	if (writer_vector_presence == NULL || !(writer_vector_presence[docid / 8] & (1 << (docid % 8))))
-		continue;
-	if (writer_tombstones->is_deleted(docid))
-		continue;
-	ANT_vector_candidate_insert(best, &best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
-	}
+scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never graph-indexed)
 
 delete [] normalized;
 delete [] cand_docids;
@@ -766,54 +745,17 @@ return best_count;
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_VECTOR_HNSW()
 	-----------------------------------------
-	HNSW-graph dense-vector top-k.  Shares search_vector()'s downstream (sort +
-	resolve + publish) verbatim so approximate and exact rankings are identical
-	modulo the graph navigation; only the candidate gatherer differs.
+	HNSW-graph dense-vector top-k: search_vector_impl() with the HNSW gatherer,
+	so exact and graph rankings are identical modulo the graph navigation.
 	Transparently falls back to the exact path when HNSW is unconfigured or the
 	metric is DOT (unnormalized dot has no bounded kernel for graph navigation) --
 	giving byte-identical results in those cases.
 */
 long long ATIRE_segment_index::search_vector_hnsw(const float *query, long long top_k)
 {
-char filename_buffer[4096];
-long long which, count;
-ANT_vector_candidate *best;
-
 if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
-	return search_vector(query, top_k);			// transparent fallback (dot / unconfigured)
-
-reset_results();
-
-if (vector_dimension_current == 0 || query == NULL || top_k < 1)
-	return 0;
-
-best = new ANT_vector_candidate[top_k];
-count = vector_candidates_hnsw(query, top_k, best);
-qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
-
-for (which = 0; which < count; which++)
-	{
-	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
-
-	hit *slot = append_result();
-
-	slot->generation = best[which].generation;
-	slot->docid = best[which].docid;
-	slot->score = best[which].score;
-	if (filename != NULL)
-		{
-		slot->filename = new char[strlen(filename) + 1];
-		strcpy(slot->filename, filename);
-		}
-	else
-		{
-		slot->filename = new char[1];
-		slot->filename[0] = '\0';
-		}
-	}
-
-delete [] best;
-return results_count;
+	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);		// transparent fallback (dot / unconfigured)
+return search_vector_impl(query, top_k, VECTOR_MODE_HNSW);
 }
 
 /*
@@ -852,19 +794,22 @@ return 0;
 }
 
 /*
-	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID()
-	------------------------------------
+	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID_IMPL()
+	-----------------------------------------
 	Reciprocal Rank Fusion of the lexical top-k and the vector top-k:
 	fused(d) = sum over lists containing d of 1 / (60 + rank_d), ranks
 	1-based.  60 is the standard RRF constant.  Either side may be absent;
 	the result degrades to the other side (still RRF-scored, order preserved).
+	The mode selects the vector-leg gatherer (exact / signature-prefiltered /
+	HNSW graph); the lexical leg, fusion math, and publish are identical for all
+	three, so they live here once.
 
 	The candidate and its filename are carried together in a single
 	ANT_fused_candidate[] array (see struct above, just up) so that qsort()
 	cannot desynchronize them; a parallel filename array would move the
 	ANT_vector_candidate rows without moving the corresponding filename rows.
 */
-long long ATIRE_segment_index::search_hybrid(char *query_text, const float *query_vector, long long top_k)
+long long ATIRE_segment_index::search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode)
 {
 long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
 char filename_buffer[4096];
@@ -898,7 +843,9 @@ for (which = 0; which < lexical_count; which++)
 if (query_vector != NULL && vector_dimension_current != 0)
 	{
 	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
-	vector_count = vector_candidates(query_vector, top_k, best);
+	vector_count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query_vector, top_k, best)
+		: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query_vector, top_k, best)
+		: vector_candidates(query_vector, top_k, best);
 	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
 	for (which = 0; which < vector_count; which++)
 		{
@@ -953,216 +900,45 @@ for (which = publish; which < fused_count; which++)
 	delete [] fused[which].filename;
 delete [] fused;
 return results_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID()
+	------------------------------------
+	RRF fusion of the lexical top-k and the EXACT vector top-k.
+*/
+long long ATIRE_segment_index::search_hybrid(char *query_text, const float *query_vector, long long top_k)
+{
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT);
 }
 
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID_APPROX()
 	--------------------------------------------
-	Like search_hybrid(), but the vector leg is gathered via
-	vector_candidates_approx() (signature-prefiltered) rather than
-	vector_candidates() (exact). Verbatim copy of search_hybrid()'s body
-	otherwise -- the RRF math (k=60), lexical leg, fused-merge logic, qsorts,
-	and publish loop are all identical -- so the two stay aligned and a future
-	reader can diff them to confirm only the gatherer differs. Transparently
-	falls back to search_hybrid() when approximate is unconfigured or the
-	metric is L2 (SimHash tracks angular, not Euclidean, distance).
+	search_hybrid_impl() with the APPROX vector-leg gatherer (signature-
+	prefiltered) instead of exact; RRF math, lexical leg, and publish are
+	unchanged.  Transparently falls back to the exact fusion when approximate is
+	unconfigured or the metric is L2 (SimHash tracks angular, not Euclidean,
+	distance).
 */
 long long ATIRE_segment_index::search_hybrid_approx(char *query_text, const float *query_vector, long long top_k)
 {
 if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
-	return search_hybrid(query_text, query_vector, top_k);		// transparent fallback
-
-long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
-char filename_buffer[4096];
-
-if (top_k < 1)
-	return 0;
-
-/*
-	Lexical side first: run the existing search and snapshot its hits (the
-	results array is shared, so the snapshot must deep-copy the filenames)
-	into the fused array before it gets overwritten.
-*/
-ANT_fused_candidate *fused = new ANT_fused_candidate[top_k * 2];
-
-if (query_text != NULL && *query_text != '\0')
-	lexical_count = search(query_text, top_k);
-for (which = 0; which < lexical_count; which++)
-	{
-	fused[fused_count].candidate.generation = results[which].generation;
-	fused[fused_count].candidate.docid = results[which].docid;
-	fused[fused_count].candidate.score = 1.0 / (60.0 + (double)(which + 1));
-	fused[fused_count].filename = new char[strlen(results[which].filename) + 1];
-	strcpy(fused[fused_count].filename, results[which].filename);
-	fused_count++;
-	}
-
-/*
-	Vector side: candidates + rank contribution, merged into the fused set
-	by (generation, docid) identity.
-*/
-if (query_vector != NULL && vector_dimension_current != 0)
-	{
-	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
-	vector_count = vector_candidates_approx(query_vector, top_k, best);
-	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
-	for (which = 0; which < vector_count; which++)
-		{
-		double contribution = 1.0 / (60.0 + (double)(which + 1));
-		long found = false;
-		for (other = 0; other < fused_count; other++)
-			if (fused[other].candidate.generation == best[which].generation && fused[other].candidate.docid == best[which].docid)
-				{
-				fused[other].candidate.score += contribution;
-				found = true;
-				break;
-				}
-		if (!found)
-			{
-			fused[fused_count].candidate.generation = best[which].generation;
-			fused[fused_count].candidate.docid = best[which].docid;
-			fused[fused_count].candidate.score = contribution;
-			char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
-			fused[fused_count].filename = new char[(filename != NULL ? strlen(filename) : 0) + 1];
-			strcpy(fused[fused_count].filename, filename != NULL ? filename : "");
-			fused_count++;
-			}
-		}
-	delete [] best;
-	}
-
-/*
-	Sort fused by score desc (ties: generation, docid asc) -- candidate and
-	filename move together, so this cannot desynchronize them -- then
-	truncate and publish into the shared results array.  The lexical
-	search() call above already freed the PREVIOUS results at its entry (or,
-	if query_text was NULL/empty, the results array is whatever it held
-	before this call); either way those filenames are snapshotted into
-	fused[] by now, so free them here before repopulating.
-*/
-qsort(fused, (size_t)fused_count, sizeof(*fused), ANT_fused_candidate_compare);
-
-reset_results();
-
-long long publish = fused_count < top_k ? fused_count : top_k;
-for (which = 0; which < publish; which++)
-	{
-	hit *slot = append_result();
-
-	slot->generation = fused[which].candidate.generation;
-	slot->docid = fused[which].candidate.docid;
-	slot->score = fused[which].candidate.score;
-	slot->filename = fused[which].filename;		/* ownership transfer */
-	fused[which].filename = NULL;
-	}
-for (which = publish; which < fused_count; which++)
-	delete [] fused[which].filename;
-delete [] fused;
-return results_count;
+	return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT);		// transparent fallback
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_APPROX);
 }
 
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID_HNSW()
 	------------------------------------------
-	Like search_hybrid(), but the vector leg is gathered via
-	vector_candidates_hnsw() (per-segment HNSW graph) rather than
-	vector_candidates() (exact). Verbatim copy of search_hybrid()'s body
-	otherwise -- the RRF math (k=60), lexical leg, fused-merge logic, qsorts,
-	and publish loop are all identical -- so the two stay aligned and a future
-	reader can diff them to confirm only the gatherer differs. Transparently
-	falls back to search_hybrid() when HNSW is unconfigured or the metric is
-	dot product (dot has no HNSW graph; see search_vector_hnsw()).
+	search_hybrid_impl() with the HNSW vector-leg gatherer (per-segment graph)
+	instead of exact; RRF math, lexical leg, and publish are unchanged.
+	Transparently falls back to the exact fusion when HNSW is unconfigured or the
+	metric is dot product (dot has no HNSW graph; see search_vector_hnsw()).
 */
 long long ATIRE_segment_index::search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k)
 {
 if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
-	return search_hybrid(query_text, query_vector, top_k);		// transparent fallback
-
-long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
-char filename_buffer[4096];
-
-if (top_k < 1)
-	return 0;
-
-/*
-	Lexical side first: run the existing search and snapshot its hits (the
-	results array is shared, so the snapshot must deep-copy the filenames)
-	into the fused array before it gets overwritten.
-*/
-ANT_fused_candidate *fused = new ANT_fused_candidate[top_k * 2];
-
-if (query_text != NULL && *query_text != '\0')
-	lexical_count = search(query_text, top_k);
-for (which = 0; which < lexical_count; which++)
-	{
-	fused[fused_count].candidate.generation = results[which].generation;
-	fused[fused_count].candidate.docid = results[which].docid;
-	fused[fused_count].candidate.score = 1.0 / (60.0 + (double)(which + 1));
-	fused[fused_count].filename = new char[strlen(results[which].filename) + 1];
-	strcpy(fused[fused_count].filename, results[which].filename);
-	fused_count++;
-	}
-
-/*
-	Vector side: candidates + rank contribution, merged into the fused set
-	by (generation, docid) identity.
-*/
-if (query_vector != NULL && vector_dimension_current != 0)
-	{
-	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
-	vector_count = vector_candidates_hnsw(query_vector, top_k, best);
-	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
-	for (which = 0; which < vector_count; which++)
-		{
-		double contribution = 1.0 / (60.0 + (double)(which + 1));
-		long found = false;
-		for (other = 0; other < fused_count; other++)
-			if (fused[other].candidate.generation == best[which].generation && fused[other].candidate.docid == best[which].docid)
-				{
-				fused[other].candidate.score += contribution;
-				found = true;
-				break;
-				}
-		if (!found)
-			{
-			fused[fused_count].candidate.generation = best[which].generation;
-			fused[fused_count].candidate.docid = best[which].docid;
-			fused[fused_count].candidate.score = contribution;
-			char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
-			fused[fused_count].filename = new char[(filename != NULL ? strlen(filename) : 0) + 1];
-			strcpy(fused[fused_count].filename, filename != NULL ? filename : "");
-			fused_count++;
-			}
-		}
-	delete [] best;
-	}
-
-/*
-	Sort fused by score desc (ties: generation, docid asc) -- candidate and
-	filename move together, so this cannot desynchronize them -- then
-	truncate and publish into the shared results array.  The lexical
-	search() call above already freed the PREVIOUS results at its entry (or,
-	if query_text was NULL/empty, the results array is whatever it held
-	before this call); either way those filenames are snapshotted into
-	fused[] by now, so free them here before repopulating.
-*/
-qsort(fused, (size_t)fused_count, sizeof(*fused), ANT_fused_candidate_compare);
-
-reset_results();
-
-long long publish = fused_count < top_k ? fused_count : top_k;
-for (which = 0; which < publish; which++)
-	{
-	hit *slot = append_result();
-
-	slot->generation = fused[which].candidate.generation;
-	slot->docid = fused[which].candidate.docid;
-	slot->score = fused[which].candidate.score;
-	slot->filename = fused[which].filename;		/* ownership transfer */
-	fused[which].filename = NULL;
-	}
-for (which = publish; which < fused_count; which++)
-	delete [] fused[which].filename;
-delete [] fused;
-return results_count;
+	return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT);		// transparent fallback
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_HNSW);
 }

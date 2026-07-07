@@ -163,6 +163,13 @@ private:
 
 	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
 	long long vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best);	// signature-prefiltered gatherer; caller guarantees metric != L2 and approximate configured
+	// exact-scan the live memory buffer into best[] (shared tail of all three vector_candidates_* gatherers)
+	void scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k);
+	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
+	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW };
+	// unified cores behind the public search_vector*/search_hybrid* wrappers; mode picks the gatherer, everything else (sort/fuse/publish) is identical
+	long long search_vector_impl(const float *query, long long top_k, vector_search_mode mode);
+	long long search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode);
 	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
 
 	void reset_results(void);			// frees results[0, results_count)'s filenames and zeroes results_count
