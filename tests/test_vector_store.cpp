@@ -43,6 +43,45 @@ delete s; delete [] data; delete [] recon; unlink(path);
 printf("test_qvec_roundtrip OK (worst %.4f)\n", worst);
 }
 
+static void test_score_parity_and_scan(void)
+{
+/* a float store and an int8 store from the SAME data: float score()==kernel(get());
+   int8 scan recall vs float scan, averaged over queries (single-query is noisier). */
+long long dim = 24, n = 300, k = 10, i, d, qi;
+char fp[64]; strcpy(fp, "/tmp/ant_vs_f_XXXXXX"); { int fd=mkstemp(fp); if(fd>=0) close(fd); }
+char qp[64]; strcpy(qp, "/tmp/ant_vs_q_XXXXXX"); { int fd=mkstemp(qp); if(fd>=0) close(fd); }
+float *data = new float[n * dim];
+srand(13);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+ANT_vector_store_writer wf; wf.create(fp, dim); for (i=0;i<n;i++) wf.append(data+i*dim); wf.finish();
+ANT_vector_store_writer wq; wq.create(qp, dim); wq.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+for (i=0;i<n;i++) wq.append(data+i*dim); wq.finish();
+
+ANT_vector_store *sf = ANT_vector_store::load(fp, dim, n);
+ANT_vector_store *sq = ANT_vector_store::load(qp, dim, n);
+CHECK(sf != NULL && sq != NULL && sq->is_quantized() && !sf->is_quantized());
+
+float q0[24]; for (d=0; d<dim; d++) q0[d] = data[d];
+for (i = 0; i < 5; i++)
+	CHECK(sf->score(i, q0, ANT_vector_store::METRIC_L2) == ANT_vector_store::kernel(sf->get(i), q0, dim, ANT_vector_store::METRIC_L2));
+
+ANT_index_tombstones stones(n);
+long long overlap = 0, total = 0;
+for (qi = 0; qi < 25; qi++)
+	{
+	float query[24]; for (d=0; d<dim; d++) query[d] = (float)(rand()%2000-1000)/500.0f;
+	ANT_vector_candidate bf[10], bq[10]; long long cf=0, cq=0;
+	sf->scan(query, ANT_vector_store::METRIC_L2, &stones, 1, bf, &cf, k);
+	sq->scan(query, ANT_vector_store::METRIC_L2, &stones, 1, bq, &cq, k);
+	for (i=0;i<cq;i++) for (long long j=0;j<cf;j++) if (bq[i].docid==bf[j].docid) { overlap++; break; }
+	total += cf;
+	}
+CHECK((double)overlap/(double)total >= 0.80);
+delete sf; delete sq; delete [] data; unlink(fp); unlink(qp);
+printf("test_score_parity_and_scan OK (recall %.2f)\n", (double)overlap/(double)total);
+}
+
 int main(void)
 {
 char dir_template[] = "/tmp/ant_vecstore_XXXXXX";
@@ -217,6 +256,7 @@ delete no_deletes;
 delete dead0;
 
 test_qvec_roundtrip();
+test_score_parity_and_scan();
 
 printf("PASSED\n");
 return 0;

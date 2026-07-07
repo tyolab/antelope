@@ -250,7 +250,7 @@ void ANT_vector_store::scan(const float *query, long metric, ANT_index_tombstone
 {
 long long docid;
 
-if (presence == NULL || vectors == NULL)
+if (presence == NULL || (vectors == NULL && codes == NULL))		// degraded only if BOTH backends absent
 	return;
 for (docid = 0; docid < documents; docid++)
 	{
@@ -258,7 +258,7 @@ for (docid = 0; docid < documents; docid++)
 		continue;
 	if (tombstones != NULL && tombstones->is_deleted(docid))
 		continue;
-	ANT_vector_candidate_insert(best, best_count, top_k, kernel(query, vectors + docid * dimension, dimension, metric), generation, docid);
+	ANT_vector_candidate_insert(best, best_count, top_k, score(docid, query, metric), generation, docid);	// score() handles both backends
 	}
 }
 
