@@ -11,6 +11,7 @@ export interface SegmentIndexOptions {
 	walFsync?: boolean;
 	globalStats?: boolean;
 	approximate?: { bits?: number; multiplier?: number };
+	hnsw?: { M?: number; efConstruction?: number; efSearch?: number };
 }
 
 export interface DocRef { generation: number; docid: number; }
@@ -28,9 +29,12 @@ export class SegmentIndex {
 	searchHybrid(text: string | null, vector: Float32Array | number[] | null, k: number): Hit[];
 	searchVectorApprox(vector: Float32Array | number[], k: number): Hit[];
 	searchHybridApprox(text: string | null, vector: Float32Array | number[] | null, k: number): Hit[];
+	searchVectorHnsw(vector: Float32Array | number[], k: number): Hit[];
+	searchHybridHnsw(text: string | null, vector: Float32Array | number[] | null, k: number): Hit[];
 	flush(): Promise<void>;
 	maintain(): Promise<void>;
 	buildSignatures(): Promise<void>;
+	buildHnsw(): Promise<void>;
 	documentCount(): number;
 	vectorDimension(): number;
 }

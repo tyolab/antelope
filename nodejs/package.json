@@ -15,7 +15,7 @@
     "install": "cp -rv ./bin/linux/*.so /usr/local/lib/ 2>/dev/null",
     "build": "node-gyp configure && node-gyp build && node-gyp install --fallback-to-build",
     "build:segment": "make -C .. engine_lib && node-gyp configure && make -C build antelope_segment && mkdir -p build/Release && cp -f build/Release/antelope_segment.node build/Release/ 2>/dev/null || true",
-    "test:segment": "node --test test/smoke.test.js test/segment_index.test.js test/approximate.test.js"
+    "test:segment": "node --test test/smoke.test.js test/segment_index.test.js test/approximate.test.js test/hnsw.test.js"
   },
   "repository": "",
   "keywords": [

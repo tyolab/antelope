@@ -32,6 +32,9 @@ private:
 	long option_global_stats;			// 0/1, default 1 -- set_global_stats(0) before open() when false
 	long option_approx_bits;			// -1 = not requested; 0 = engine default (256); >0 = explicit
 	long option_approx_multiplier;		// 0 = unset; >0 = set_candidate_multiplier()
+	long option_hnsw_M;					// -1 = not requested; 0 = engine default (16); >0 = explicit
+	long option_hnsw_ef_construction;	// 0 = engine default (200); >0 = explicit
+	long option_hnsw_ef_search;			// 0 = unset; >0 = set_ef_search()
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -65,10 +68,13 @@ public:
 	Napi::Value SearchHybrid(const Napi::CallbackInfo &info);
 	Napi::Value SearchVectorApprox(const Napi::CallbackInfo &info);
 	Napi::Value SearchHybridApprox(const Napi::CallbackInfo &info);
+	Napi::Value SearchVectorHnsw(const Napi::CallbackInfo &info);
+	Napi::Value SearchHybridHnsw(const Napi::CallbackInfo &info);
 	/* async maintenance (AsyncWorker-backed, Promise-returning) */
 	Napi::Value Flush(const Napi::CallbackInfo &info);
 	Napi::Value Maintain(const Napi::CallbackInfo &info);
 	Napi::Value BuildSignatures(const Napi::CallbackInfo &info);
+	Napi::Value BuildHnsw(const Napi::CallbackInfo &info);
 };
 
 /*
@@ -94,6 +100,9 @@ option_wal_fsync = 0;
 option_global_stats = 1;
 option_approx_bits = -1;			// not requested
 option_approx_multiplier = 0;		// unset
+option_hnsw_M = -1;					// not requested
+option_hnsw_ef_construction = 0;	// engine default
+option_hnsw_ef_search = 0;			// unset
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -147,6 +156,15 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 		option_approx_bits = approx.Has("bits") ? (long)approx.Get("bits").As<Napi::Number>().Int64Value() : 0;	// 0 => engine default 256
 		if (approx.Has("multiplier"))
 			option_approx_multiplier = (long)approx.Get("multiplier").As<Napi::Number>().Int64Value();
+		}
+	if (options.Has("hnsw") && options.Get("hnsw").IsObject())
+		{
+		Napi::Object h = options.Get("hnsw").As<Napi::Object>();
+		option_hnsw_M = h.Has("M") ? (long)h.Get("M").As<Napi::Number>().Int64Value() : 0;	// 0 => engine default 16
+		if (h.Has("efConstruction"))
+			option_hnsw_ef_construction = (long)h.Get("efConstruction").As<Napi::Number>().Int64Value();
+		if (h.Has("efSearch"))
+			option_hnsw_ef_search = (long)h.Get("efSearch").As<Napi::Number>().Int64Value();
 		}
 	}
 }
@@ -226,6 +244,14 @@ if (option_approx_bits >= 0)
 	engine->set_approximate_config(option_approx_bits);		// non-fatal: approximate stays off on failure
 	if (option_approx_multiplier > 0)
 		engine->set_candidate_multiplier(option_approx_multiplier);
+	}
+/* HNSW likewise requires the index OPEN with a dimension; NON-FATAL if it
+   fails (HNSW simply stays off -- do NOT throw). */
+if (option_hnsw_M >= 0)
+	{
+	engine->set_hnsw_config(option_hnsw_M, option_hnsw_ef_construction);	// non-fatal: HNSW stays off on failure
+	if (option_hnsw_ef_search > 0)
+		engine->set_ef_search(option_hnsw_ef_search);
 	}
 state = OPEN;
 return env.Undefined();
@@ -692,6 +718,95 @@ return hits_to_array(env, engine, count);
 }
 
 /*
+	SEGMENTINDEXWRAP::SEARCHVECTORHNSW()
+	------------------------------------------
+	HNSW graph counterpart of SearchVector() -- mirrors it verbatim, changing
+	ONLY the engine call to search_vector_hnsw(), which transparently falls back
+	to exact results for dot/unconfigured indexes.
+*/
+Napi::Value SegmentIndexWrap::SearchVectorHnsw(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 2 || !info[1].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchVectorHnsw(vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+long long top_k = info[1].As<Napi::Number>().Int64Value();
+long long dimension = engine->vector_dimension();
+if (dimension < 1)
+	return Napi::Array::New(env, 0);		// vectors not enabled: empty result, not a throw
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+float *scratch = NULL;
+const float *vector = extract_vector(env, info[0], dimension, &scratch);
+if (vector == NULL)
+	return env.Undefined();		// TypeError already thrown
+
+long long count = engine->search_vector_hnsw(vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
+	SEGMENTINDEXWRAP::SEARCHHYBRIDHNSW()
+	------------------------------------------
+	HNSW graph counterpart of SearchHybrid() -- mirrors it verbatim, changing
+	ONLY the engine call to search_hybrid_hnsw(), whose vector leg is graph-
+	searched (transparent exact fallback for dot/unconfigured).
+*/
+Napi::Value SegmentIndexWrap::SearchHybridHnsw(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+if (info.Length() < 3 || !info[2].IsNumber())
+	{
+	Napi::TypeError::New(env, "searchHybridHnsw(text, vector, k)").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+bool has_text = !info[0].IsUndefined() && !info[0].IsNull();
+bool has_vector = !info[1].IsUndefined() && !info[1].IsNull();
+long long top_k = info[2].As<Napi::Number>().Int64Value();
+
+if (has_text && !info[0].IsString())
+	{
+	Napi::TypeError::New(env, "searchHybridHnsw: text must be a string, null, or undefined").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+if (!has_text && !has_vector)
+	return Napi::Array::New(env, 0);
+if (top_k < 1)
+	return Napi::Array::New(env, 0);
+
+std::string mutable_query;
+char *text_ptr = NULL;
+if (has_text)
+	{
+	mutable_query = info[0].As<Napi::String>().Utf8Value();	// engine may modify the buffer
+	text_ptr = &mutable_query[0];
+	}
+
+float *scratch = NULL;
+const float *vector = NULL;
+if (has_vector)
+	{
+	vector = extract_vector(env, info[1], engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		return env.Undefined();		// TypeError already thrown
+	}
+
+long long count = engine->search_hybrid_hnsw(text_ptr, vector, top_k);
+delete [] scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
 	class MAINTENANCE_WORKER
 	------------------------
 	Runs flush() or maintain() off the event loop.  Holds a reference to the
@@ -701,7 +816,7 @@ return hits_to_array(env, engine, count);
 class MaintenanceWorker : public Napi::AsyncWorker
 {
 public:
-	enum Operation { FLUSH, MAINTAIN, BUILD };
+	enum Operation { FLUSH, MAINTAIN, BUILD, BUILD_HNSW };
 
 private:
 	SegmentIndexWrap *wrapper;
@@ -724,6 +839,7 @@ public:
 		case FLUSH:		result = wrapper->engine->flush(); break;
 		case MAINTAIN:	result = wrapper->engine->maintain(); break;
 		case BUILD:		result = wrapper->engine->build_signatures(); break;
+		case BUILD_HNSW:	result = wrapper->engine->build_hnsw(); break;
 		}
 	}
 
@@ -733,7 +849,7 @@ public:
 	if (result == 0)
 		deferred.Resolve(Env().Undefined());
 	else
-		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : "maintain failed").Value());
+		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : operation == BUILD_HNSW ? "build_hnsw failed" : "maintain failed").Value());
 	}
 
 	void OnError(const Napi::Error &error)
@@ -817,6 +933,30 @@ return worker->Promise();
 }
 
 /*
+	SEGMENTINDEXWRAP::BUILDHNSW()
+	--------------------------------------
+	Idempotent backfill of the per-segment HNSW graph for existing segments.
+	Identical to BuildSignatures() except for the MaintenanceWorker::BUILD_HNSW
+	operation tag -- see Flush()'s banner comment for the busy-guard and
+	never-throw-synchronously rules, which apply here too.
+*/
+Napi::Value SegmentIndexWrap::BuildHnsw(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::BUILD_HNSW);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
 	SEGMENTINDEXWRAP::REGISTER()
 	-------------------------------
 	Defines the complete method shape of the class in one place; the
@@ -837,9 +977,12 @@ Napi::Function ctor = DefineClass(env, "SegmentIndex", {
 	InstanceMethod("searchHybrid", &SegmentIndexWrap::SearchHybrid),
 	InstanceMethod("searchVectorApprox", &SegmentIndexWrap::SearchVectorApprox),
 	InstanceMethod("searchHybridApprox", &SegmentIndexWrap::SearchHybridApprox),
+	InstanceMethod("searchVectorHnsw", &SegmentIndexWrap::SearchVectorHnsw),
+	InstanceMethod("searchHybridHnsw", &SegmentIndexWrap::SearchHybridHnsw),
 	InstanceMethod("flush", &SegmentIndexWrap::Flush),
 	InstanceMethod("maintain", &SegmentIndexWrap::Maintain),
 	InstanceMethod("buildSignatures", &SegmentIndexWrap::BuildSignatures),
+	InstanceMethod("buildHnsw", &SegmentIndexWrap::BuildHnsw),
 });
 exports.Set("SegmentIndex", ctor);
 return exports;
