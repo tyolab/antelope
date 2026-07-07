@@ -76,6 +76,12 @@ for (i = 0; i < n; i++) levels[i] = -1;
 /* mutable adjacency during build: adj[node][layer] = neighbour docids */
 std::vector<std::vector<std::vector<long long> > > adj(n);
 
+/* SEARCH-LAYER visited set: allocated ONCE for the whole build, then reused
+   across every insert/layer via a monotonically increasing epoch stamp
+   instead of re-zeroing an n-sized array per call (was the O(n^2) hot spot). */
+std::vector<long long> visited_epoch(n > 0 ? n : 1, 0);
+long long current_epoch = 0;
+
 for (long long q = 0; q < n; q++)
 	{
 	if (!vectors->has(q))
@@ -118,9 +124,9 @@ for (long long q = 0; q < n; q++)
 		/* SEARCH-LAYER(q, {ep}, ef_construction, lc) over adj[] */
 		std::priority_queue<DN> W;						/* max-heap: furthest on top */
 		std::priority_queue<DN, std::vector<DN>, std::greater<DN> > C;	/* nearest on top */
-		std::vector<char> visited(n, 0);
+		current_epoch++;						/* fresh generation: O(1) instead of re-zeroing an n-sized array */
 		double dep = distance(ep, vectors->get(q), vectors, metric);
-		W.push(DN(dep, ep)); C.push(DN(dep, ep)); visited[ep] = 1;
+		W.push(DN(dep, ep)); C.push(DN(dep, ep)); visited_epoch[ep] = current_epoch;
 		while (!C.empty())
 			{
 			DN c = C.top(); C.pop();
@@ -130,8 +136,8 @@ for (long long q = 0; q < n; q++)
 				for (size_t e = 0; e < adj[cnode][lc].size(); e++)
 					{
 					long long ecand = adj[cnode][lc][e];
-					if (visited[ecand]) continue;
-					visited[ecand] = 1;
+					if (visited_epoch[ecand] == current_epoch) continue;
+					visited_epoch[ecand] = current_epoch;
 					double de = distance(ecand, vectors->get(q), vectors, metric);
 					if (de < W.top().first || (long long)W.size() < ef_construction)
 						{ C.push(DN(de, ecand)); W.push(DN(de, ecand)); if ((long long)W.size() > ef_construction) W.pop(); }
