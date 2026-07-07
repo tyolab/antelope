@@ -1072,7 +1072,7 @@ if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 	return 0;
 
 best = new ANT_vector_candidate[top_k];
-count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best)
+count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best, filter)
 	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best, filter)
 	: vector_candidates(query, top_k, best, filter);
 qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
@@ -1128,7 +1128,7 @@ return search_vector_impl(query, top_k, VECTOR_MODE_EXACT, filter);
 	live memory buffer, are exact-scanned.  Caller guarantees metric != L2 and
 	approximate is configured.
 */
-long long ATIRE_segment_index::vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best)
+long long ATIRE_segment_index::vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
 {
 long long which, docid, best_count = 0, pool_size = top_k * candidate_multiplier;
 float *normalized = NULL;
@@ -1151,6 +1151,7 @@ for (which = 0; which < segment_count; which++)
 	if (segments[which].vectors == NULL)
 		continue;
 	ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 	if (segments[which].signatures != NULL && segments[which].signatures->document_count() == segments[which].engine->get_document_count())
 		{
 		long long count = 0, p;
@@ -1160,16 +1161,21 @@ for (which = 0; which < segment_count; which++)
 			docid = pool[p];
 			if (!src->has(docid))
 				continue;
+			if (fbits != NULL && !(fbits[docid >> 3] & (1 << (docid & 7))))
+				continue;
 			ANT_vector_candidate_insert(best, &best_count, top_k,
 				src->score(docid, query, vector_metric),
 				segments[which].generation, docid);
 			}
 		}
 	else
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+	delete [] fbits;
 	}
 
-scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never signature-indexed)
+unsigned char *lbits = evaluate_filter_for_live(filter);
+scan_live_buffer_exact(query, best, &best_count, top_k, lbits);		// live memory buffer: always exact (never signature-indexed)
+delete [] lbits;
 
 delete [] normalized;
 delete [] query_sig;
@@ -1191,6 +1197,13 @@ long long ATIRE_segment_index::search_vector_approx(const float *query, long lon
 if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
 	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);		// transparent fallback
 return search_vector_impl(query, top_k, VECTOR_MODE_APPROX);
+}
+
+long long ATIRE_segment_index::search_vector_approx(const float *query, long long top_k, const ANT_filter *filter)
+{
+if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
+	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT, filter);		// transparent fallback still filters
+return search_vector_impl(query, top_k, VECTOR_MODE_APPROX, filter);
 }
 
 /*
@@ -1331,7 +1344,7 @@ return 0;
 	cannot desynchronize them; a parallel filename array would move the
 	ANT_vector_candidate rows without moving the corresponding filename rows.
 */
-long long ATIRE_segment_index::search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode)
+long long ATIRE_segment_index::search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode, const ANT_filter *filter)
 {
 long long lexical_count = 0, vector_count = 0, fused_count = 0, which, other;
 char filename_buffer[4096];
@@ -1347,7 +1360,7 @@ if (top_k < 1)
 ANT_fused_candidate *fused = new ANT_fused_candidate[top_k * 2];
 
 if (query_text != NULL && *query_text != '\0')
-	lexical_count = search(query_text, top_k);
+	lexical_count = search(query_text, top_k, filter);
 for (which = 0; which < lexical_count; which++)
 	{
 	fused[fused_count].candidate.generation = results[which].generation;
@@ -1365,9 +1378,9 @@ for (which = 0; which < lexical_count; which++)
 if (query_vector != NULL && vector_dimension_current != 0)
 	{
 	ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
-	vector_count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query_vector, top_k, best)
-		: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query_vector, top_k, best)
-		: vector_candidates(query_vector, top_k, best);
+	vector_count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query_vector, top_k, best, filter)
+		: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query_vector, top_k, best, filter)
+		: vector_candidates(query_vector, top_k, best, filter);
 	qsort(best, (size_t)vector_count, sizeof(*best), vector_candidate_compare);
 	for (which = 0; which < vector_count; which++)
 		{
@@ -1435,6 +1448,11 @@ long long ATIRE_segment_index::search_hybrid(char *query_text, const float *quer
 return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT);
 }
 
+long long ATIRE_segment_index::search_hybrid(char *query_text, const float *query_vector, long long top_k, const ANT_filter *filter)
+{
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT, filter);
+}
+
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID_APPROX()
 	--------------------------------------------
@@ -1451,6 +1469,13 @@ if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECT
 return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_APPROX);
 }
 
+long long ATIRE_segment_index::search_hybrid_approx(char *query_text, const float *query_vector, long long top_k, const ANT_filter *filter)
+{
+if (signature_bits_current == 0 || query_signer == NULL || vector_metric == VECTOR_METRIC_L2)
+	return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT, filter);		// transparent fallback still filters
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_APPROX, filter);
+}
+
 /*
 	ATIRE_SEGMENT_INDEX::SEARCH_HYBRID_HNSW()
 	------------------------------------------
@@ -1459,6 +1484,13 @@ return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_APPROX);
 	Transparently falls back to the exact fusion when HNSW is unconfigured or the
 	metric is dot product (dot has no HNSW graph; see search_vector_hnsw()).
 */
+long long ATIRE_segment_index::search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k, const ANT_filter *filter)
+{
+if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
+	return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT, filter);		// transparent fallback still filters
+return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_HNSW, filter);
+}
+
 long long ATIRE_segment_index::search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k)
 {
 if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
@@ -1535,6 +1567,12 @@ return total;
 long long ATIRE_segment_index::search_rerank(char *query_text, const float *query_vector,
 		const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k)
 {
+return search_rerank(query_text, query_vector, query_multivector, num_query_vecs, first_stage_n, top_k, NULL);
+}
+
+long long ATIRE_segment_index::search_rerank(char *query_text, const float *query_vector,
+		const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k, const ANT_filter *filter)
+{
 long long dim = rerank_dimension_current, i, w, nc;
 float *qn;
 double *ms;
@@ -1551,11 +1589,11 @@ if (!rerank_configured() || query_multivector == NULL || num_query_vecs < 1)
 	{
 	/* not usable -- plain first stage (still returns sensible hits) */
 	if (query_text != NULL && query_vector != NULL)
-		return search_hybrid(query_text, query_vector, top_k);
+		return search_hybrid(query_text, query_vector, top_k, filter);
 	if (query_vector != NULL)
-		return search_vector(query_vector, top_k);
+		return search_vector(query_vector, top_k, filter);
 	if (query_text != NULL)
-		return search(query_text, top_k);
+		return search(query_text, top_k, filter);
 	return 0;
 	}
 
@@ -1569,11 +1607,11 @@ if (query_text == NULL && query_vector == NULL)
 
 /* stage 1 -> results[] */
 if (query_text != NULL && query_vector != NULL)
-	search_hybrid(query_text, query_vector, first_stage_n);
+	search_hybrid(query_text, query_vector, first_stage_n, filter);
 else if (query_vector != NULL)
-	search_vector(query_vector, first_stage_n);
+	search_vector(query_vector, first_stage_n, filter);
 else
-	search(query_text, first_stage_n);
+	search(query_text, first_stage_n, filter);
 
 nc = results_count;
 if (nc == 0)

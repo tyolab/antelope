@@ -3057,6 +3057,53 @@ delete [] dir_single;
 printf("test_global_stats_score_equality OK\n");
 }
 
+static void test_filtered_approx_hybrid_rerank(void)
+{
+	char *dir = make_index_dir();
+	long long dim = 8, i, d;
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_approximate_config(64) == 0);				/* enable approximate */
+	CHECK(ix->set_rerank_config(dim, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);	/* enable MaxSim rerank (single-vector rows ok) */
+	ANT_attribute_schema s; s.add_field("keep", ANT_attribute_schema::TYPE_BOOL, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	srand(7);
+	/* 60 docs all containing "apple"; even docids keep=true, odd keep=false */
+	for (i = 0; i < 60; i++)
+		{
+		float v[8], mv[8];
+		for (d = 0; d < dim; d++) { v[d] = (float)(rand()%2000-1000)/500.0f; mv[d] = v[d]; }
+		ANT_attribute_set A(ix->attribute_schema()); A.set_bool(0, (i % 2) == 0);
+		char key[16]; sprintf(key, "d%lld", i);
+		CHECK(ix->add_document(key, "<DOC>apple</DOC>", v, mv, 1, &A) >= 0);
+	}
+	CHECK(ix->flush() == 0);
+	float q[8]; for (d = 0; d < dim; d++) q[d] = (float)(rand()%2000-1000)/500.0f;
+	float qmv[8]; for (d = 0; d < dim; d++) qmv[d] = q[d];
+	char qbuf[16]; strcpy(qbuf, "apple");
+	ANT_filter *f = ANT_filter::eq_bool("keep", 1);
+	CHECK(f->build(ix->attribute_schema()) == 0);
+	long long n;
+	/* approx: only keep docs (even docids) */
+	n = ix->search_vector_approx(q, 10, f);
+	CHECK(n >= 1);
+	for (i = 0; i < n; i++) CHECK((atoll(ix->get_hit(i)->filename + 1) % 2) == 0);
+	/* hybrid (exact vector leg + lexical leg both filtered) */
+	n = ix->search_hybrid(qbuf, q, 10, f);
+	CHECK(n >= 1);
+	for (i = 0; i < n; i++) CHECK((atoll(ix->get_hit(i)->filename + 1) % 2) == 0);
+	/* hybrid approx */
+	n = ix->search_hybrid_approx(qbuf, q, 10, f);
+	for (i = 0; i < n; i++) CHECK((atoll(ix->get_hit(i)->filename + 1) % 2) == 0);
+	/* rerank: stage-1 pool filtered -> only keep docs survive to MaxSim */
+	n = ix->search_rerank(qbuf, q, qmv, 1, 30, 10, f);
+	CHECK(n >= 1);
+	for (i = 0; i < n; i++) CHECK((atoll(ix->get_hit(i)->filename + 1) % 2) == 0);
+	delete f; delete ix; delete [] dir;
+	printf("test_filtered_approx_hybrid_rerank OK\n");
+}
+
 static void test_filtered_lexical_search(void)
 {
 	char *dir = make_index_dir();
@@ -3898,6 +3945,7 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_filtered_approx_hybrid_rerank();
 test_filtered_lexical_search();
 test_filtered_hnsw_no_underfill();
 test_filtered_vector_scan();
