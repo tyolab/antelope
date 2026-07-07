@@ -250,11 +250,13 @@ for (long long lc = max_level; lc >= 1; lc--)
 std::priority_queue<DN> W;
 std::priority_queue<DN, std::vector<DN>, std::greater<DN> > C;
 std::vector<char> visited(documents, 0);
-W.push(DN(dep, ep)); C.push(DN(dep, ep)); visited[ep] = 1;
+/* route through the entry point regardless of tombstone; only LIVE nodes enter the result heap W */
+C.push(DN(dep, ep)); visited[ep] = 1;
+if (tombstones == NULL || !tombstones->is_deleted(ep)) W.push(DN(dep, ep));
 while (!C.empty())
 	{
 	DN c = C.top(); C.pop();
-	if (c.first > W.top().first) break;
+	if (!W.empty() && c.first > W.top().first) break;		/* empty W == +inf: keep exploring */
 	long long count; const int *nb = neighbours_of(neighbours, offsets, levels, c.second, 0, &count);
 	for (long long e = 0; e < count; e++)
 		{
@@ -262,8 +264,12 @@ while (!C.empty())
 		if (visited[ecand]) continue;
 		visited[ecand] = 1;
 		double de = distance(ecand, query, vectors, metric);
-		if (de < W.top().first || (long long)W.size() < ef)
-			{ C.push(DN(de, ecand)); W.push(DN(de, ecand)); if ((long long)W.size() > ef) W.pop(); }
+		if (W.empty() || (long long)W.size() < ef || de < W.top().first)
+			{
+			C.push(DN(de, ecand));		/* deleted nodes still route (graph connectivity) */
+			if (tombstones == NULL || !tombstones->is_deleted(ecand))
+				{ W.push(DN(de, ecand)); if ((long long)W.size() > ef) W.pop(); }	/* W = up to ef LIVE nearest */
+			}
 		}
 	}
 

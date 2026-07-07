@@ -212,11 +212,39 @@ delete loaded; delete store; delete [] data; unlink(vpath); unlink(gpath);
 printf("test_load_content_corruption OK\n");
 }
 
+static void test_tombstone_no_underfill(void)
+{
+long long dim = 24, n = 500, k = 10, dead = 60, i, d;
+char path[64]; strcpy(path, "/tmp/ant_hnsw_tu_XXXXXX"); { int fd=mkstemp(path); if(fd>=0) close(fd); }
+float *data = new float[n * dim]; srand(13);
+for (i = 0; i < n*dim; i++) data[i] = (float)(rand() % 200 - 100);
+ANT_vector_store *store = make_store(path, dim, n, data);
+ANT_hnsw g; CHECK(g.build(store, 16, 200, ANT_vector_store::METRIC_L2) == 0);
+float query[24]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 200 - 100);
+/* exact ranking, then tombstone the exact top-`dead` nearest so the naive ef=64
+   frontier is heavily depleted of live docs near the query (dead > ef-k, so the
+   pre-fix drain-time filter under-fills: it returns far fewer than k live docs) */
+long long exact[500]; brute_force_topk(query, data, dim, n, ANT_vector_store::METRIC_L2, n, exact);
+ANT_index_tombstones stones(n);
+for (i = 0; i < dead; i++) stones.set_deleted(exact[i]);
+long long h[10]; double s[10];
+long long c = g.search(query, ANT_vector_store::METRIC_L2, 64, k, store, &stones, h, s);
+CHECK(c == k);							/* must fill k LIVE results despite `dead` deleted near the query */
+for (i = 0; i < c; i++) CHECK(!stones.is_deleted(h[i]));	/* none deleted */
+/* recall vs exact-over-live (the true next `dead`.. band) */
+long long overlap = 0, j;
+for (i = 0; i < c; i++) for (j = dead; j < dead + k; j++) if (h[i] == exact[j]) { overlap++; break; }
+CHECK((double)overlap / (double)k >= 0.8);
+delete store; delete [] data; unlink(path);
+printf("test_tombstone_no_underfill OK (filled=%lld/%lld)\n", c, k);
+}
+
 int main(void)
 {
 test_recall_and_determinism();
 test_ef_monotonic();
 test_tombstone_filter();
+test_tombstone_no_underfill();
 test_degenerate_M();
 test_save_load_roundtrip();
 test_load_degrade();
