@@ -259,6 +259,86 @@ if (rerank_configured())
 	}
 
 /*
+	Step 2d: rewrite the attribute (.attr) + payload (.pay) sidecars for the
+	merged output.  Same renumbering discipline as the .mvec block above
+	(built fresh here rather than reusing that block's block-scoped locals):
+	iterate inputs in order, skip tombstoned docids, and emit one attribute
+	record + one payload blob per surviving document so output docids stay
+	aligned with the merged .aspt.  The elegant part: each input has its OWN
+	per-field string dictionary (ids differ across inputs), so we do NOT remap
+	ids -- we read each surviving doc's string VALUES from the input store and
+	re-write them into the fresh writer, which re-interns them into a single
+	union dictionary with fresh contiguous ids.  Best-effort: a failure here
+	leaves the output filter-less / payload-less (never aborts a successful
+	merge), mirroring the .mvec block.
+*/
+if (attributes_configured())
+	{
+	ANT_index_tombstones **attr_stone_list = new ANT_index_tombstones *[input_count];
+	long long *attr_doc_counts = new long long[input_count];
+	for (input = 0; input < input_count; input++)
+		{
+		attr_stone_list[input] = inputs[input]->tombstones;
+		attr_doc_counts[input] = inputs[input]->engine->get_document_count();
+		}
+	ANT_docid_renumberer *attr_renumberer = new ANT_docid_renumberer(attr_stone_list, attr_doc_counts, input_count);
+	char attr_name[4096], pay_name[4096];
+	segment_filename(attr_name, sizeof(attr_name), output_generation, "attr");
+	segment_filename(pay_name, sizeof(pay_name), output_generation, "pay");
+	ANT_attribute_store_writer attw;
+	ANT_payload_store_writer payw;
+	long attr_failed = attw.create(attr_name, &attribute_schema_current) != 0;
+	long pay_failed = payw.create(pay_name) != 0;
+	long long ncols = attribute_schema_current.count();
+	char *strbuf = new char[65536];		/* attribute string values are short categorical metadata */
+	for (input = 0; !attr_failed && !pay_failed && input < input_count; input++)
+		for (docid = 0; !attr_failed && !pay_failed && docid < attr_doc_counts[input]; docid++)
+			{
+			if (attr_renumberer->renumber(input, docid) < 0)
+				continue;		/* tombstoned: dropped, aligned with the merged .aspt */
+			/* --- attributes --- */
+			attw.begin_document();
+			ANT_attribute_store *ain = inputs[input]->attributes;
+			if (ain != NULL)
+				for (long long field = 0; field < ncols; field++)
+					{
+					if (!ain->has_field(field, docid)) continue;
+					int type = attribute_schema_current.type(field);
+					int multi = attribute_schema_current.is_multi(field);
+					if (type == ANT_attribute_schema::TYPE_INT64)
+						{
+						long long vc = ain->value_count(field, docid), k, v;
+						if (multi) { for (k = 0; k < vc; k++) { if (ain->get_int_at(field, docid, k, &v)) attw.add_int(field, v); } }
+						else { if (ain->get_int_at(field, docid, 0, &v)) attw.set_int(field, v); }
+						}
+					else if (type == ANT_attribute_schema::TYPE_STRING)
+						{
+						long long vc = ain->value_count(field, docid), k;
+						if (multi) { for (k = 0; k < vc; k++) { if (ain->get_string_at(field, docid, k, strbuf, 65536)) attw.add_string(field, strbuf); } }
+						else { if (ain->get_string_at(field, docid, 0, strbuf, 65536)) attw.set_string(field, strbuf); }
+						}
+					else /* BOOL */
+						{ int b; if (ain->get_bool(field, docid, &b)) attw.set_bool(field, b); }
+					}
+			attw.end_document();
+			/* --- payload --- */
+			const unsigned char *pp = NULL; long long plen = 0;
+			if (inputs[input]->payload != NULL)
+				inputs[input]->payload->get(docid, &pp, &plen);
+			payw.append(pp, plen);
+			}
+	delete [] strbuf;
+	if (!attr_failed && attw.finish() != 0) attr_failed = 1;
+	if (attr_failed) attw.abandon();
+	if (!pay_failed && payw.finish() != 0) pay_failed = 1;
+	if (pay_failed) payw.abandon();
+	delete attr_renumberer;
+	delete [] attr_stone_list;
+	delete [] attr_doc_counts;
+	/* best-effort, non-fatal: a failed .attr/.pay leaves the merged segment filter-less/payload-less, never aborts the merge (mirrors the .mvec block) */
+	}
+
+/*
 	Step 3: marker -- from here until removal, a crash makes the next
 	open() rebuild the keymap from the segments rather than trust the log
 */
@@ -366,6 +446,23 @@ if (rerank_configured())
 	}
 
 /*
+	Refresh the merged segment's in-memory attribute + payload stores from the
+	.attr / .pay sidecars just written, so THIS session's filtered searches and
+	hit payloads see the compacted docids.  Must run before Step 6's shuffle,
+	which invalidates output_segment.
+*/
+if (attributes_configured())
+	{
+	char attr_name[4096], pay_name[4096];
+	segment_filename(attr_name, sizeof(attr_name), output_generation, "attr");
+	segment_filename(pay_name, sizeof(pay_name), output_generation, "pay");
+	delete output_segment->attributes;
+	output_segment->attributes = ANT_attribute_store::load(attr_name, &attribute_schema_current, output_segment->engine->get_document_count());
+	delete output_segment->payload;
+	output_segment->payload = ANT_payload_store::load(pay_name, output_segment->engine->get_document_count());
+	}
+
+/*
 	Step 5: atomic manifest swap.  See the banner above for what happens
 	if save() fails here -- the keymap is already remapped, so we proceed
 	to step 6's in-memory removal regardless, but skip the file deletions
@@ -395,6 +492,8 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].signatures;
 			delete segments[which].hnsw_graph;
 			delete segments[which].multivectors;
+			delete segments[which].attributes;
+			delete segments[which].payload;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
 				segments[shuffle] = segments[shuffle + 1];
 			segment_count--;

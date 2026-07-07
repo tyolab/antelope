@@ -3057,6 +3057,67 @@ delete [] dir_single;
 printf("test_global_stats_score_equality OK\n");
 }
 
+static void test_compact_preserves_attributes(void)
+{
+	char *dir = make_index_dir();
+	long long i;
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s;
+	s.add_field("tenant", ANT_attribute_schema::TYPE_STRING, 0);
+	s.add_field("keep",   ANT_attribute_schema::TYPE_BOOL, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	float v[4] = {1,0,0,0};
+	const char *tenants[3] = {"acme","beta","gamma"};
+	/* 10 docs in two segments; "beta" (i%3==1 -> i=1,4,7) spans BOTH segments so its dict id differs per input */
+	for (i = 0; i < 10; i++)
+		{
+		const char *t = tenants[i % 3];
+		ANT_attribute_set A(ix->attribute_schema());
+		A.set_string(0, t);
+		A.set_bool(1, (i % 2) == 0);
+		A.set_payload(t, (long long)strlen(t));		/* payload = tenant string, to verify dict-remap on hits */
+		char key[16]; sprintf(key, "d%lld", i);
+		CHECK(ix->add_document(key, "<DOC>apple</DOC>", v, NULL, 0, &A) >= 0);
+		if (i == 4) CHECK(ix->flush() == 0);		/* segment gen 1 = docs 0..4 */
+		}
+	CHECK(ix->flush() == 0);						/* segment gen 2 = docs 5..9 */
+	CHECK(ix->delete_document("d0") == 0);			/* delete an acme doc (tombstone) */
+	long long inputs[2] = {1, 2};
+	CHECK(ix->compact(inputs, 2) == 0);				/* one merged segment */
+
+	float q[4] = {1,0,0,0};
+	/* filter tenant=="beta": the 3 beta docs (d1,d4,d7) must all match despite differing input dict ids -> union-remap works */
+	ANT_filter *fb = ANT_filter::eq_string("tenant", "beta");
+	CHECK(fb->build(ix->attribute_schema()) == 0);
+	long long nb = ix->search_vector(q, 100, fb);
+	CHECK(nb == 3);
+	for (i = 0; i < nb; i++)
+		{
+		CHECK(ix->get_hit(i)->payload_length == 4);
+		CHECK(memcmp(ix->get_hit(i)->payload, "beta", 4) == 0);		/* payload survived compaction, aligned to the right docs */
+		}
+	delete fb;
+	/* filter keep==true: even docids, minus deleted d0 -> d2,d4,d6,d8 = 4 */
+	ANT_filter *fk = ANT_filter::eq_bool("keep", 1);
+	CHECK(fk->build(ix->attribute_schema()) == 0);
+	CHECK(ix->search_vector(q, 100, fk) == 4);
+	delete fk;
+
+	/* reopen: attributes persisted in the compacted sidecars, filtering still works */
+	delete ix;
+	ATIRE_segment_index *re = new ATIRE_segment_index();
+	CHECK(re->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(re->open(dir) == 0);
+	CHECK(re->attributes_configured() == 1);
+	ANT_filter *fb2 = ANT_filter::eq_string("tenant", "beta");
+	CHECK(fb2->build(re->attribute_schema()) == 0);
+	CHECK(re->search_vector(q, 100, fb2) == 3);
+	delete fb2; delete re; delete [] dir;
+	printf("test_compact_preserves_attributes OK\n");
+}
+
 static void test_filtered_approx_hybrid_rerank(void)
 {
 	char *dir = make_index_dir();
@@ -3945,6 +4006,7 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_compact_preserves_attributes();
 test_filtered_approx_hybrid_rerank();
 test_filtered_lexical_search();
 test_filtered_hnsw_no_underfill();
