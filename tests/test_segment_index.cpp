@@ -2110,6 +2110,30 @@ delete [] dir;
 printf("test_hnsw_config_persists OK\n");
 }
 
+static void test_quantization_config_persist(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *a = new ATIRE_segment_index();
+CHECK(a->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(a->open(dir) == 0);
+CHECK(a->quantization_mode() == ATIRE_segment_index::QUANTIZE_OFF);	/* default off */
+CHECK(a->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);
+CHECK(a->quantization_mode() == ATIRE_segment_index::QUANTIZE_REPLACE);
+CHECK(a->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);	/* same mode again: success (idempotent) */
+delete a;
+
+ATIRE_segment_index *b = new ATIRE_segment_index();
+CHECK(b->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(b->open(dir) == 0);
+CHECK(b->quantization_mode() == ATIRE_segment_index::QUANTIZE_REPLACE);	/* persisted across reopen */
+CHECK(b->set_quantization(ATIRE_segment_index::QUANTIZE_EXACT) != 0);	/* DIFFERENT mode once set: rejected (immutable) */
+CHECK(b->quantization_mode() == ATIRE_segment_index::QUANTIZE_REPLACE);	/* unchanged after rejection */
+delete b;
+
+delete [] dir;
+printf("test_quantization_config_persist OK\n");
+}
+
 static void test_flush_writes_signatures(void)
 {
 char *dir = make_index_dir();
@@ -3111,6 +3135,7 @@ test_hybrid_search_rrf();
 test_vector_metrics_and_compat();
 test_approx_config_persists();
 test_hnsw_config_persists();
+test_quantization_config_persist();
 test_flush_writes_signatures();
 test_flush_builds_hnsw();
 test_build_signatures_backfill();

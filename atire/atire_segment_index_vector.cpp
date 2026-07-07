@@ -318,6 +318,92 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::LOAD_QUANTIZATION_CONFIG()
+	------------------------------------------------
+	Reads <dir>/quantization.config (magic/version/mode).  Absent => leaves
+	quantization_current unchanged (off).  Garbage => treated as absent
+	(defensive parse, mirrors load_hnsw_config).
+*/
+long ATIRE_segment_index::load_quantization_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long mode;
+const char *tag = "ANTQUAN1";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/quantization.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&mode, sizeof(mode), 1, fp) != 1
+	|| mode < 0 || mode > 2)
+	{ fclose(fp); return 0; }
+fclose(fp);
+quantization_current = (long)mode;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_QUANTIZATION_CONFIG()
+	--------------------------------------------------
+	Atomic write (temp + rename) of the index-wide quantization config.
+*/
+long ATIRE_segment_index::save_quantization_config(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long mode = quantization_current;
+const char *tag = "ANTQUAN1";
+
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/quantization.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&mode, sizeof(mode), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_QUANTIZATION()
+	------------------------------------------
+	Enable quantization.  Requires the index open with vectors enabled.  Once
+	set, the mode is immutable: setting the SAME mode again is a no-op success
+	(idempotent), but setting a DIFFERENT mode is rejected.  This mirrors
+	set_hnsw_config()/set_approximate_config()'s "first enable wins" contract,
+	except those two are silently idempotent for any later call while
+	quantization additionally rejects mode changes explicitly (a later task
+	depends on this once flush/compaction start quantizing vectors on disk).
+*/
+long ATIRE_segment_index::set_quantization(long mode)
+{
+if (directory == NULL)
+	return 1;					// must be open (needs directory + dimension)
+if (vector_dimension_current == 0)
+	return 1;					// quantization requires vectors enabled
+if (mode != QUANTIZE_REPLACE && mode != QUANTIZE_EXACT)
+	return 1;					// only these are settable
+if (quantization_current != 0)
+	return (quantization_current == mode) ? 0 : 1;		// idempotent same-mode; reject different-mode (immutable)
+quantization_current = mode;
+if (save_quantization_config() != 0)
+	{ quantization_current = 0; return 1; }
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::SET_EF_SEARCH()
 	----------------------------------------
 	Query-time knob; clamps to >= 1.  May be called before or after open().

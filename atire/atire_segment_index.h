@@ -97,6 +97,8 @@ private:
 	long long hnsw_ef_construction_current;
 	long long hnsw_ef_search;				// query knob; default 64
 
+	long quantization_current;				// 0 = off (QUANTIZE_OFF)
+
 	/* memory-segment vector buffer, parallel to the writer's docids */
 	float *writer_vector_data;
 	unsigned char *writer_vector_presence;
@@ -177,6 +179,7 @@ private:
 
 public:
 	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
+	enum { QUANTIZE_OFF = 0, QUANTIZE_REPLACE = 1, QUANTIZE_EXACT = 2 };
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
@@ -192,6 +195,11 @@ public:
 	long build_hnsw(void);											// Task 5
 	long long search_vector_hnsw(const float *query, long long top_k);						// Task 7
 	long long search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k);	// Task 8
+
+	long load_quantization_config(void);
+	long save_quantization_config(void);
+	long set_quantization(long mode);		// enable quantization; persists quantization.config. Idempotent for the same mode; returns nonzero if already set to a DIFFERENT mode (immutable), or if mode invalid / vectors not configured.
+	long quantization_mode(void) { return quantization_current; }
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

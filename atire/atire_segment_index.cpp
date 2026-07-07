@@ -80,6 +80,8 @@ hnsw_M_current = 0;
 hnsw_ef_construction_current = 0;
 hnsw_ef_search = 64;
 
+quantization_current = 0;
+
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
@@ -332,6 +334,7 @@ if (load_vector_config() != 0)
 load_signature_config();
 rebuild_query_signer();
 load_hnsw_config();
+load_quantization_config();
 if (vector_config_pending)
 	{
 	if (vector_dimension_current != 0)
