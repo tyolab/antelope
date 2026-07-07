@@ -154,6 +154,8 @@ segment_filename(filename, sizeof(filename), generation, "del");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vec");
 remove(filename);
+segment_filename(filename, sizeof(filename), generation, "qvec");
+remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vsig");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "hnsw");
@@ -927,9 +929,12 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 	ANT_vector_store_writer vec_writer;
 	long vec_failed;
 	long long docid;
+	const char *vext = (quantization_current == QUANTIZE_REPLACE) ? "qvec" : "vec";
 
-	segment_filename(vec_filename, sizeof(vec_filename), flushed_vector_generation, "vec");
+	segment_filename(vec_filename, sizeof(vec_filename), flushed_vector_generation, vext);
 	vec_failed = vec_writer.create(vec_filename, vector_dimension_current) != 0;
+	if (!vec_failed && quantization_current == QUANTIZE_REPLACE)
+		vec_writer.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
 	for (docid = 0; !vec_failed && docid < flushed_document_count; docid++)
 		{
 		const float *row = (writer_vector_presence[docid / 8] & (1 << (docid % 8))) ? writer_vector_data + docid * vector_dimension_current : NULL;
@@ -981,7 +986,7 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 		{
 		char hnsw_name[4096], vec_reload[4096];
 		segment_filename(hnsw_name, sizeof(hnsw_name), flushed_vector_generation, "hnsw");
-		segment_filename(vec_reload, sizeof(vec_reload), flushed_vector_generation, "vec");
+		segment_filename(vec_reload, sizeof(vec_reload), flushed_vector_generation, vext);
 		ANT_vector_store *v = ANT_vector_store::load(vec_reload, vector_dimension_current, flushed_document_count);
 		if (v->document_count() == flushed_document_count && flushed_document_count > 0)
 			{
@@ -1149,7 +1154,17 @@ if (segment_count >= segments_allocated)
 segments[segment_count].generation = generation;
 segments[segment_count].engine = engine;
 segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
-segments[segment_count].vectors = vector_dimension_current != 0 ? ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()) : NULL;
+if (vector_dimension_current != 0)
+	{
+	char qvec_filename[1024];
+	segment_filename(qvec_filename, sizeof(qvec_filename), generation, "qvec");
+	ANT_vector_store *v = ANT_vector_store::load(qvec_filename, vector_dimension_current, engine->get_document_count());
+	if (v->document_count() == 0)		/* no/degraded .qvec -> float .vec */
+		{ delete v; v = ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()); }
+	segments[segment_count].vectors = v;
+	}
+else
+	segments[segment_count].vectors = NULL;
 segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;
 
 if (vector_dimension_current != 0 && hnsw_M_current != 0)

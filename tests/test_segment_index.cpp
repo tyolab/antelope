@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <sys/stat.h>
+#include <glob.h>
 #include "../atire/atire_segment_index.h"
 #include "../source/memory_index.h"
 #include "../source/index_merge.h"
@@ -32,6 +33,15 @@ if (dir == NULL)
 char *result = new char[strlen(dir) + 1];
 strcpy(result, dir);
 return result;
+}
+
+static int dir_has_glob(const char *dir, const char *pattern)
+{
+char full[512]; snprintf(full, sizeof(full), "%s/%s", dir, pattern);
+glob_t g; int found = 0;
+if (glob(full, 0, NULL, &g) == 0) found = (g.gl_pathc > 0);
+globfree(&g);
+return found;
 }
 
 /*
@@ -3063,6 +3073,51 @@ printf("test_wal_fsync_durability OK\n");
 }
 
 /*
+	TEST_FLUSH_REPLACE_MODE()
+	--------------------------
+	Quantization mode QUANTIZE_REPLACE: flush must write the vector sidecar
+	as int8 seg_G.qvec (not float seg_G.vec), and both live search and a
+	reopen-from-disk (which must load the .qvec segment) must still work.
+*/
+static void test_flush_replace_mode(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);
+
+float v[16]; long long i, d;
+for (i = 0; i < 40; i++)
+	{
+	char key[32]; sprintf(key, "d%lld", i);
+	for (d = 0; d < 16; d++) v[d] = (float)(i * 16 + d) / 100.0f;
+	char doc[64]; sprintf(doc, "<DOC>doc %lld quokka</DOC>", i);
+	CHECK(index->add_document(key, doc, v) >= 0);
+	}
+CHECK(index->flush() == 0);
+
+/* replace mode: a .qvec exists for the flushed generation, and NO .vec */
+CHECK(dir_has_glob(dir, "seg_*.qvec"));
+CHECK(!dir_has_glob(dir, "seg_*.vec"));
+
+/* search still finds the near neighbour (doc 5's own vector as the query) */
+float q[16]; for (d = 0; d < 16; d++) q[d] = (float)(5 * 16 + d) / 100.0f;
+CHECK(index->search_vector(q, 5) >= 1);
+delete index;
+
+/* reopen from disk: the int8 segment loads and still searches */
+ATIRE_segment_index *reopened = new ATIRE_segment_index();
+CHECK(reopened->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(reopened->open(dir) == 0);
+CHECK(reopened->search_vector(q, 5) >= 1);
+delete reopened;
+
+delete [] dir;
+printf("test_flush_replace_mode OK\n");
+}
+
+/*
 	TEST_DECOMPRESS_BUFFER_REUSE()
 	------------------------------
 	allocate_decompress_buffer() runs on every NRT rebuild (open_from_memory_index).
@@ -3157,6 +3212,7 @@ test_wal_durability();
 test_wal_unhealthy();
 test_wal_replay_mid_autoflush();
 test_wal_fsync_durability();
+test_flush_replace_mode();
 printf("PASSED\n");
 return 0;
 }
