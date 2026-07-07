@@ -52,6 +52,10 @@ private:
 	long long documents;
 	unsigned char *presence;		// NULL when degraded/empty
 	float *vectors;					// NULL when degraded/empty
+	signed char *codes;			// int8 codes when quantized; NULL otherwise
+	float *qmin;				// [dimension] per-dimension min (quantized only)
+	float *qmax;				// [dimension] per-dimension max (quantized only)
+	int quantized;				// 1 if this store is int8-backed
 
 private:
 	ANT_vector_store();
@@ -66,6 +70,10 @@ public:
 	long has(long long docid) { return presence != NULL && (presence[docid / 8] & (1 << (docid % 8))) != 0; }
 	const float *get(long long docid) { return vectors + docid * dimension; }
 
+	long is_quantized(void) { return quantized; }
+	void reconstruct(long long docid, float *out);
+	double score(long long docid, const float *query, long metric);
+
 	void scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k);
 
 	static long normalize(float *vector, long long dimension);	// in place; nonzero if magnitude is zero
@@ -79,6 +87,9 @@ public:
 */
 class ANT_vector_store_writer
 {
+public:
+	enum { QUANT_OFF = 0, QUANT_REPLACE = 1, QUANT_BOTH = 2 };	// BOTH is used later (exact mode); implement OFF and REPLACE now
+
 private:
 	char filename[4096];
 	long long dimension;
@@ -86,9 +97,11 @@ private:
 	long long capacity;
 	unsigned char *presence;
 	float *vectors;
+	int quant_mode;
 
 private:
 	long grow(void);
+	long write_qvec(const char *path);
 
 public:
 	ANT_vector_store_writer();
@@ -98,6 +111,7 @@ public:
 	long append(const float *vector_or_null);					// 0 on success
 	long finish(void);											// writes + renames; 0 on success
 	void abandon(void);											// discard without writing
+	void set_quantization(int mode) { quant_mode = mode; }
 } ;
 
 #endif /* VECTOR_STORE_H_ */

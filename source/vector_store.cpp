@@ -8,8 +8,10 @@
 #include <math.h>
 #include "vector_store.h"
 #include "index_tombstones.h"
+#include "vector_quantize.h"
 
 static const unsigned long long ANT_VECTOR_STORE_MAGIC = 0x3130434556544E41ULL;	// "ANTVEC01" little-endian
+static const unsigned long long ANT_QVECTOR_STORE_MAGIC = 0x3130435651544E41ULL;	// "ANTQVC01" little-endian
 
 /*
 	ANT_VECTOR_CANDIDATE_INSERT()
@@ -49,6 +51,10 @@ dimension = 0;
 documents = 0;
 presence = NULL;
 vectors = NULL;
+codes = NULL;
+qmin = NULL;
+qmax = NULL;
+quantized = 0;
 }
 
 /*
@@ -59,6 +65,9 @@ ANT_vector_store::~ANT_vector_store()
 {
 delete [] presence;
 delete [] vectors;
+delete [] codes;
+delete [] qmin;
+delete [] qmax;
 }
 
 /*
@@ -77,8 +86,13 @@ ANT_vector_store *result = new ANT_vector_store();
 if ((fp = fopen(filename, "rb")) == NULL)
 	return result;
 
-if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != ANT_VECTOR_STORE_MAGIC
-	|| fread(&stored_dimension, sizeof(stored_dimension), 1, fp) != 1
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || (magic != ANT_VECTOR_STORE_MAGIC && magic != ANT_QVECTOR_STORE_MAGIC))
+	{
+	fclose(fp);
+	return result;
+	}
+
+if (fread(&stored_dimension, sizeof(stored_dimension), 1, fp) != 1
 	|| fread(&stored_documents, sizeof(stored_documents), 1, fp) != 1
 	|| stored_dimension != expected_dimension
 	|| stored_documents != expected_documents
@@ -90,6 +104,49 @@ if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != ANT_VECTOR_STORE_MAGIC
 	}
 
 presence_bytes = (stored_documents + 7) / 8;
+
+if (magic == ANT_QVECTOR_STORE_MAGIC)
+	{
+	/*
+		Same validate-before-allocate discipline as the float path below: the
+		header's counts drive the allocations, so the exact file size must be
+		checked before trusting them.
+	*/
+	expected_size = 24 + presence_bytes + stored_dimension * (long long)sizeof(float) * 2
+		+ stored_documents * stored_dimension * (long long)sizeof(signed char);
+	if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || fseek(fp, 24, SEEK_SET) != 0)
+		{
+		fclose(fp);
+		return result;
+		}
+
+	unsigned char *presence_buffer = new unsigned char[presence_bytes > 0 ? presence_bytes : 1];
+	float *mins_buffer = new float[stored_dimension];
+	float *maxs_buffer = new float[stored_dimension];
+	signed char *codes_buffer = new signed char[stored_documents * stored_dimension > 0 ? stored_documents * stored_dimension : 1];
+	if (fread(presence_buffer, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes
+		|| fread(mins_buffer, sizeof(float), (size_t)stored_dimension, fp) != (size_t)stored_dimension
+		|| fread(maxs_buffer, sizeof(float), (size_t)stored_dimension, fp) != (size_t)stored_dimension
+		|| fread(codes_buffer, sizeof(signed char), (size_t)(stored_documents * stored_dimension), fp) != (size_t)(stored_documents * stored_dimension))
+		{
+		delete [] presence_buffer;
+		delete [] mins_buffer;
+		delete [] maxs_buffer;
+		delete [] codes_buffer;
+		fclose(fp);
+		return result;
+		}
+	fclose(fp);
+
+	result->dimension = stored_dimension;
+	result->documents = stored_documents;
+	result->presence = presence_buffer;
+	result->qmin = mins_buffer;
+	result->qmax = maxs_buffer;
+	result->codes = codes_buffer;
+	result->quantized = 1;
+	return result;
+	}
 
 /*
 	The header's counts drive the allocations below, so a corrupt file lying
@@ -120,6 +177,43 @@ result->dimension = stored_dimension;
 result->documents = stored_documents;
 result->presence = presence_buffer;
 result->vectors = vector_buffer;
+return result;
+}
+
+/*
+	ANT_VECTOR_STORE::RECONSTRUCT()
+	--------------------------------
+*/
+void ANT_vector_store::reconstruct(long long docid, float *out)
+{
+if (quantized)
+	ANT_vector_quantize::reconstruct(codes + docid * dimension, dimension, qmin, qmax, out);
+else
+	memcpy(out, vectors + docid * dimension, (size_t)(dimension * sizeof(float)));
+}
+
+/*
+	ANT_VECTOR_STORE::SCORE()
+	--------------------------
+	Quantized stores reconstruct into a scratch buffer before scoring; a
+	stack buffer is used for the common case to avoid a heap round-trip.
+*/
+double ANT_vector_store::score(long long docid, const float *query, long metric)
+{
+if (!quantized)
+	return kernel(vectors + docid * dimension, query, dimension, metric);
+
+if (dimension <= 512)
+	{
+	float tmp[512];
+	reconstruct(docid, tmp);
+	return kernel(tmp, query, dimension, metric);
+	}
+
+float *tmp = new float[dimension];
+reconstruct(docid, tmp);
+double result = kernel(tmp, query, dimension, metric);
+delete [] tmp;
 return result;
 }
 
@@ -199,6 +293,7 @@ documents = 0;
 capacity = 0;
 presence = NULL;
 vectors = NULL;
+quant_mode = QUANT_OFF;
 }
 
 /*
@@ -276,9 +371,73 @@ return 0;
 }
 
 /*
+	ANT_VECTOR_STORE_WRITER::WRITE_QVEC()
+	--------------------------------------
+	Quantizes the buffered rows (ranged over all rows, absent-zeroed, exactly
+	the way the float path stores them -- see class comment) and writes the
+	.qvec sidecar atomically (.tmp then rename), mirroring finish() below.
+*/
+long ANT_vector_store_writer::write_qvec(const char *path)
+{
+char temp_name[4200];
+FILE *fp;
+long long presence_bytes = (documents + 7) / 8;
+long long which;
+
+if (vectors == NULL)
+	return 1;
+if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", path) >= (int)sizeof(temp_name))
+	return 1;
+
+float *mins = new float[dimension];
+float *maxs = new float[dimension];
+ANT_vector_quantize::compute_ranges(vectors, dimension, documents, mins, maxs);
+
+signed char *codes = new signed char[documents * dimension > 0 ? documents * dimension : 1];
+for (which = 0; which < documents; which++)
+	ANT_vector_quantize::quantize(vectors + which * dimension, dimension, mins, maxs, codes + which * dimension);
+
+long result = 0;
+if ((fp = fopen(temp_name, "wb")) == NULL)
+	result = 1;
+else
+	{
+	if (fwrite(&ANT_QVECTOR_STORE_MAGIC, sizeof(ANT_QVECTOR_STORE_MAGIC), 1, fp) != 1
+		|| fwrite(&dimension, sizeof(dimension), 1, fp) != 1
+		|| fwrite(&documents, sizeof(documents), 1, fp) != 1
+		|| fwrite(presence, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes
+		|| fwrite(mins, sizeof(float), (size_t)dimension, fp) != (size_t)dimension
+		|| fwrite(maxs, sizeof(float), (size_t)dimension, fp) != (size_t)dimension
+		|| fwrite(codes, sizeof(signed char), (size_t)(documents * dimension), fp) != (size_t)(documents * dimension))
+		{
+		fclose(fp);
+		remove(temp_name);
+		result = 1;
+		}
+	else
+		{
+		fclose(fp);
+		if (rename(temp_name, path) != 0)
+			{
+			remove(temp_name);
+			result = 1;
+			}
+		}
+	}
+
+delete [] mins;
+delete [] maxs;
+delete [] codes;
+return result;
+}
+
+/*
 	ANT_VECTOR_STORE_WRITER::FINISH()
 	---------------------------------
-	Write-temp then rename, per the crash-safety convention.
+	Write-temp then rename, per the crash-safety convention.  QUANT_REPLACE
+	writes the int8 .qvec sidecar to the same path instead of the float .vec
+	layout; QUANT_BOTH is not implemented yet (a later task) and falls back
+	to the float-only behaviour of QUANT_OFF.
 */
 long ANT_vector_store_writer::finish(void)
 {
@@ -288,6 +447,10 @@ long long presence_bytes = (documents + 7) / 8;
 
 if (vectors == NULL)
 	return 1;
+
+if (quant_mode == QUANT_REPLACE)
+	return write_qvec(filename);
+
 if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
 	return 1;
 if ((fp = fopen(temp_name, "wb")) == NULL)

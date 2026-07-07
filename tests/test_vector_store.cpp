@@ -12,6 +12,37 @@
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
 
+static void test_qvec_roundtrip(void)
+{
+long long dim = 16, n = 60, i, d;
+char path[64]; strcpy(path, "/tmp/ant_qvec_XXXXXX"); int fd = mkstemp(path); if (fd >= 0) close(fd);
+float *data = new float[n * dim];
+srand(5);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+ANT_vector_store_writer w;
+CHECK(w.create(path, dim) == 0);
+w.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+for (i = 0; i < n; i++) CHECK(w.append(data + i * dim) == 0);
+CHECK(w.finish() == 0);
+
+ANT_vector_store *s = ANT_vector_store::load(path, dim, n);
+CHECK(s != NULL);
+CHECK(s->document_count() == n);
+CHECK(s->is_quantized());
+float *recon = new float[dim];
+double worst = 0.0;
+for (i = 0; i < n; i++)
+	{
+	s->reconstruct(i, recon);
+	for (d = 0; d < dim; d++)
+		{ double err = fabs((double)recon[d] - (double)data[i*dim+d]); if (err > worst) worst = err; }
+	}
+CHECK(worst < 0.05);
+delete s; delete [] data; delete [] recon; unlink(path);
+printf("test_qvec_roundtrip OK (worst %.4f)\n", worst);
+}
+
 int main(void)
 {
 char dir_template[] = "/tmp/ant_vecstore_XXXXXX";
@@ -184,6 +215,9 @@ delete wrong_dim;
 delete none;
 delete no_deletes;
 delete dead0;
+
+test_qvec_roundtrip();
+
 printf("PASSED\n");
 return 0;
 }
