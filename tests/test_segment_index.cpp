@@ -3188,6 +3188,53 @@ printf("test_flush_replace_mode OK\n");
 }
 
 /*
+	TEST_EXACT_MODE_MATCHES_FLOAT()
+	-------------------------------
+	QUANTIZE_EXACT keeps a resident float32 .vec (source of truth) alongside
+	the int8 .qvec (used to accelerate approx/HNSW).  The exact search path
+	must be byte-identical to a pure-float (no quantization) index.
+*/
+static void test_exact_mode_matches_float(void)
+{
+long long dim = 24, n = 120, k = 8, i, d;
+float *data = new float[n * dim]; srand(29);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+char *dq = make_index_dir();
+char *df = make_index_dir();
+ATIRE_segment_index *qx = new ATIRE_segment_index();
+ATIRE_segment_index *fx = new ATIRE_segment_index();
+CHECK(qx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(qx->open(dq) == 0);
+CHECK(qx->set_quantization(ATIRE_segment_index::QUANTIZE_EXACT) == 0);
+CHECK(fx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(fx->open(df) == 0);
+for (i = 0; i < n; i++)
+	{
+	char key[32]; sprintf(key, "d%lld", i);
+	char doc[48]; sprintf(doc, "<DOC>%lld</DOC>", i);
+	CHECK(qx->add_document(key, doc, data + i * dim) >= 0);
+	CHECK(fx->add_document(key, doc, data + i * dim) >= 0);
+	}
+CHECK(qx->flush() == 0);
+CHECK(fx->flush() == 0);
+
+/* exact mode wrote BOTH sidecars */
+CHECK(dir_has_glob(dq, "seg_*.qvec"));
+CHECK(dir_has_glob(dq, "seg_*.vec"));
+
+float query[24]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 2000 - 1000) / 500.0f;
+long long nq = qx->search_vector(query, k), nf = fx->search_vector(query, k);
+CHECK(nq == nf && nq >= 1);
+for (i = 0; i < nq; i++)
+	CHECK(ATIRE_segment_index::make_handle(qx->get_hit(i)->generation, qx->get_hit(i)->docid)
+	   == ATIRE_segment_index::make_handle(fx->get_hit(i)->generation, fx->get_hit(i)->docid));	/* byte-identical top-k */
+
+delete qx; delete fx; delete [] dq; delete [] df; delete [] data;
+printf("test_exact_mode_matches_float OK\n");
+}
+
+/*
 	TEST_DECOMPRESS_BUFFER_REUSE()
 	------------------------------
 	allocate_decompress_buffer() runs on every NRT rebuild (open_from_memory_index).
@@ -3285,6 +3332,7 @@ test_wal_unhealthy();
 test_wal_replay_mid_autoflush();
 test_wal_fsync_durability();
 test_flush_replace_mode();
+test_exact_mode_matches_float();
 printf("PASSED\n");
 return 0;
 }

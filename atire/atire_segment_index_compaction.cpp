@@ -178,6 +178,12 @@ if (vector_dimension_current != 0)
 		delete [] merge_buf;
 		if (!vec_failed)
 			vec_failed = vec_writer.finish() != 0;
+		if (!vec_failed && quantization_current == QUANTIZE_EXACT)
+			{
+			char qvec_name[4096];
+			segment_filename(qvec_name, sizeof(qvec_name), output_generation, "qvec");
+			vec_writer.finish_qvec(qvec_name);
+			}
 		delete vec_renumberer;
 		delete [] stone_list;
 		delete [] doc_counts;
@@ -309,6 +315,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].engine;
 			delete segments[which].tombstones;
 			delete segments[which].vectors;
+			delete segments[which].exact_vectors;
 			delete segments[which].signatures;
 			delete segments[which].hnsw_graph;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)

@@ -49,6 +49,7 @@ public:
 	ATIRE_API *engine;
 	ANT_index_tombstones *tombstones;
 	ANT_vector_store *vectors;		// NULL when vectors are disabled for this index
+	ANT_vector_store *exact_vectors;	// float32 resident for exact-mode rerank; NULL otherwise
 	ANT_signature_store *signatures;	// NULL when absent/degraded/approximate-off
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
 	} ;

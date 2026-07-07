@@ -115,6 +115,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].engine;
 	delete segments[which].tombstones;
 	delete segments[which].vectors;
+	delete segments[which].exact_vectors;
 	delete segments[which].signatures;
 	delete segments[which].hnsw_graph;
 	}
@@ -945,6 +946,13 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 	if (vec_failed)
 		return 1;		// pre-manifest failure: degraded per flush()'s existing contract
 
+	if (quantization_current == QUANTIZE_EXACT)
+		{
+		char qvec_name[1024];
+		segment_filename(qvec_name, sizeof(qvec_name), flushed_vector_generation, "qvec");
+		vec_writer.finish_qvec(qvec_name);		// best-effort; float .vec is source of truth
+		}
+
 	/*
 		V2: write the signature sidecar alongside the .vec just written, signing
 		each present vector with the index-wide projection.  Best-effort: a
@@ -1162,9 +1170,22 @@ if (vector_dimension_current != 0)
 	if (v->document_count() == 0)		/* no/degraded .qvec -> float .vec */
 		{ delete v; v = ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()); }
 	segments[segment_count].vectors = v;
+
+	segments[segment_count].exact_vectors = NULL;
+	if (quantization_current == QUANTIZE_EXACT)
+		{
+		ANT_vector_store *ev = ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count());	// float .vec
+		if (ev->document_count() == engine->get_document_count() && ev->document_count() > 0 && !ev->is_quantized())
+			segments[segment_count].exact_vectors = ev;
+		else
+			delete ev;		// no/degraded/quantized .vec -> fall back to scanning .vectors
+		}
 	}
 else
+	{
 	segments[segment_count].vectors = NULL;
+	segments[segment_count].exact_vectors = NULL;
+	}
 segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;
 
 if (vector_dimension_current != 0 && hnsw_M_current != 0)

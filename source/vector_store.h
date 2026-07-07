@@ -110,6 +110,7 @@ public:
 	long create(const char *filename, long long dimension);		// 0 on success
 	long append(const float *vector_or_null);					// 0 on success
 	long finish(void);											// writes + renames; 0 on success
+	long finish_qvec(const char *qvec_path) { return write_qvec(qvec_path); }		// exact mode: write the int8 sibling AFTER finish() writes the float .vec
 	void abandon(void);											// discard without writing
 	void set_quantization(int mode) { quant_mode = mode; }
 } ;

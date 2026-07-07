@@ -674,7 +674,10 @@ if (vector_metric == VECTOR_METRIC_COSINE)
 
 for (which = 0; which < segment_count; which++)
 	if (segments[which].vectors != NULL)
-		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		{
+		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		}
 
 scan_live_buffer_exact(query, best, &best_count, top_k);
 
@@ -796,6 +799,7 @@ for (which = 0; which < segment_count; which++)
 	{
 	if (segments[which].vectors == NULL)
 		continue;
+	ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
 	if (segments[which].signatures != NULL && segments[which].signatures->document_count() == segments[which].engine->get_document_count())
 		{
 		long long count = 0, p;
@@ -803,15 +807,15 @@ for (which = 0; which < segment_count; which++)
 		for (p = 0; p < count; p++)
 			{
 			docid = pool[p];
-			if (!segments[which].vectors->has(docid))
+			if (!src->has(docid))
 				continue;
 			ANT_vector_candidate_insert(best, &best_count, top_k,
-				segments[which].vectors->score(docid, query, vector_metric),
+				src->score(docid, query, vector_metric),
 				segments[which].generation, docid);
 			}
 		}
 	else
-		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
 	}
 
 scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never signature-indexed)
@@ -874,10 +878,18 @@ for (which = 0; which < segment_count; which++)
 		long long c = segments[which].hnsw_graph->search(query, vector_metric, ef, ef,
 			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores);
 		for (long long p = 0; p < c; p++)
-			ANT_vector_candidate_insert(best, &best_count, top_k, cand_scores[p], segments[which].generation, cand_docids[p]);
+			{
+			double sc = segments[which].exact_vectors != NULL
+				? segments[which].exact_vectors->score(cand_docids[p], query, vector_metric)
+				: cand_scores[p];
+			ANT_vector_candidate_insert(best, &best_count, top_k, sc, segments[which].generation, cand_docids[p]);
+			}
 		}
 	else
-		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		{
+		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		}
 	}
 
 scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never graph-indexed)
