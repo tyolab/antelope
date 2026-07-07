@@ -37,6 +37,41 @@ return out;
 }
 
 /*
+	EXTRACT_MULTIVECTORS()
+	------------------------
+	Flattens a Python sequence of row-vectors (each of length dim) into one
+	row-major std::vector<float> buffer, mirroring the Node addon's
+	extract_multivectors() (nodejs/addon/segment_index.cpp ~line 469). Each
+	row is validated via extract_vector() (length == dim). *num receives the
+	row count. A None input yields an empty buffer and *num == 0.
+*/
+static std::vector<float> extract_multivectors(py::handle v, long long dim, long long *num)
+{
+*num = 0;
+std::vector<float> flat;
+if (v.is_none())
+	return flat;
+py::sequence rows;
+try
+	{
+	rows = v.cast<py::sequence>();
+	}
+catch (const py::cast_error &)
+	{
+	throw py::type_error("multi_vectors must be a sequence of vectors");
+	}
+long long n = (long long)py::len(rows);
+flat.reserve((size_t)(n * (dim > 0 ? dim : 1)));
+for (long long i = 0; i < n; i++)
+	{
+	std::vector<float> row = extract_vector(rows[i], dim);   // validates each row length == dim
+	flat.insert(flat.end(), row.begin(), row.end());
+	}
+*num = n;
+return flat;
+}
+
+/*
 	HIT
 	----
 	Plain-data result row returned by search(); mirrors hits_to_array in the
@@ -361,20 +396,21 @@ struct PySegmentIndex
 		PYSEGMENTINDEX::ADD_DOCUMENT()
 		---------------------------------
 		Lexical-only when vector is None; otherwise converts vector via
-		extract_vector() and calls the 3-arg engine overload. Rejects zero
-		vectors under the cosine metric before it reaches the engine (mirrors
-		the Node AddDocument zero-vector rejection, segment_index.cpp ~529-540).
-		Later tasks extend this with multi_vectors/attributes/payload.
+		extract_vector(). When multi_vectors is also given, flattens it via
+		extract_multivectors() and calls the 5-arg engine overload; otherwise
+		calls the 3-arg (vector-only) or 2-arg (lexical-only) overload. Rejects
+		zero vectors under the cosine metric before it reaches the engine
+		(mirrors the Node AddDocument zero-vector rejection, segment_index.cpp
+		~529-540). Later tasks extend this with attributes/payload.
 	*/
-	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none())
+	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none())
 	{
 	require_open();
-	long long handle;
-	if (vector.is_none())
-		handle = engine->add_document(key.c_str(), text.c_str());
-	else
+	std::vector<float> vec;
+	const float *vptr = NULL;
+	if (!vector.is_none())
 		{
-		std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+		vec = extract_vector(vector, engine->vector_dimension());
 		if (option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE)
 			{
 			double norm = 0.0;
@@ -383,8 +419,19 @@ struct PySegmentIndex
 			if (norm == 0.0)
 				throw py::value_error("zero vector is not valid under the cosine metric");
 			}
-		handle = engine->add_document(key.c_str(), text.c_str(), vec.data());
+		vptr = vec.data();
 		}
+	long long handle;
+	if (!multi_vectors.is_none())
+		{
+		long long num_mv = 0;
+		std::vector<float> mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
+		handle = engine->add_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv);
+		}
+	else if (vptr != NULL)
+		handle = engine->add_document(key.c_str(), text.c_str(), vptr);
+	else
+		handle = engine->add_document(key.c_str(), text.c_str());
 	if (handle == -1)
 		throw std::runtime_error("add_document failed (empty document or index not writable)");
 	py::dict d;
@@ -586,6 +633,65 @@ struct PySegmentIndex
 	if (rc != 0)
 		throw std::runtime_error("build_hnsw failed");
 	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_RERANK()
+		-----------------------------------
+		Stage 1 (lexical/vector/hybrid, whichever of text/vector are given) ->
+		MaxSim rerank of the top first_stage_n candidates over multi-vectors,
+		publishing top_k. text and vector may each be None, but not both (the
+		Node binding guards this same case to avoid a search(NULL) SIGSEGV in
+		the engine). No filter parameter yet (Task 8).
+	*/
+	py::list search_rerank(py::object text, py::object vector, py::object query_multi_vectors, long long first_stage_n, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	if (text.is_none() && vector.is_none())
+		throw py::value_error("search_rerank requires text and/or vector");
+	std::string buf;
+	char *tptr = NULL;
+	if (!text.is_none())
+		{
+		buf = text.cast<std::string>();
+		tptr = &buf[0];
+		}
+	std::vector<float> vec;
+	const float *vptr = NULL;
+	if (!vector.is_none())
+		{
+		vec = extract_vector(vector, engine->vector_dimension());
+		vptr = vec.data();
+		}
+	long long num_qv = 0;
+	std::vector<float> qmv = extract_multivectors(query_multi_vectors, engine->rerank_dimension(), &num_qv);
+	const float *qmvptr = num_qv > 0 ? qmv.data() : NULL;
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::BUILD_QUANTIZED()
+		--------------------------------------
+		Idempotent backfill: rewrites each float .vec disk segment as an int8
+		.qvec (replace mode).
+	*/
+	void build_quantized()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->build_quantized();
+	}
+	if (rc != 0)
+		throw std::runtime_error("build_quantized failed");
+	}
 };
 
 PYBIND11_MODULE(_core, m)
@@ -611,7 +717,7 @@ PYBIND11_MODULE(_core, m)
 		.def("close", &PySegmentIndex::close)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
-		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none())
+		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none())
 		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
 		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"))
 		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"))
@@ -622,6 +728,8 @@ PYBIND11_MODULE(_core, m)
 		.def("flush", &PySegmentIndex::flush)
 		.def("build_signatures", &PySegmentIndex::build_signatures)
 		.def("build_hnsw", &PySegmentIndex::build_hnsw)
+		.def("search_rerank", &PySegmentIndex::search_rerank, py::arg("text"), py::arg("vector"), py::arg("query_multi_vectors"), py::arg("first_stage_n"), py::arg("k"))
+		.def("build_quantized", &PySegmentIndex::build_quantized)
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
 }
