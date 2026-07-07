@@ -27,6 +27,7 @@
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
 #include "../source/wal.h"
+#include "../source/multivector_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::COMPACT()
@@ -199,6 +200,65 @@ if (vector_dimension_current != 0)
 	}
 
 /*
+	Step 2c: rewrite the multi-vector (.mvec) sidecar for the merged output,
+	when rerank is configured.  Same renumbering discipline as the .vec block
+	above (built fresh here rather than reusing the .vec block's locals,
+	which are scoped to that block): iterate inputs in order, skip tombstoned
+	docids, and append a (possibly-empty, variable-length) row per surviving
+	document so output docids stay aligned with the merged .aspt.  Best-effort:
+	a failure here leaves the output without a .mvec (never aborts a
+	successful merge) -- rerank then falls back to stage-1 order for this
+	segment, same as any other missing sidecar.
+*/
+if (rerank_configured())
+	{
+	long any_multivectors = 0;
+	for (input = 0; input < input_count; input++)
+		if (inputs[input]->multivectors != NULL && inputs[input]->multivectors->document_count() > 0)
+			any_multivectors = 1;
+	if (any_multivectors)
+		{
+		ANT_index_tombstones **mv_stone_list = new ANT_index_tombstones *[input_count];
+		long long *mv_doc_counts = new long long[input_count];
+		long long mv_maxm = 1;
+		for (input = 0; input < input_count; input++)
+			{
+			mv_stone_list[input] = inputs[input]->tombstones;
+			mv_doc_counts[input] = inputs[input]->engine->get_document_count();
+			if (inputs[input]->multivectors != NULL)
+				{
+				long long mc = inputs[input]->multivectors->max_vector_count();
+				if (mc > mv_maxm) mv_maxm = mc;
+				}
+			}
+		ANT_docid_renumberer *mv_renumberer = new ANT_docid_renumberer(mv_stone_list, mv_doc_counts, input_count);
+		char mvec_name[4096];
+		segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
+		ANT_multivector_store_writer mvw;
+		long mv_failed = mvw.create(mvec_name, rerank_dimension_current) != 0;
+		if (!mv_failed)
+			mvw.set_quantization(rerank_quant_current == RERANK_QUANT_INT8 ? ANT_multivector_store_writer::QUANT_INT8 : ANT_multivector_store_writer::QUANT_OFF);
+		float *mvbuf = new float[mv_maxm * rerank_dimension_current];
+		for (input = 0; !mv_failed && input < input_count; input++)
+			for (docid = 0; !mv_failed && docid < mv_doc_counts[input]; docid++)
+				{
+				if (mv_renumberer->renumber(input, docid) < 0)
+					continue;		/* tombstoned: dropped, exactly like its postings */
+				long long m = 0;
+				if (inputs[input]->multivectors != NULL)
+					m = inputs[input]->multivectors->copy_vectors(docid, mvbuf);
+				mv_failed = mvw.append(m > 0 ? mvbuf : NULL, m) != 0;
+				}
+		delete [] mvbuf;
+		if (!mv_failed) mvw.finish(); else mvw.abandon();
+		delete mv_renumberer;
+		delete [] mv_stone_list;
+		delete [] mv_doc_counts;
+		/* best-effort, non-fatal -- mirrors the .vsig/.hnsw rebuild blocks below */
+		}
+	}
+
+/*
 	Step 3: marker -- from here until removal, a crash makes the next
 	open() rebuild the keymap from the segments rather than trust the log
 */
@@ -292,6 +352,20 @@ if (hnsw_M_current != 0)
 	}
 
 /*
+	V5: refresh the merged segment's in-memory multi-vector cache from the
+	.mvec sidecar just written (or the absence of one), so THIS session's
+	search_rerank sees the compacted docids.  Must run before Step 6's
+	shuffle, which invalidates output_segment.
+*/
+if (rerank_configured())
+	{
+	char mvec_name[4096];
+	segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
+	delete output_segment->multivectors;
+	output_segment->multivectors = ANT_multivector_store::load(mvec_name, rerank_dimension_current, output_segment->engine->get_document_count());
+	}
+
+/*
 	Step 5: atomic manifest swap.  See the banner above for what happens
 	if save() fails here -- the keymap is already remapped, so we proceed
 	to step 6's in-memory removal regardless, but skip the file deletions
@@ -320,6 +394,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].exact_vectors;
 			delete segments[which].signatures;
 			delete segments[which].hnsw_graph;
+			delete segments[which].multivectors;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
 				segments[shuffle] = segments[shuffle + 1];
 			segment_count--;

@@ -248,6 +248,38 @@ return total;
 }
 
 /*
+	ANT_MULTIVECTOR_STORE::COPY_VECTORS()
+	----------------------------------------
+	Fills out[M_d * dimension] with this document's (reconstructed, normalized)
+	vectors, in stored order.  Returns M_d, or 0 if the document has none.
+*/
+long long ANT_multivector_store::copy_vectors(long long docid, float *out)
+{
+if (!has(docid)) return 0;
+long long m = counts[docid], start = offsets[docid], dim = dimension, j;
+for (j = 0; j < m; j++)
+	{
+	if (quantized)
+		ANT_vector_quantize::reconstruct(pool_q + (start + j) * dim, dim, qmin, qmax, out + j * dim);
+	else
+		memcpy(out + j * dim, pool_f + (start + j) * dim, (size_t)dim * sizeof(float));
+	}
+return m;
+}
+
+/*
+	ANT_MULTIVECTOR_STORE::MAX_VECTOR_COUNT()
+	---------------------------------------------
+	Largest M_d over all documents, for sizing a per-document scratch buffer.
+*/
+long long ANT_multivector_store::max_vector_count(void)
+{
+long long best = 0, d;
+for (d = 0; d < documents; d++) if (counts != NULL && counts[d] > best) best = counts[d];
+return best;
+}
+
+/*
 	ANT_MULTIVECTOR_STORE_WRITER::ANT_MULTIVECTOR_STORE_WRITER()
 	---------------------------------------------------------------
 */

@@ -3494,6 +3494,31 @@ delete ix; delete [] dir;
 printf("test_search_rerank_changes_order OK\n");
 }
 
+static void test_compaction_preserves_mvec(void)
+{
+char *dir = make_index_dir();
+long long dim = 4, mvdim = 4;
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_rerank_config(mvdim, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+float qvec[4] = {1,0,0,0}, qmv[4] = {0,0,1,0};
+float Avec[4] = {0.9f,0.1f,0,0}, Amv[2*4] = {1,0,0,0, 0,1,0,0};
+float Bvec[4] = {0.5f,0.5f,0,0}, Bmv[2*4] = {1,0,0,0, 0,0,1,0};
+CHECK(ix->add_document("A", "<DOC>a</DOC>", Avec, Amv, 2) >= 0);
+CHECK(ix->flush() == 0);							/* generation 1 */
+CHECK(ix->add_document("B", "<DOC>b</DOC>", Bvec, Bmv, 2) >= 0);
+CHECK(ix->flush() == 0);							/* generation 2 */
+long long gens[2] = {1, 2};
+CHECK(ix->compact(gens, 2) == 0);
+CHECK(dir_has_glob(dir, "seg_*.mvec"));
+long long n = ix->search_rerank(NULL, qvec, qmv, 1, 10, 2);
+CHECK(n == 2);
+CHECK(strcmp(ix->get_hit(0)->filename, "B") == 0);	/* rerank order survives compaction */
+delete ix; delete [] dir;
+printf("test_compaction_preserves_mvec OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -3557,6 +3582,7 @@ test_exact_mode_matches_float();
 test_exact_mode_matches_float_after_compaction();
 test_quantization_coexists_with_approx_and_hnsw();
 test_flush_writes_mvec();
+test_compaction_preserves_mvec();
 test_search_rerank_changes_order();
 printf("PASSED\n");
 return 0;

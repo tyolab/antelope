@@ -30,6 +30,8 @@ public:
 	long has(long long docid) { return docid >= 0 && docid < documents && counts != NULL && counts[docid] > 0; }
 	long long vector_count(long long docid) { return has(docid) ? counts[docid] : 0; }
 	double maxsim(long long docid, const float *query_vecs, long long num_query_vecs);
+	long long copy_vectors(long long docid, float *out);	// fills out[M_d*dim] with this doc's (reconstructed, normalized) vectors; returns M_d (0 if absent)
+	long long max_vector_count(void);						// largest M_d over all docs (for sizing a buffer)
 } ;
 
 class ANT_multivector_store_writer
