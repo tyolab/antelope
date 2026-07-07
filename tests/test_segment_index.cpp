@@ -2144,6 +2144,22 @@ delete [] dir;
 printf("test_quantization_config_persist OK\n");
 }
 
+static void test_writer_multivector_capture(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);
+float mv[3*8]; for (int i = 0; i < 3*8; i++) mv[i] = (float)(i+1)/10.0f;
+long long h = ix->add_document("d0", "<DOC>hello</DOC>", /*docvec=*/NULL, mv, 3);
+CHECK(h >= 0);
+CHECK(ix->writer_multivector_count_for_test(0) == 3);
+CHECK(ix->add_document("d1", "<DOC>world</DOC>", NULL, NULL, 0) >= 0);	/* no multivecs */
+CHECK(ix->writer_multivector_count_for_test(1) == 0);
+delete ix; delete [] dir;
+printf("test_writer_multivector_capture OK\n");
+}
+
 static void test_rerank_config_persist(void)
 {
 char *dir = make_index_dir();
@@ -3455,6 +3471,7 @@ test_approx_config_persists();
 test_hnsw_config_persists();
 test_quantization_config_persist();
 test_rerank_config_persist();
+test_writer_multivector_capture();
 test_flush_writes_signatures();
 test_flush_builds_hnsw();
 test_build_signatures_backfill();

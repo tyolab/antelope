@@ -47,6 +47,14 @@ writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
 writer_vectors_present = 0;
+
+delete [] writer_multivector_data;
+delete [] writer_multivector_counts;
+writer_multivector_data = NULL;
+writer_multivector_counts = NULL;
+writer_multivector_capacity = 0;
+writer_multivector_total = 0;
+writer_multivector_counts_capacity = 0;
 }
 
 /*
@@ -708,6 +716,93 @@ else
 	writer_vectors_present++;
 	}
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_MULTIVECTOR_APPEND()
+	--------------------------------------------------
+	Task 4: capture-only.  Keeps the per-writer-docid multi-vector row count
+	(writer_multivector_counts[docid]) parallel to the writer's docids, mirroring
+	writer_vector_append()'s growth pattern, and appends `num` rows (each of
+	rerank_dimension_current floats) into the flat, ever-growing
+	writer_multivector_data pool.  Each row is normalized in place with
+	ANT_vector_store::normalize(); a zero row is left as zeros (normalize()
+	returning nonzero is NOT a rejection here -- unlike the single, doc-level
+	vector's cosine path, an all-zero multi-vector row is a legitimate, if
+	inert, row).  Called from add_document_core() right after
+	writer_vector_append(), i.e. before writer_documents is incremented, so
+	docid here is 0-based and already final.  Flush/search over this buffer
+	are later tasks; for now the data is captured and observable only via
+	writer_multivector_count_for_test().
+*/
+long ATIRE_segment_index::writer_multivector_append(long long docid, const float *multivector, long long num_vectors)
+{
+long long row;
+
+if (writer_multivector_counts_capacity == 0)
+	{
+	writer_multivector_counts_capacity = 1024;
+	writer_multivector_counts = new int[writer_multivector_counts_capacity];
+	memset(writer_multivector_counts, 0, (size_t)(writer_multivector_counts_capacity * sizeof(int)));
+	}
+if (docid >= writer_multivector_counts_capacity)
+	{
+	long long new_capacity = writer_multivector_counts_capacity * 2;
+	while (docid >= new_capacity)
+		new_capacity *= 2;
+	int *new_counts = new int[new_capacity];
+	memset(new_counts, 0, (size_t)(new_capacity * sizeof(int)));
+	memcpy(new_counts, writer_multivector_counts, (size_t)(writer_multivector_counts_capacity * sizeof(int)));
+	delete [] writer_multivector_counts;
+	writer_multivector_counts = new_counts;
+	writer_multivector_counts_capacity = new_capacity;
+	}
+
+writer_multivector_counts[docid] = (int)num_vectors;
+
+if (num_vectors > 0 && multivector != NULL && rerank_dimension_current > 0)
+	{
+	if (writer_multivector_capacity == 0)
+		{
+		writer_multivector_capacity = 1024;
+		writer_multivector_data = new float[writer_multivector_capacity * rerank_dimension_current];
+		}
+	if (writer_multivector_total + num_vectors > writer_multivector_capacity)
+		{
+		long long new_capacity = writer_multivector_capacity * 2;
+		while (writer_multivector_total + num_vectors > new_capacity)
+			new_capacity *= 2;
+		float *new_data = new float[new_capacity * rerank_dimension_current];
+		memcpy(new_data, writer_multivector_data, (size_t)(writer_multivector_total * rerank_dimension_current * sizeof(float)));
+		delete [] writer_multivector_data;
+		writer_multivector_data = new_data;
+		writer_multivector_capacity = new_capacity;
+		}
+
+	for (row = 0; row < num_vectors; row++)
+		{
+		float *dst = writer_multivector_data + writer_multivector_total * rerank_dimension_current;
+		memcpy(dst, multivector + row * rerank_dimension_current, (size_t)(rerank_dimension_current * sizeof(float)));
+		ANT_vector_store::normalize(dst, rerank_dimension_current);	// zero row -> stays zero, not a rejection
+		writer_multivector_total++;
+		}
+	}
+
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_MULTIVECTOR_COUNT_FOR_TEST()
+	------------------------------------------------------------
+	Test hook (Task 4): the number of multi-vector rows captured for `docid`
+	in the live writer segment.  0 if docid was never given any (or a 0 was
+	recorded), -1 if docid is out of range for the current writer.
+*/
+long long ATIRE_segment_index::writer_multivector_count_for_test(long long docid)
+{
+if (docid < 0 || docid >= writer_documents)
+	return -1;
+return (writer_multivector_counts != NULL && docid < writer_multivector_counts_capacity) ? writer_multivector_counts[docid] : 0;
 }
 
 /*

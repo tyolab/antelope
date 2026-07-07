@@ -109,6 +109,13 @@ private:
 	long long writer_vector_capacity;
 	long long writer_vectors_present;		// how many docs in the buffer HAVE vectors
 
+	/* memory-segment multi-vector buffer, parallel to the writer's docids (Task 4: capture only) */
+	float *writer_multivector_data;			// growing pool of pending docs' multi-vectors (normalized)
+	long long writer_multivector_capacity;	// in vectors
+	long long writer_multivector_total;		// vectors buffered so far
+	int *writer_multivector_counts;			// M per writer docid
+	long long writer_multivector_counts_capacity;	// in docs
+
 	/*
 		Durable (WAL) mode.  wal is NULL unless set_durable(1) was called
 		before open().  wal_fsync_pending records a set_wal_fsync() call
@@ -154,7 +161,7 @@ private:
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
 	long rebuild_keymap(void);			// reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 
-	long long add_document_core(const char *key, const char *document, const float *vector);	// shared body; vector may be NULL
+	long long add_document_core(const char *key, const char *document, const float *vector, const float *multivector = NULL, long long num_vectors = 0);	// shared body; vector may be NULL; multivector/num_vectors default to none (Task 4: capture only)
 
 	long load_vector_config(void);			// reads <dir>/vector.config; 0 = ok (absent is ok)
 	long save_vector_config(void);			// atomic write; 0 on success
@@ -165,6 +172,7 @@ private:
 	long save_hnsw_config(void);
 	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best);	// Task 7
 	long writer_vector_append(long long docid, const float *vector_or_null);
+	long writer_multivector_append(long long docid, const float *multivector, long long num_vectors);
 	void reset_writer_vectors(void);
 
 	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
@@ -224,8 +232,10 @@ public:
 
 	long long add_document(const char *key, const char *document);		// returns handle, -1 on error
 	long long add_document(const char *key, const char *document, const float *vector);		// returns handle, -1 on error (also on vector rejection)
+	long long add_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors);	// returns handle, -1 on error; multivector may be NULL / num_vectors 0
 	long long update_document(const char *key, const char *document);	// upsert; returns new handle
 	long long update_document(const char *key, const char *document, const float *vector);	// upsert; returns new handle
+	long long update_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors);	// upsert; returns new handle
 	long delete_document(const char *key);								// 0 on success, 1 if key unknown
 
 	long flush(void);										// memory segment -> disk segment; 0 on success
@@ -243,6 +253,7 @@ public:
 	long disk_segment_has_hnsw(long long which);
 	ANT_search_engine *disk_segment_engine(long long which);
 	ANT_memory_index *writer_memory_index_for_test(void);		// test hook: the live writer segment's memory index (NULL before open); used to observe decompress-buffer arena reuse
+	long long writer_multivector_count_for_test(long long docid);	// test hook: M for docid; 0 if none; -1 if out of range
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the

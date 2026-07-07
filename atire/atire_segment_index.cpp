@@ -90,6 +90,12 @@ writer_vector_presence = NULL;
 writer_vector_capacity = 0;
 writer_vectors_present = 0;
 
+writer_multivector_data = NULL;
+writer_multivector_capacity = 0;
+writer_multivector_total = 0;
+writer_multivector_counts = NULL;
+writer_multivector_counts_capacity = 0;
+
 durable = 0;
 wal_fsync_pending = 0;
 wal = NULL;
@@ -604,7 +610,7 @@ return 0;
 	point this document's docid must already be recorded in ITS segment's
 	vector buffer, or the flush would serialise the segment without it.
 */
-long long ATIRE_segment_index::add_document_core(const char *key, const char *document, const float *vector)
+long long ATIRE_segment_index::add_document_core(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors)
 {
 char *key_copy, *doc_copy;
 long long before, docid;
@@ -663,6 +669,7 @@ docid -= 1;
 */
 if (vector_dimension_current != 0)
 	writer_vector_append(docid, vector);
+writer_multivector_append(docid, multivector, num_vectors);
 
 writer_documents++;
 writer_engine_stale = 1;
@@ -771,6 +778,43 @@ return handle;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT()  (vector + multi-vector overload)
+	------------------------------------------------------------------------
+	Task 4: capture-only -- the multi-vector rows are buffered (see
+	writer_multivector_append()) but not yet flushed to disk or searched
+	(that comes in later tasks).  The doc-level `vector` is handled exactly
+	as in the 3-arg overload above (cosine normalization / disabled-index
+	and zero-vector rejection all happen here, before add_document_core()
+	is called).  multivector/num_vectors are NOT rejected here -- each row
+	is normalized individually inside writer_multivector_append() (called
+	from add_document_core()), and a zero row there is accepted, not fatal,
+	unlike the doc-level vector's cosine path.
+*/
+long long ATIRE_segment_index::add_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors)
+{
+float *normalized = NULL;
+long long handle;
+
+if (vector != NULL && vector_dimension_current == 0)
+	return -1;			// vectors on a non-vector index
+if (vector != NULL && vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, vector, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{
+		delete [] normalized;
+		return -1;		// zero vector is meaningless under cosine
+		}
+	vector = normalized;
+	}
+
+handle = add_document_core(key, document, vector, multivector, num_vectors);
+delete [] normalized;
+return handle;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::TOMBSTONE()
 	--------------------------------
 	Mark (generation, docid) deleted.  For a disk segment the .del file is
@@ -825,6 +869,34 @@ long had_old = keymap->find(key, &old_generation, &old_docid);
 */
 wal_suppress_add = 1;
 long long handle = add_document(key, document, vector);		// also repoints the keymap at the new copy
+wal_suppress_add = 0;
+if (handle < 0)
+	return -1;
+
+if (wal != NULL && !wal_replaying)
+	wal->append('U', key, document, vector);
+
+if (had_old)
+	tombstone(old_generation, old_docid);
+return handle;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()  (vector + multi-vector overload)
+	----------------------------------------------------------------------------
+	Upsert, as above, but also threads multivector/num_vectors through to the
+	5-arg add_document() so the new copy's multi-vector rows (Task 4:
+	capture-only) are buffered for its docid.  The WAL 'U' record logs only
+	the doc-level vector, same as the 3-arg overload above -- multi-vector WAL
+	durability is out of scope for this task.
+*/
+long long ATIRE_segment_index::update_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors)
+{
+long long old_generation, old_docid;
+long had_old = keymap->find(key, &old_generation, &old_docid);
+
+wal_suppress_add = 1;
+long long handle = add_document(key, document, vector, multivector, num_vectors);		// also repoints the keymap at the new copy
 wal_suppress_add = 0;
 if (handle < 0)
 	return -1;
