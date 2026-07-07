@@ -66,6 +66,8 @@ if (results_count >= results_allocated)
 	}
 
 results_count++;
+results[results_count - 1].payload = NULL;
+results[results_count - 1].payload_length = 0;
 return &results[results_count - 1];
 }
 
@@ -121,6 +123,7 @@ for (which = 0; which < hits && which < fetch && which < list_len; which++)
 
 	slot->generation = generation;
 	slot->docid = docid;
+	populate_hit_payload(slot);
 	slot->score = accumulator->get_rsv();
 	if (filename != NULL)
 		{
@@ -212,4 +215,40 @@ for (which = 0; which < segment_count; which++)
 	if (segments[which].generation == generation)
 		return segments[which].engine->get_document_filename(buffer, docid);
 return NULL;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::POPULATE_HIT_PAYLOAD()
+	--------------------------------------------
+	Fills slot->payload/payload_length from the owning segment (live writer
+	buffer or disk segment payload sidecar), looked up by slot->generation +
+	slot->docid, mirroring resolve_hit_filename()'s live-vs-disk generation
+	dispatch.  A no-op (NULL, 0) when attributes/payloads are not configured
+	for this index.
+*/
+void ATIRE_segment_index::populate_hit_payload(hit *slot)
+{
+slot->payload = NULL;
+slot->payload_length = 0;
+if (!attributes_configured())
+	return;
+if (writer != NULL && slot->generation == writer_generation)
+	{
+	if (writer_attribute_sets != NULL && slot->docid >= 0 && slot->docid < writer_attribute_sets_capacity && writer_attribute_sets[slot->docid] != NULL)
+		{
+		long long len = 0;
+		const unsigned char *p = writer_attribute_sets[slot->docid]->payload_bytes(&len);
+		slot->payload = p;
+		slot->payload_length = len;
+		}
+	return;
+	}
+long long which;
+for (which = 0; which < segment_count; which++)
+	if (segments[which].generation == slot->generation)
+		{
+		if (segments[which].payload != NULL)
+			segments[which].payload->get(slot->docid, &slot->payload, &slot->payload_length);
+		return;
+		}
 }

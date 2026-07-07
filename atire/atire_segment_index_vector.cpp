@@ -1043,6 +1043,7 @@ for (which = 0; which < count; which++)
 
 	slot->generation = best[which].generation;
 	slot->docid = best[which].docid;
+	populate_hit_payload(slot);
 	slot->score = best[which].score;
 	if (filename != NULL)
 		{
@@ -1353,6 +1354,7 @@ for (which = 0; which < publish; which++)
 
 	slot->generation = fused[which].candidate.generation;
 	slot->docid = fused[which].candidate.docid;
+	populate_hit_payload(slot);
 	slot->score = fused[which].candidate.score;
 	slot->filename = fused[which].filename;		/* ownership transfer */
 	fused[which].filename = NULL;

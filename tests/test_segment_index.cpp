@@ -3057,6 +3057,41 @@ printf("test_global_stats_score_equality OK\n");
 }
 
 /*
+	TEST_PAYLOAD_ON_HITS()
+	-----------------------
+	Each hit carries the opaque per-doc payload blob (or NULL/0 when the doc
+	has none), resolved by generation+docid via populate_hit_payload().
+*/
+static void test_payload_on_hits(void)
+{
+	char *dir = make_index_dir();
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(4, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s;
+	s.add_field("n", ANT_attribute_schema::TYPE_INT64, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	float v0[4] = {1,0,0,0}, v1[4] = {0,1,0,0};
+	ANT_attribute_set A(ix->attribute_schema()); A.set_int(0, 7); A.set_payload("{\"id\":7}", 8);
+	CHECK(ix->add_document("doc0", "<DOC>alpha</DOC>", v0, NULL, 0, &A) >= 0);
+	ANT_attribute_set B(ix->attribute_schema()); B.set_int(0, 8);	/* no payload */
+	CHECK(ix->add_document("doc1", "<DOC>beta</DOC>", v1, NULL, 0, &B) >= 0);
+	CHECK(ix->flush() == 0);
+	float q[4] = {1,0,0,0};
+	CHECK(ix->search_vector(q, 2) == 2);
+	/* hit 0 is doc0 (nearest); its payload round-trips */
+	CHECK(strcmp(ix->get_hit(0)->filename, "doc0") == 0);
+	CHECK(ix->get_hit(0)->payload_length == 8);
+	CHECK(memcmp(ix->get_hit(0)->payload, "{\"id\":7}", 8) == 0);
+	/* doc1 has no payload */
+	CHECK(strcmp(ix->get_hit(1)->filename, "doc1") == 0);
+	CHECK(ix->get_hit(1)->payload_length == 0);
+	CHECK(ix->get_hit(1)->payload == NULL);
+	delete ix; delete [] dir;
+	printf("test_payload_on_hits OK\n");
+}
+
+/*
 	TEST_WAL_DURABILITY()
 	---------------------
 	With set_durable(1), everything since the last flush survives a crash
@@ -3747,6 +3782,7 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_payload_on_hits();
 /*
 	test_writer_attribute_capture is registered AFTER
 	test_global_stats_score_equality on purpose: the global-stats test

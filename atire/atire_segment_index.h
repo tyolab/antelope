@@ -42,6 +42,8 @@ public:
 	long long docid;			// docid local to that segment
 	char *filename;				// the external key; owned by the index, valid until the next search
 	double score;
+	const unsigned char *payload;	// opaque per-doc blob, NULL when none; borrowed, valid until the next search/flush
+	long long payload_length;		// 0 when none
 	} ;
 
 	/*
@@ -200,6 +202,7 @@ private:
 	long long search_vector_impl(const float *query, long long top_k, vector_search_mode mode);
 	long long search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode);
 	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
+	void populate_hit_payload(hit *slot);	// fills slot->payload/payload_length from the owning segment (or live buffer) by slot->generation+docid
 
 	void reset_results(void);			// frees results[0, results_count)'s filenames and zeroes results_count
 	hit *append_result(void);			// grows results[] (doubling, initial 256) if needed, then reserves and returns the next slot
