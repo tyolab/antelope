@@ -58,6 +58,9 @@ long long n = vectors->document_count(), i;
 ANT_mersenne_twister twister;
 double mL;
 
+if (n > ANT_HNSW_MAX_DOCUMENTS)
+	return 1;			/* too many docs for int32 docids; caller falls back to exact scan */
+
 delete [] levels; delete [] offsets; delete [] neighbours;
 levels = NULL; offsets = NULL; neighbours = NULL;
 
@@ -337,7 +340,7 @@ if (fread(&magic,sizeof(magic),1,fp)!=1 || magic != ant_hnsw_magic()
 	|| fread(&docs,sizeof(docs),1,fp)!=1 || fread(&ep,sizeof(ep),1,fp)!=1
 	|| fread(&maxl,sizeof(maxl),1,fp)!=1
 	|| m != expected_M || efc != expected_ef_construction || docs != expected_documents
-	|| docs < 0 || docs > (1LL<<40) || ep < -1 || ep >= docs || maxl < -1 || maxl > 4096)
+	|| docs < 0 || docs > ANT_HNSW_MAX_DOCUMENTS || ep < -1 || ep >= docs || maxl < -1 || maxl > 4096)
 	{ fclose(fp); return g; }
 
 /* read levels[] and offsets[] (bounded by docs, already range-checked) */

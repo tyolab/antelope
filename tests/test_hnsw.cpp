@@ -239,6 +239,34 @@ delete store; delete [] data; unlink(path);
 printf("test_tombstone_no_underfill OK (filled=%lld/%lld)\n", c, k);
 }
 
+static void test_load_docs_over_int32_cap(void)
+{
+/* Craft a .hnsw with a VALID header (magic + version) but documents ==
+   ANT_HNSW_MAX_DOCUMENTS + 1 (0x80000000LL, first value that overflows int32
+   docid storage).  load() must reject this on the Phase-1 range check --
+   before any levels[]/offsets[] allocation -- and hand back a degraded,
+   empty graph rather than trying to allocate/crash. */
+char gpath[64]; strcpy(gpath, "/tmp/ant_hnsw_cap_XXXXXX"); { int fd=mkstemp(gpath); if(fd>=0) close(fd); }
+unsigned long long magic; memcpy(&magic, "ANTHNSW1", 8);		/* same bytes as save()'s ant_hnsw_magic() */
+unsigned int version = 1u;								/* ANT_HNSW_VERSION, private to hnsw.cpp */
+long long M = 16, efc = 200, docs = 0x80000000LL, ep = -1, maxl = -1;
+FILE *fp = fopen(gpath, "wb"); CHECK(fp != NULL);
+CHECK(fwrite(&magic,sizeof(magic),1,fp)==1);
+CHECK(fwrite(&version,sizeof(version),1,fp)==1);
+CHECK(fwrite(&M,sizeof(M),1,fp)==1);
+CHECK(fwrite(&efc,sizeof(efc),1,fp)==1);
+CHECK(fwrite(&docs,sizeof(docs),1,fp)==1);
+CHECK(fwrite(&ep,sizeof(ep),1,fp)==1);
+CHECK(fwrite(&maxl,sizeof(maxl),1,fp)==1);
+fclose(fp);
+/* expected_* match the crafted header exactly, so it's the docs > cap check
+   that rejects the file, not an expectation mismatch. */
+ANT_hnsw *loaded = ANT_hnsw::load(gpath, M, efc, docs);
+CHECK(loaded->node_count() == 0 && loaded->empty());
+delete loaded; unlink(gpath);
+printf("test_load_docs_over_int32_cap OK\n");
+}
+
 int main(void)
 {
 test_recall_and_determinism();
@@ -249,6 +277,7 @@ test_degenerate_M();
 test_save_load_roundtrip();
 test_load_degrade();
 test_load_content_corruption();
+test_load_docs_over_int32_cap();
 printf("PASSED\n");
 return 0;
 }

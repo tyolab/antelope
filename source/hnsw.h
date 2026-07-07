@@ -13,6 +13,7 @@ class ANT_vector_store;
 class ANT_index_tombstones;
 
 #define ANT_HNSW_SEED 0x1234567890ABCDEFULL
+#define ANT_HNSW_MAX_DOCUMENTS 0x7FFFFFFFLL   /* INT_MAX: docids stored int32 in neighbours[], so cap node count */
 
 class ANT_hnsw
 {
