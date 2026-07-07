@@ -40,3 +40,9 @@ bin/*
 
 # git worktrees for isolated feature work
 .worktrees/
+
+# Python build artifacts
+python/build/
+python/*.egg-info/
+**/__pycache__/
+.pytest_cache/

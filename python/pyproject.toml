@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "pybind11>=2.11"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "antelope"
+version = "0.1.0"
+description = "Python binding for the Antelope/ATIRE search engine + an MCP server"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+
+[project.scripts]
+antelope-mcp = "antelope.mcp.__main__:main"
+
+[tool.setuptools]
+packages = ["antelope", "antelope.mcp"]
