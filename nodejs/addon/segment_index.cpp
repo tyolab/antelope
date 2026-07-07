@@ -36,6 +36,8 @@ private:
 	long option_hnsw_ef_construction;	// 0 = engine default (200); >0 = explicit
 	long option_hnsw_ef_search;			// 0 = unset; >0 = set_ef_search()
 	long option_quantize;				// ATIRE_segment_index::QUANTIZE_OFF/REPLACE/EXACT
+	long long option_rerank_dim;		// 0 = off
+	long option_rerank_quant;			// ATIRE_segment_index::RERANK_QUANT_FLOAT/INT8
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -71,6 +73,7 @@ public:
 	Napi::Value SearchHybridApprox(const Napi::CallbackInfo &info);
 	Napi::Value SearchVectorHnsw(const Napi::CallbackInfo &info);
 	Napi::Value SearchHybridHnsw(const Napi::CallbackInfo &info);
+	Napi::Value SearchRerank(const Napi::CallbackInfo &info);
 	/* async maintenance (AsyncWorker-backed, Promise-returning) */
 	Napi::Value Flush(const Napi::CallbackInfo &info);
 	Napi::Value Maintain(const Napi::CallbackInfo &info);
@@ -106,6 +109,8 @@ option_hnsw_M = -1;					// not requested
 option_hnsw_ef_construction = 0;	// engine default
 option_hnsw_ef_search = 0;			// unset
 option_quantize = ATIRE_segment_index::QUANTIZE_OFF;
+option_rerank_dim = 0;				// off
+option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -193,6 +198,16 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 			{
 			Napi::TypeError::New(env, "quantize mode must be 'int8', 'replace', or 'exact'").ThrowAsJavaScriptException();
 			return;
+			}
+		}
+	if (options.Has("rerank") && options.Get("rerank").IsObject())
+		{
+		Napi::Object r = options.Get("rerank").As<Napi::Object>();
+		option_rerank_dim = r.Has("dimension") ? (long long)r.Get("dimension").As<Napi::Number>().Int64Value() : 0;
+		if (r.Has("quantize"))
+			{
+			std::string q = r.Get("quantize").ToString().Utf8Value();
+			option_rerank_quant = (q == "float") ? ATIRE_segment_index::RERANK_QUANT_FLOAT : ATIRE_segment_index::RERANK_QUANT_INT8;
 			}
 		}
 	}
@@ -286,6 +301,11 @@ if (option_hnsw_M >= 0)
    if it fails (mode stays off -- e.g. a different mode already persisted). */
 if (option_quantize != ATIRE_segment_index::QUANTIZE_OFF)
 	engine->set_quantization(option_quantize);
+/* Rerank (late-interaction / MaxSim) config is index-wide and must be set
+   before the first flush; NON-FATAL if it fails (rerank simply stays off --
+   e.g. a different dimension already persisted). */
+if (option_rerank_dim > 0)
+	engine->set_rerank_config(option_rerank_dim, option_rerank_quant);
 state = OPEN;
 return env.Undefined();
 }
@@ -384,6 +404,70 @@ return NULL;
 }
 
 /*
+	EXTRACT_MULTIVECTORS()
+	-----------------------
+	Accepts a JS Array of per-row Float32Array | number[] (a ragged-friendly
+	shape at the JS level, but every row must have exactly `dimension`
+	elements) and flattens it into one row-major float buffer of
+	num_vectors * dimension floats, allocated into *scratch (always
+	allocated when the row count is > 0; caller delete[]s it).  Returns NULL
+	and throws (TypeError) on any row of the wrong type or length.  An empty
+	input array yields *num_vectors = 0 and a NULL return without throwing.
+*/
+static const float *extract_multivectors(Napi::Env env, Napi::Value value, long long dimension, long long *num_vectors, float **scratch)
+{
+*scratch = NULL;
+*num_vectors = 0;
+if (!value.IsArray())
+	{
+	Napi::TypeError::New(env, "multiVectors must be an array of Float32Array/number[]").ThrowAsJavaScriptException();
+	return NULL;
+	}
+Napi::Array rows = value.As<Napi::Array>();
+long long count = (long long)rows.Length();
+if (count == 0)
+	return NULL;
+float *buffer = new float[count * dimension];
+for (long long row = 0; row < count; row++)
+	{
+	Napi::Value row_value = rows.Get((uint32_t)row);
+	if (row_value.IsTypedArray())
+		{
+		Napi::TypedArray typed = row_value.As<Napi::TypedArray>();
+		if (typed.TypedArrayType() != napi_float32_array || (long long)typed.ElementLength() != dimension)
+			{
+			delete [] buffer;
+			Napi::TypeError::New(env, "multiVectors row dimension mismatch").ThrowAsJavaScriptException();
+			return NULL;
+			}
+		const float *row_data = static_cast<const float *>(typed.As<Napi::Float32Array>().Data());
+		memcpy(buffer + row * dimension, row_data, (size_t)dimension * sizeof(float));
+		}
+	else if (row_value.IsArray())
+		{
+		Napi::Array row_array = row_value.As<Napi::Array>();
+		if ((long long)row_array.Length() != dimension)
+			{
+			delete [] buffer;
+			Napi::TypeError::New(env, "multiVectors row dimension mismatch").ThrowAsJavaScriptException();
+			return NULL;
+			}
+		for (long long which = 0; which < dimension; which++)
+			buffer[row * dimension + which] = (float)row_array.Get((uint32_t)which).ToNumber().DoubleValue();
+		}
+	else
+		{
+		delete [] buffer;
+		Napi::TypeError::New(env, "multiVectors row must be a Float32Array or number[]").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	}
+*scratch = buffer;
+*num_vectors = count;
+return buffer;
+}
+
+/*
 	HITS_TO_ARRAY()
 	---------------
 	Deep-copies the engine's hit list (valid only until the next search)
@@ -408,23 +492,31 @@ return result;
 /*
 	SEGMENTINDEXWRAP::ADDDOCUMENT()
 	----------------------------------
-	add_document(key, text[, vector]) -> { generation, docid }.  The vector
-	argument is optional even on a vector-enabled index (lexical-only
-	documents are allowed to co-exist with vector documents).  Both
-	add_document() overloads take const char* / const float* -- no writable
-	copies are needed here (unlike search()).
+	add_document(key, text[, vector[, multiVectors]]) -> { generation, docid }.
+	The vector argument is optional even on a vector-enabled index (lexical-
+	only documents are allowed to co-exist with vector documents); likewise
+	multiVectors is optional even on a rerank-enabled index.  multiVectors is
+	a JS Array of per-row Float32Array|number[], each row exactly
+	rerank_dimension() long; it is flattened by extract_multivectors() into
+	one row-major float buffer and passed to the 5-arg add_document()
+	overload.  When absent/empty, the existing 3-arg/2-arg overloads are used
+	unchanged.  All add_document() overloads take const char* / const float*
+	-- no writable copies are needed here (unlike search()).
 */
 Napi::Value SegmentIndexWrap::AddDocument(const Napi::CallbackInfo &info)
 {
 Napi::Env env = info.Env();
 float *scratch = NULL;
 const float *vector = NULL;
+float *mv_scratch = NULL;
+const float *multivector = NULL;
+long long num_vectors = 0;
 
 if (!require_open(env))
 	return env.Undefined();
 if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
 	{
-	Napi::TypeError::New(env, "addDocument(key, text[, vector])").ThrowAsJavaScriptException();
+	Napi::TypeError::New(env, "addDocument(key, text[, vector[, multiVectors]])").ThrowAsJavaScriptException();
 	return env.Undefined();
 	}
 std::string key = info[0].As<Napi::String>().Utf8Value();
@@ -447,11 +539,23 @@ if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
 			}
 		}
 	}
+if (info.Length() >= 4 && !info[3].IsUndefined() && !info[3].IsNull())
+	{
+	multivector = extract_multivectors(env, info[3], engine->rerank_dimension(), &num_vectors, &mv_scratch);
+	if (env.IsExceptionPending())
+		{
+		delete [] scratch;
+		return env.Undefined();		// TypeError already thrown
+		}
+	}
 
-long long handle = vector != NULL
-	? engine->add_document(key.c_str(), text.c_str(), vector)
-	: engine->add_document(key.c_str(), text.c_str());
+long long handle = num_vectors > 0
+	? engine->add_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
+	: (vector != NULL
+		? engine->add_document(key.c_str(), text.c_str(), vector)
+		: engine->add_document(key.c_str(), text.c_str()));
 delete [] scratch;
+delete [] mv_scratch;
 
 if (handle < 0)
 	{
@@ -475,12 +579,15 @@ Napi::Value SegmentIndexWrap::UpdateDocument(const Napi::CallbackInfo &info)
 Napi::Env env = info.Env();
 float *scratch = NULL;
 const float *vector = NULL;
+float *mv_scratch = NULL;
+const float *multivector = NULL;
+long long num_vectors = 0;
 
 if (!require_open(env))
 	return env.Undefined();
 if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString())
 	{
-	Napi::TypeError::New(env, "updateDocument(key, text[, vector])").ThrowAsJavaScriptException();
+	Napi::TypeError::New(env, "updateDocument(key, text[, vector[, multiVectors]])").ThrowAsJavaScriptException();
 	return env.Undefined();
 	}
 std::string key = info[0].As<Napi::String>().Utf8Value();
@@ -503,11 +610,23 @@ if (info.Length() >= 3 && !info[2].IsUndefined() && !info[2].IsNull())
 			}
 		}
 	}
+if (info.Length() >= 4 && !info[3].IsUndefined() && !info[3].IsNull())
+	{
+	multivector = extract_multivectors(env, info[3], engine->rerank_dimension(), &num_vectors, &mv_scratch);
+	if (env.IsExceptionPending())
+		{
+		delete [] scratch;
+		return env.Undefined();		// TypeError already thrown
+		}
+	}
 
-long long handle = vector != NULL
-	? engine->update_document(key.c_str(), text.c_str(), vector)
-	: engine->update_document(key.c_str(), text.c_str());
+long long handle = num_vectors > 0
+	? engine->update_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
+	: (vector != NULL
+		? engine->update_document(key.c_str(), text.c_str(), vector)
+		: engine->update_document(key.c_str(), text.c_str()));
 delete [] scratch;
+delete [] mv_scratch;
 
 if (handle < 0)
 	{
@@ -840,6 +959,91 @@ return hits_to_array(env, engine, count);
 }
 
 /*
+	SEGMENTINDEXWRAP::SEARCHRERANK()
+	------------------------------------
+	Late-interaction (MaxSim) rerank (V5): arg0 is the mandatory query
+	multi-vector array (Array<Float32Array|number[]>, each row exactly
+	rerank_dimension() long), flattened by extract_multivectors(); arg1 is an
+	optional options object { text?, vector?, firstStageN?, topK? } selecting
+	the stage-1 retrieval (lexical/vector/hybrid, whichever of text/vector are
+	given) whose top firstStageN candidates get MaxSim-reranked down to topK.
+	Per spec: when rerank is disabled on this index (rerank_dimension() == 0)
+	this returns an empty array rather than throwing, exactly like
+	SearchVector() does for vector_dimension() == 0.  search_rerank()'s
+	query_text parameter is char* (non-const) like search()/search_hybrid(),
+	so the writable-copy pattern is used again here; query_vector and
+	query_multivector are const float* -- no writable copies needed for them.
+*/
+Napi::Value SegmentIndexWrap::SearchRerank(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (!require_open(env))
+	return env.Undefined();
+
+long long rerank_dim = engine->rerank_dimension();
+if (rerank_dim < 1)
+	return Napi::Array::New(env, 0);		// rerank not enabled: empty result, not a throw
+
+if (info.Length() < 1)
+	{
+	Napi::TypeError::New(env, "searchRerank(queryMultiVectors[, options])").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+float *mv_scratch = NULL;
+long long num_query_vecs = 0;
+const float *query_multivector = extract_multivectors(env, info[0], rerank_dim, &num_query_vecs, &mv_scratch);
+if (env.IsExceptionPending())
+	return env.Undefined();		// TypeError already thrown
+
+Napi::Object options = (info.Length() >= 2 && info[1].IsObject()) ? info[1].As<Napi::Object>() : Napi::Object::New(env);
+
+bool has_text = options.Has("text") && !options.Get("text").IsUndefined() && !options.Get("text").IsNull();
+bool has_vector = options.Has("vector") && !options.Get("vector").IsUndefined() && !options.Get("vector").IsNull();
+
+if (has_text && !options.Get("text").IsString())
+	{
+	delete [] mv_scratch;
+	Napi::TypeError::New(env, "searchRerank: options.text must be a string").ThrowAsJavaScriptException();
+	return env.Undefined();
+	}
+
+std::string mutable_query;
+char *text_ptr = NULL;
+if (has_text)
+	{
+	mutable_query = options.Get("text").As<Napi::String>().Utf8Value();	// engine may modify the buffer
+	text_ptr = &mutable_query[0];
+	}
+
+float *scratch = NULL;
+const float *vector = NULL;
+if (has_vector)
+	{
+	vector = extract_vector(env, options.Get("vector"), engine->vector_dimension(), &scratch);
+	if (vector == NULL)
+		{
+		delete [] mv_scratch;
+		return env.Undefined();		// TypeError already thrown
+		}
+	}
+
+long long first_stage_n = options.Has("firstStageN") ? options.Get("firstStageN").As<Napi::Number>().Int64Value() : 100;
+long long top_k = options.Has("topK") ? options.Get("topK").As<Napi::Number>().Int64Value() : 10;
+if (top_k < 1)
+	{
+	delete [] scratch;
+	delete [] mv_scratch;
+	return Napi::Array::New(env, 0);
+	}
+
+long long count = engine->search_rerank(text_ptr, vector, query_multivector, num_query_vecs, first_stage_n, top_k);
+delete [] scratch;
+delete [] mv_scratch;
+return hits_to_array(env, engine, count);
+}
+
+/*
 	class MAINTENANCE_WORKER
 	------------------------
 	Runs flush() or maintain() off the event loop.  Holds a reference to the
@@ -1038,6 +1242,7 @@ Napi::Function ctor = DefineClass(env, "SegmentIndex", {
 	InstanceMethod("searchHybridApprox", &SegmentIndexWrap::SearchHybridApprox),
 	InstanceMethod("searchVectorHnsw", &SegmentIndexWrap::SearchVectorHnsw),
 	InstanceMethod("searchHybridHnsw", &SegmentIndexWrap::SearchHybridHnsw),
+	InstanceMethod("searchRerank", &SegmentIndexWrap::SearchRerank),
 	InstanceMethod("flush", &SegmentIndexWrap::Flush),
 	InstanceMethod("maintain", &SegmentIndexWrap::Maintain),
 	InstanceMethod("buildSignatures", &SegmentIndexWrap::BuildSignatures),

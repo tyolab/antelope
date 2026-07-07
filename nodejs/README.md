@@ -180,6 +180,7 @@ index.close();
 | `approximate` | `{ bits?, multiplier? }` | disabled | opt-in approximate vector search (see below) |
 | `hnsw` | `{ M?, efConstruction?, efSearch? }` | disabled | opt-in HNSW graph vector search (see below) |
 | `quantize` | `'int8' \| { mode }` | disabled | opt-in int8 vector quantization (see below) |
+| `rerank` | `{ dimension, quantize? }` | disabled | opt-in late-interaction (MaxSim) reranking (see below) |
 
 ### Approximate vector search (V2)
 
@@ -293,5 +294,70 @@ Quantization needs **no new search methods** — `searchVector`,
 `searchVectorApprox`, `searchVectorHnsw`, and their `Hybrid` counterparts all
 work transparently against quantized segments exactly as they do against
 unquantized ones.
+
+### Late-interaction reranking (V5)
+
+For the highest-fidelity vector relevance, each document can carry several
+per-token (or per-chunk) embeddings — a "multi-vector" — instead of just one
+whole-document vector. A rerank query supplies its own multi-vector and scores
+each candidate document by MaxSim: for every query vector, take its best
+matching document vector, then sum those best-matches across all query
+vectors. This captures fine-grained term/phrase-level matches that a single
+pooled document vector washes out, at the cost of being expensive enough that
+it's only run as a second-stage rerank over a first-stage candidate pool
+(lexical, vector, or hybrid), not as the primary retrieval step.
+
+Enable it with the `rerank` constructor option:
+
+```js
+const index = new SegmentIndex({
+  dimension: 768,
+  metric: 'cosine',
+  rerank: { dimension: 128, quantize: 'int8' }
+});
+index.open('/var/data/myindex');
+```
+
+- `dimension` — the width of each row in a document's multi-vector (independent
+  of the top-level `dimension`, which is the single pooled vector's width).
+  Persisted on first enable and immutable afterwards.
+- `quantize` — `'int8'` (default) or `'float'`: whether the multi-vector rows
+  are stored quantized or as full float32. Persisted on first enable and
+  immutable afterwards.
+
+Supply multi-vectors **at index time**, as a ragged-friendly array of rows —
+each row a `Float32Array` (or `number[]`) of exactly `rerank.dimension`
+elements — via an optional 4th argument to `addDocument`/`updateDocument`:
+
+```js
+index.addDocument('doc-1', '<DOC>...</DOC>', pooledVector, [
+  new Float32Array(128 /* token 1 embedding */),
+  new Float32Array(128 /* token 2 embedding */),
+  // ... one row per token/chunk
+]);
+```
+
+There is **no backfill** for multi-vectors — unlike `approximate`/`hnsw`/
+`quantize`, which have `buildSignatures`/`buildHnsw`/`buildQuantized` to
+retrofit existing documents, a document indexed without multi-vectors stays
+without them; `searchRerank` keeps such candidates in their stage-1 order
+after the reranked ones rather than scoring them.
+
+Query with `searchRerank(queryMultiVectors, options)`:
+
+```js
+const hits = index.searchRerank(
+  [ new Float32Array(128 /* query token 1 */), new Float32Array(128 /* query token 2 */) ],
+  { vector: queryPooledVector, firstStageN: 100, topK: 10 }
+);
+```
+
+- `queryMultiVectors` — the query's own multi-vector, same row shape as at
+  index time.
+- `options.text` / `options.vector` — optional stage-1 retrieval inputs
+  (lexical / vector; both may be given for hybrid stage-1, mirroring
+  `searchHybrid`).
+- `options.firstStageN` — how many stage-1 candidates to rerank (default `100`).
+- `options.topK` — how many reranked hits to return (default `10`).
 
 TypeScript definitions are provided in `segment_index.d.ts`.

@@ -13,6 +13,7 @@ export interface SegmentIndexOptions {
 	approximate?: { bits?: number; multiplier?: number };
 	hnsw?: { M?: number; efConstruction?: number; efSearch?: number };
 	quantize?: 'int8' | 'replace' | 'exact' | { mode: 'replace' | 'exact' };
+	rerank?: { dimension: number; quantize?: 'int8' | 'float' };
 }
 
 export interface DocRef { generation: number; docid: number; }
@@ -22,8 +23,8 @@ export class SegmentIndex {
 	constructor(options?: SegmentIndexOptions);
 	open(directory: string): void;
 	close(): void;
-	addDocument(key: string, text: string, vector?: Float32Array | number[]): DocRef;
-	updateDocument(key: string, text: string, vector?: Float32Array | number[]): DocRef;
+	addDocument(key: string, text: string, vector?: Float32Array | number[], multiVectors?: Float32Array[]): DocRef;
+	updateDocument(key: string, text: string, vector?: Float32Array | number[], multiVectors?: Float32Array[]): DocRef;
 	deleteDocument(key: string): boolean;
 	search(text: string, k: number): Hit[];
 	searchVector(vector: Float32Array | number[], k: number): Hit[];
@@ -32,6 +33,7 @@ export class SegmentIndex {
 	searchHybridApprox(text: string | null, vector: Float32Array | number[] | null, k: number): Hit[];
 	searchVectorHnsw(vector: Float32Array | number[], k: number): Hit[];
 	searchHybridHnsw(text: string | null, vector: Float32Array | number[] | null, k: number): Hit[];
+	searchRerank(queryMultiVectors: Float32Array[], options: { text?: string; vector?: Float32Array | number[]; firstStageN?: number; topK?: number }): Hit[];
 	flush(): Promise<void>;
 	maintain(): Promise<void>;
 	buildSignatures(): Promise<void>;
