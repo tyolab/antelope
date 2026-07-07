@@ -96,108 +96,93 @@ if (!engine->attributes_configured())
 const ANT_attribute_schema *schema = engine->attribute_schema();
 ANT_attribute_set *set = new ANT_attribute_set(schema);
 
-if (has_attrs)
+try
 	{
-	py::dict d;
-	try
+	if (has_attrs)
 		{
-		d = attributes.cast<py::dict>();
-		}
-	catch (const py::cast_error &)
-		{
-		delete set;
-		throw py::type_error("attributes must be a dict");
-		}
-	for (auto item : d)
-		{
-		std::string name = py::str(item.first);
-		long fi = schema->field_index(name.c_str());
-		if (fi < 0)
+		py::dict d;
+		try
 			{
-			delete set;
-			throw py::type_error("unknown attribute field: " + name);
+			d = attributes.cast<py::dict>();
 			}
-		int type = schema->type(fi);
-		py::handle val = item.second;
-		bool is_seq = py::isinstance<py::list>(val) || py::isinstance<py::tuple>(val);
-		if (is_seq)
+		catch (const py::cast_error &)
 			{
-			if (type == ANT_attribute_schema::TYPE_BOOL)
+			throw py::type_error("attributes must be a dict");
+			}
+		for (auto item : d)
+			{
+			std::string name = py::str(item.first);
+			long fi = schema->field_index(name.c_str());
+			if (fi < 0)
+				throw py::type_error("unknown attribute field: " + name);
+			int type = schema->type(fi);
+			py::handle val = item.second;
+			bool is_seq = py::isinstance<py::list>(val) || py::isinstance<py::tuple>(val);
+			if (is_seq)
 				{
-				delete set;
-				throw py::type_error("bool field cannot be multi-valued: " + name);
+				if (type == ANT_attribute_schema::TYPE_BOOL)
+					throw py::type_error("bool field cannot be multi-valued: " + name);
+				for (auto e : py::reinterpret_borrow<py::sequence>(val))
+					{
+					if (type == ANT_attribute_schema::TYPE_INT64)
+						{
+						if (!py::isinstance<py::int_>(e))
+							throw py::type_error("int64 field needs int values: " + name);
+						set->add_int(fi, py::cast<long long>(e));
+						}
+					else	/* TYPE_STRING */
+						{
+						if (!py::isinstance<py::str>(e))
+							throw py::type_error("string field needs str values: " + name);
+						set->add_string(fi, py::cast<std::string>(e).c_str());
+						}
+					}
 				}
-			for (auto e : py::reinterpret_borrow<py::sequence>(val))
+			else
 				{
 				if (type == ANT_attribute_schema::TYPE_INT64)
 					{
-					if (!py::isinstance<py::int_>(e))
-						{
-						delete set;
-						throw py::type_error("int64 field needs int values: " + name);
-						}
-					set->add_int(fi, py::cast<long long>(e));
+					if (!py::isinstance<py::int_>(val) || py::isinstance<py::bool_>(val))
+						throw py::type_error("int64 field needs an int: " + name);
+					set->set_int(fi, py::cast<long long>(val));
 					}
-				else	/* TYPE_STRING */
+				else if (type == ANT_attribute_schema::TYPE_STRING)
 					{
-					if (!py::isinstance<py::str>(e))
-						{
-						delete set;
-						throw py::type_error("string field needs str values: " + name);
-						}
-					set->add_string(fi, py::cast<std::string>(e).c_str());
+					if (!py::isinstance<py::str>(val))
+						throw py::type_error("string field needs a str: " + name);
+					set->set_string(fi, py::cast<std::string>(val).c_str());
+					}
+				else	/* TYPE_BOOL */
+					{
+					if (!py::isinstance<py::bool_>(val))
+						throw py::type_error("bool field needs a bool: " + name);
+					set->set_bool(fi, py::cast<bool>(val) ? 1 : 0);
 					}
 				}
+			}
+		}
+	if (has_payload)
+		{
+		if (py::isinstance<py::bytes>(payload))
+			{
+			std::string s = py::cast<std::string>(payload);
+			set->set_payload(s.data(), (long long)s.size());
+			}
+		else if (py::isinstance<py::str>(payload))
+			{
+			std::string s = py::cast<std::string>(payload);
+			set->set_payload(s.data(), (long long)s.size());
 			}
 		else
 			{
-			if (type == ANT_attribute_schema::TYPE_INT64)
-				{
-				if (!py::isinstance<py::int_>(val) || py::isinstance<py::bool_>(val))
-					{
-					delete set;
-					throw py::type_error("int64 field needs an int: " + name);
-					}
-				set->set_int(fi, py::cast<long long>(val));
-				}
-			else if (type == ANT_attribute_schema::TYPE_STRING)
-				{
-				if (!py::isinstance<py::str>(val))
-					{
-					delete set;
-					throw py::type_error("string field needs a str: " + name);
-					}
-				set->set_string(fi, py::cast<std::string>(val).c_str());
-				}
-			else	/* TYPE_BOOL */
-				{
-				if (!py::isinstance<py::bool_>(val))
-					{
-					delete set;
-					throw py::type_error("bool field needs a bool: " + name);
-					}
-				set->set_bool(fi, py::cast<bool>(val) ? 1 : 0);
-				}
+			throw py::type_error("payload must be bytes or str");
 			}
 		}
 	}
-if (has_payload)
+catch (...)
 	{
-	if (py::isinstance<py::bytes>(payload))
-		{
-		std::string s = py::cast<std::string>(payload);
-		set->set_payload(s.data(), (long long)s.size());
-		}
-	else if (py::isinstance<py::str>(payload))
-		{
-		std::string s = py::cast<std::string>(payload);
-		set->set_payload(s.data(), (long long)s.size());
-		}
-	else
-		{
-		delete set;
-		throw py::type_error("payload must be bytes or str");
-		}
+	delete set;
+	throw;
 	}
 return set;
 }
@@ -667,16 +652,17 @@ struct PySegmentIndex
 		throw std::runtime_error("open failed: bad directory, corrupt index, or vector config mismatch");
 
 	/*
-		Backfill option_metric from the persisted vector.config when this
-		PySegmentIndex was constructed without an explicit metric kwarg (the
-		common case for a read-only reopen of a pre-existing index, e.g. the
-		MCP server's build_server()): ATIRE_segment_index has no public
-		getter for the restored metric, so option_metric would otherwise
-		silently read back as the constructor default (dot) even though the
-		engine itself is genuinely scoring with the real, persisted metric.
-		This mirrors load_vector_config()'s own parsing of the file (two
-		lines: dimension, metric); if the file is absent/short/garbage,
-		option_metric is left as-is.
+		Backfill option_metric from the persisted vector.config whenever this
+		index has vectors enabled (vector_dimension() > 0) -- unconditionally,
+		regardless of whether an explicit metric kwarg was passed at
+		construction: ATIRE_segment_index has no public getter for the
+		restored metric, and the persisted metric is authoritative for
+		scoring in all cases, so re-reading it here keeps option_metric (used
+		only for reporting in info()/the cosine zero-vector guard) in sync
+		with what the engine is actually using. This mirrors
+		load_vector_config()'s own parsing of the file (two lines: dimension,
+		metric); if the file is absent/short/garbage, option_metric is left
+		as-is.
 	*/
 	if (engine->vector_dimension() > 0)
 		{
@@ -849,30 +835,32 @@ struct PySegmentIndex
 		vptr = vec.data();
 		}
 	ANT_attribute_set *set = build_attribute_set(engine, attributes, payload);	// NULL if neither given; throws (and self-frees) on error
+	bool has_mv = !multi_vectors.is_none();
+	std::vector<float> mv;
+	long long num_mv = 0;
+	const float *mvptr = NULL;
+	if (has_mv)
+		{
+		mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);	// touches Python -> must be before gil release
+		mvptr = num_mv > 0 ? mv.data() : NULL;
+		}
 	long long handle;
-	if (set != NULL)
 		{
-		long long num_mv = 0;
-		const float *mvptr = NULL;
-		std::vector<float> mv;
-		if (!multi_vectors.is_none())
-			{
-			mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
-			mvptr = num_mv > 0 ? mv.data() : NULL;
-			}
-		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set) : engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set);
-		delete set;
+		py::gil_scoped_release release;
+		if (set != NULL)
+			handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set)
+			                   : engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set);
+		else if (has_mv)
+			handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv)
+			                   : engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv);
+		else if (vptr != NULL)
+			handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr)
+			                   : engine->add_document(key.c_str(), text.c_str(), vptr);
+		else
+			handle = is_update ? engine->update_document(key.c_str(), text.c_str())
+			                   : engine->add_document(key.c_str(), text.c_str());
 		}
-	else if (!multi_vectors.is_none())
-		{
-		long long num_mv = 0;
-		std::vector<float> mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
-		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv) : engine->add_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv);
-		}
-	else if (vptr != NULL)
-		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr) : engine->add_document(key.c_str(), text.c_str(), vptr);
-	else
-		handle = is_update ? engine->update_document(key.c_str(), text.c_str()) : engine->add_document(key.c_str(), text.c_str());
+	delete set;	// deleting a C++ object needs no GIL; safe after the release scope
 	if (handle == -1)
 		throw std::runtime_error(is_update ? "update_document failed (empty document or index not writable)" : "add_document failed (empty document or index not writable)");
 	py::dict d;

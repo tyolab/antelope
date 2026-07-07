@@ -5,6 +5,7 @@ only when built with writable=True (Task 13). One index is opened at startup.
 """
 import asyncio
 import base64
+import threading
 
 from mcp.server.fastmcp import FastMCP
 
@@ -57,6 +58,18 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
     ix = antelope.SegmentIndex()
     ix.open(index_dir)
     mcp = FastMCP("antelope")
+    lock = threading.Lock()
+
+    def _locked(fn, *args):
+        """Run fn(*args) inside the worker thread, holding `lock` for its
+        duration. The engine keeps a single non-thread-safe per-instance
+        result buffer, so every engine-touching call -- across all tool
+        handlers -- must be serialized through this helper; the lock is
+        acquired inside the to_thread worker (not on the event loop) so
+        concurrent asyncio tasks queue on the lock rather than racing the
+        engine."""
+        with lock:
+            return fn(*args)
 
     @mcp.tool()
     async def search(query: str, k: int = 10, filter: dict | None = None) -> list[dict]:
@@ -64,18 +77,19 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
 
         filter is a predicate dict: and/or/not/eq/in/range (see the antelope
         README). Returns [{key, score, payload?}]."""
-        hits = await asyncio.to_thread(ix.search, query, k, filter)
+        hits = await asyncio.to_thread(_locked, ix.search, query, k, filter)
         return [_hit_json(h) for h in hits]
 
     @mcp.tool()
     async def document_count() -> int:
         """Number of live documents in the index."""
-        return await asyncio.to_thread(ix.document_count)
+        return await asyncio.to_thread(_locked, ix.document_count)
 
     @mcp.resource("antelope://index/schema")
     def index_schema() -> dict:
         """Attribute schema (filterable fields + types) and index config."""
-        return {"attributes": ix.schema(), "config": ix.info()}
+        with lock:
+            return {"attributes": ix.schema(), "config": ix.info()}
 
     @mcp.tool()
     async def index_info() -> dict:
@@ -83,7 +97,8 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
 
         Use this to discover which fields you can filter on and how to shape a
         filter for the `search` tool."""
-        return await asyncio.to_thread(lambda: {"attributes": ix.schema(), "config": ix.info()})
+        return await asyncio.to_thread(
+            _locked, lambda: {"attributes": ix.schema(), "config": ix.info()})
 
     if writable:
         @mcp.tool()
@@ -92,7 +107,7 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
                                payload: str | None = None) -> dict:
             """Add a lexical document (no vector). Returns its {generation, docid} handle."""
             return await asyncio.to_thread(
-                ix.add_document, key, text, None, None, attributes, payload)
+                _locked, ix.add_document, key, text, None, None, attributes, payload)
 
         @mcp.tool()
         async def update_document(key: str, text: str,
@@ -100,21 +115,21 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
                                   payload: str | None = None) -> dict:
             """Upsert a lexical document. Returns its {generation, docid} handle."""
             return await asyncio.to_thread(
-                ix.update_document, key, text, None, None, attributes, payload)
+                _locked, ix.update_document, key, text, None, None, attributes, payload)
 
         @mcp.tool()
         async def delete_document(key: str) -> bool:
             """Delete a document by key. Returns True if it existed, False otherwise."""
-            return await asyncio.to_thread(ix.delete_document, key)
+            return await asyncio.to_thread(_locked, ix.delete_document, key)
 
         @mcp.tool()
         async def flush() -> None:
             """Flush the live buffer to a durable on-disk segment."""
-            await asyncio.to_thread(ix.flush)
+            await asyncio.to_thread(_locked, ix.flush)
 
         @mcp.tool()
         async def maintain() -> None:
             """Run the tiered merge/compaction policy to quiescence."""
-            await asyncio.to_thread(ix.maintain)
+            await asyncio.to_thread(_locked, ix.maintain)
 
     return _Server(mcp, ix, writable, index_dir)
