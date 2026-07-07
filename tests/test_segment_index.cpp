@@ -2463,6 +2463,31 @@ printf("test_hnsw_dot_fallback OK\n");
 }
 
 /*
+	TEST_HNSW_HYBRID_SMOKE()
+	------------------------
+	Smoke test for search_hybrid_hnsw(): RRF fusion of the lexical leg with
+	the HNSW-approximate vector leg, on an HNSW-configured cosine index. Just
+	checks it runs and returns a sane hit count.
+*/
+static void test_hnsw_hybrid_smoke(void)
+{
+char *dir = make_index_dir();
+long long dim = 16, i, d; float v[16];
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+for (i = 0; i < 50; i++) { for (d=0;d<dim;d++) v[d]=(float)((i+d)%9-4); char key[16]; snprintf(key,sizeof(key),"k%lld",i); CHECK(idx->add_document(key,"<DOC>alpha beta</DOC>",v)>=0); }
+CHECK(idx->flush() == 0);
+char query[32]; strcpy(query, "alpha");
+float qv[16]; for (d=0;d<dim;d++) qv[d]=(float)(d%5-2);
+long long hits = idx->search_hybrid_hnsw(query, qv, 5);
+CHECK(hits > 0 && hits <= 5);
+delete idx; delete [] dir;
+printf("test_hnsw_hybrid_smoke OK\n");
+}
+
+/*
 	TEST_HYBRID_APPROX_SMOKE()
 	--------------------------
 	Smoke test for search_hybrid_approx(): RRF fusion of the lexical leg with
@@ -3074,6 +3099,7 @@ test_approx_l2_fallback();
 test_hnsw_recall();
 test_hnsw_l2_recall();
 test_hnsw_dot_fallback();
+test_hnsw_hybrid_smoke();
 test_hybrid_approx_smoke();
 test_compaction_preserves_signatures();
 test_keymap_log_compaction();
