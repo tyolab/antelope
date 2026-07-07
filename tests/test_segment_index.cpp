@@ -2545,6 +2545,29 @@ delete idx; delete [] dir;
 printf("test_compaction_preserves_signatures OK\n");
 }
 
+static void test_compaction_rebuilds_hnsw(void)
+{
+char *dir = make_index_dir(); char hnsw[4096];
+long long dim = 16, i, d; float v[16];
+ATIRE_segment_index *idx = new ATIRE_segment_index();
+CHECK(idx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(idx->open(dir) == 0);
+CHECK(idx->set_hnsw_config(16, 200) == 0);
+for (i=0;i<10;i++){for(d=0;d<dim;d++)v[d]=(float)((i+d)%7);char k[16];snprintf(k,sizeof(k),"a%lld",i);CHECK(idx->add_document(k,"<DOC>x</DOC>",v)>=0);}
+CHECK(idx->flush() == 0);
+for (i=0;i<10;i++){for(d=0;d<dim;d++)v[d]=(float)((i*3+d)%7);char k[16];snprintf(k,sizeof(k),"b%lld",i);CHECK(idx->add_document(k,"<DOC>x</DOC>",v)>=0);}
+CHECK(idx->flush() == 0);
+long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+CHECK(idx->compact(gens, 2) == 0);
+long long out_gen = idx->disk_segment_generation(0);
+snprintf(hnsw, sizeof(hnsw), "%s/seg_%06lld.hnsw", dir, out_gen);
+FILE *fp = fopen(hnsw, "rb"); CHECK(fp != NULL); fclose(fp);
+float q[16]; for (d=0;d<dim;d++) q[d]=(float)(d%5);
+CHECK(idx->search_vector_hnsw(q, 5) == 5);		/* approx still returns k after compaction */
+delete idx; delete [] dir;
+printf("test_compaction_rebuilds_hnsw OK\n");
+}
+
 /*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
@@ -3102,6 +3125,7 @@ test_hnsw_dot_fallback();
 test_hnsw_hybrid_smoke();
 test_hybrid_approx_smoke();
 test_compaction_preserves_signatures();
+test_compaction_rebuilds_hnsw();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();

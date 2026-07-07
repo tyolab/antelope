@@ -25,6 +25,7 @@
 #include "../source/vector_store.h"
 #include "../source/signature.h"
 #include "../source/signature_store.h"
+#include "../source/hnsw.h"
 #include "../source/wal.h"
 
 /*
@@ -249,6 +250,29 @@ if (signature_bits_current != 0 && query_signer != NULL)
 	}
 
 /*
+	V3: rebuild the merged segment's HNSW graph over the merged DENSE
+	vectors (reload the fresh output .vec).  Best-effort: failure leaves the
+	output graph-less (exact-scanned), never aborts a successful merge.
+*/
+if (hnsw_M_current != 0)
+	{
+	char out_vec[4096], out_hnsw[4096];
+	segment_filename(out_vec, sizeof(out_vec), output_generation, "vec");
+	segment_filename(out_hnsw, sizeof(out_hnsw), output_generation, "hnsw");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);
+	if (out_vectors->document_count() == out_docs && out_docs > 0)
+		{
+		ANT_hnsw graph;
+		if (graph.build(out_vectors, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
+			graph.save(out_hnsw);
+		}
+	delete out_vectors;
+	delete output_segment->hnsw_graph;
+	output_segment->hnsw_graph = ANT_hnsw::load(out_hnsw, hnsw_M_current, hnsw_ef_construction_current, output_segment->engine->get_document_count());
+	}
+
+/*
 	Step 5: atomic manifest swap.  See the banner above for what happens
 	if save() fails here -- the keymap is already remapped, so we proceed
 	to step 6's in-memory removal regardless, but skip the file deletions
@@ -275,6 +299,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].tombstones;
 			delete segments[which].vectors;
 			delete segments[which].signatures;
+			delete segments[which].hnsw_graph;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
 				segments[shuffle] = segments[shuffle + 1];
 			segment_count--;
