@@ -186,7 +186,7 @@ private:
 	void rebuild_query_signer(void);
 	long load_hnsw_config(void);
 	long save_hnsw_config(void);
-	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best);	// Task 7
+	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// Task 7
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	long writer_multivector_append(long long docid, const float *multivector, long long num_vectors);
 	void writer_attribute_capture(long long docid, const ANT_attribute_set *attributes);	// deep-clone into the per-docid attribute buffer (Task 6: capture only)
@@ -229,6 +229,7 @@ public:
 	long build_hnsw(void);											// Task 5
 	long build_quantized(void);						// idempotent backfill: rewrite each float .vec disk segment as int8 .qvec (replace mode); 0 on success
 	long long search_vector_hnsw(const float *query, long long top_k);						// Task 7
+	long long search_vector_hnsw(const float *query, long long top_k, const ANT_filter *filter);	// filtered HNSW
 	long long search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k);	// Task 8
 
 	long load_quantization_config(void);

@@ -3063,6 +3063,43 @@ printf("test_global_stats_score_equality OK\n");
 	Filtered exact vector scan gates admission by an attribute filter, for both
 	the live NRT buffer (pre-flush) and disk segments (post-flush).
 */
+static void test_filtered_hnsw_no_underfill(void)
+{
+	char *dir = make_index_dir();
+	long long dim = 8, n = 200, i, d;
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_hnsw_config(16, 200) == 0);
+	ANT_attribute_schema s; s.add_field("keep", ANT_attribute_schema::TYPE_BOOL, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	srand(19);
+	float *data = new float[n*dim];
+	for (i=0;i<n*dim;i++) data[i]=(float)(rand()%2000-1000)/500.0f;
+	float q[8]; for (d=0;d<dim;d++) q[d]=(float)(rand()%2000-1000)/500.0f;
+	/* the 20 vectors nearest q are marked keep=false (near q by construction); the rest keep=true */
+	for (i=0;i<n;i++)
+		{
+		int keep = (i >= 20) ? 1 : 0;
+		if (i < 20) for (d=0;d<dim;d++) data[i*dim+d] = q[d] + (float)(rand()%100-50)/1000.0f;
+		ANT_attribute_set A(ix->attribute_schema()); A.set_bool(0, keep);
+		char k[16]; sprintf(k,"d%lld",i); char doc[32]; sprintf(doc,"<DOC>t</DOC>");
+		CHECK(ix->add_document(k, doc, data+i*dim, NULL, 0, &A) >= 0);
+		}
+	CHECK(ix->flush() == 0);
+	ANT_filter *f = ANT_filter::eq_bool("keep", 1);
+	CHECK(f->build(ix->attribute_schema()) == 0);
+	long long got = ix->search_vector_hnsw(q, 10, f);
+	CHECK(got == 10);							/* NOT under-filled despite 20 nearer non-matching docs */
+	for (i=0;i<got;i++)
+		{
+		long long idx = atoll(ix->get_hit(i)->filename + 1);
+		CHECK(idx >= 20);						/* every returned doc is keep=true */
+		}
+	delete f; delete [] data; delete ix; delete [] dir;
+	printf("test_filtered_hnsw_no_underfill OK\n");
+}
+
 static void test_filtered_vector_scan(void)
 {
 	char *dir = make_index_dir();
@@ -3819,6 +3856,7 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_filtered_hnsw_no_underfill();
 test_filtered_vector_scan();
 test_payload_on_hits();
 /*

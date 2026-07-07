@@ -50,7 +50,7 @@ public:
 	   returns the count (<= top_k).  ef_search is clamped to >= top_k. */
 	long long search(const float *query, long metric, long long ef_search, long long top_k,
 		ANT_vector_store *vectors, ANT_index_tombstones *tombstones,
-		long long *out_docids, double *out_scores);
+		long long *out_docids, double *out_scores, const unsigned char *filter_bits = NULL);
 
 	/* Persist the CSR to a seg_G.hnsw sidecar; 0 on success. */
 	long save(const char *filename);

@@ -1073,7 +1073,7 @@ if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 
 best = new ANT_vector_candidate[top_k];
 count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best)
-	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best)
+	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best, filter)
 	: vector_candidates(query, top_k, best, filter);
 qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
 
@@ -1202,7 +1202,7 @@ return search_vector_impl(query, top_k, VECTOR_MODE_APPROX);
 	Segments without a usable graph, and the live memory buffer, are exact-scanned.
 	Caller guarantees metric != DOT and HNSW is configured.
 */
-long long ATIRE_segment_index::vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best)
+long long ATIRE_segment_index::vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
 {
 long long which, best_count = 0;
 long long ef = hnsw_ef_search < top_k ? top_k : hnsw_ef_search;
@@ -1226,8 +1226,9 @@ for (which = 0; which < segment_count; which++)
 	if (segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty()
 		&& segments[which].hnsw_graph->node_count() == segments[which].engine->get_document_count())
 		{
+		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 		long long c = segments[which].hnsw_graph->search(query, vector_metric, ef, ef,
-			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores);
+			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores, fbits);
 		for (long long p = 0; p < c; p++)
 			{
 			double sc = segments[which].exact_vectors != NULL
@@ -1235,15 +1236,20 @@ for (which = 0; which < segment_count; which++)
 				: cand_scores[p];
 			ANT_vector_candidate_insert(best, &best_count, top_k, sc, segments[which].generation, cand_docids[p]);
 			}
+		delete [] fbits;
 		}
 	else
 		{
 		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+		delete [] fbits;
 		}
 	}
 
-scan_live_buffer_exact(query, best, &best_count, top_k);		// live memory buffer: always exact (never graph-indexed)
+unsigned char *lbits = evaluate_filter_for_live(filter);
+scan_live_buffer_exact(query, best, &best_count, top_k, lbits);		// live memory buffer: always exact (never graph-indexed)
+delete [] lbits;
 
 delete [] normalized;
 delete [] cand_docids;
@@ -1265,6 +1271,13 @@ long long ATIRE_segment_index::search_vector_hnsw(const float *query, long long 
 if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
 	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);		// transparent fallback (dot / unconfigured)
 return search_vector_impl(query, top_k, VECTOR_MODE_HNSW);
+}
+
+long long ATIRE_segment_index::search_vector_hnsw(const float *query, long long top_k, const ANT_filter *filter)
+{
+if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
+	return search_vector_impl(query, top_k, VECTOR_MODE_EXACT, filter);	/* transparent fallback still filters (Task 9 exact path) */
+return search_vector_impl(query, top_k, VECTOR_MODE_HNSW, filter);
 }
 
 /*

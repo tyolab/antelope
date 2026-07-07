@@ -298,11 +298,16 @@ return 0;
 
 long long ANT_hnsw::search(const float *query, long metric, long long ef_search, long long top_k,
 	ANT_vector_store *vectors, ANT_index_tombstones *tombstones,
-	long long *out_docids, double *out_scores)
+	long long *out_docids, double *out_scores, const unsigned char *filter_bits)
 {
 if (entry_point < 0 || documents == 0)
 	return 0;
 long long ef = ef_search < top_k ? top_k : ef_search;
+
+/* admit = live AND (no filter OR filter bit set); a non-admitted node still ROUTES via C for connectivity */
+#define ANT_HNSW_ADMIT(docid) \
+	((tombstones == NULL || !tombstones->is_deleted(docid)) && \
+	 (filter_bits == NULL || (filter_bits[(docid) >> 3] & (1 << ((docid) & 7)))))
 
 long long ep = entry_point;
 double dep = distance(ep, query, vectors, metric);
@@ -329,7 +334,7 @@ std::priority_queue<DN, std::vector<DN>, std::greater<DN> > C;
 std::vector<char> visited(documents, 0);
 /* route through the entry point regardless of tombstone; only LIVE nodes enter the result heap W */
 C.push(DN(dep, ep)); visited[ep] = 1;
-if (tombstones == NULL || !tombstones->is_deleted(ep)) W.push(DN(dep, ep));
+if (ANT_HNSW_ADMIT(ep)) W.push(DN(dep, ep));
 while (!C.empty())
 	{
 	DN c = C.top(); C.pop();
@@ -343,9 +348,9 @@ while (!C.empty())
 		double de = distance(ecand, query, vectors, metric);
 		if (W.empty() || (long long)W.size() < ef || de < W.top().first)
 			{
-			C.push(DN(de, ecand));		/* deleted nodes still route (graph connectivity) */
-			if (tombstones == NULL || !tombstones->is_deleted(ecand))
-				{ W.push(DN(de, ecand)); if ((long long)W.size() > ef) W.pop(); }	/* W = up to ef LIVE nearest */
+			C.push(DN(de, ecand));		/* deleted/non-matching nodes still route (graph connectivity) */
+			if (ANT_HNSW_ADMIT(ecand))
+				{ W.push(DN(de, ecand)); if ((long long)W.size() > ef) W.pop(); }	/* W = up to ef LIVE matching nearest */
 			}
 		}
 	}
@@ -358,12 +363,13 @@ long long out = 0;
 for (size_t i = 0; i < found.size() && out < top_k; i++)
 	{
 	long long docid = found[i].second;
-	if (tombstones != NULL && tombstones->is_deleted(docid)) continue;
+	if (!ANT_HNSW_ADMIT(docid)) continue;
 	out_docids[out] = docid;
 	out_scores[out] = -found[i].first;		/* back to kernel: higher = nearer */
 	out++;
 	}
 return out;
+#undef ANT_HNSW_ADMIT
 }
 
 /*
