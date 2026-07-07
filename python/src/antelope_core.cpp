@@ -72,6 +72,134 @@ return flat;
 }
 
 /*
+	BUILD_ATTRIBUTE_SET()
+	------------------------
+	Converts the Python-facing `attributes` dict / `payload` bytes-or-str into
+	a heap-allocated ANT_attribute_set the caller owns (deletes), or NULL when
+	neither is given. Mirrors the Node addon's build_attribute_set()
+	(nodejs/addon/segment_index.cpp ~line 794): every error path deletes the
+	half-built set before throwing, so callers never have to clean up on the
+	throwing paths.
+*/
+static ANT_attribute_set *build_attribute_set(ATIRE_segment_index *engine, py::handle attributes, py::handle payload)
+{
+bool has_attrs = !attributes.is_none();
+bool has_payload = !payload.is_none();
+if (!has_attrs && !has_payload)
+	return NULL;
+if (!engine->attributes_configured())
+	throw py::value_error("attributes/payload given but this index has no attributes schema");
+
+const ANT_attribute_schema *schema = engine->attribute_schema();
+ANT_attribute_set *set = new ANT_attribute_set(schema);
+
+if (has_attrs)
+	{
+	py::dict d;
+	try
+		{
+		d = attributes.cast<py::dict>();
+		}
+	catch (const py::cast_error &)
+		{
+		delete set;
+		throw py::type_error("attributes must be a dict");
+		}
+	for (auto item : d)
+		{
+		std::string name = py::str(item.first);
+		long fi = schema->field_index(name.c_str());
+		if (fi < 0)
+			{
+			delete set;
+			throw py::type_error("unknown attribute field: " + name);
+			}
+		int type = schema->type(fi);
+		py::handle val = item.second;
+		bool is_seq = py::isinstance<py::list>(val) || py::isinstance<py::tuple>(val);
+		if (is_seq)
+			{
+			if (type == ANT_attribute_schema::TYPE_BOOL)
+				{
+				delete set;
+				throw py::type_error("bool field cannot be multi-valued: " + name);
+				}
+			for (auto e : py::reinterpret_borrow<py::sequence>(val))
+				{
+				if (type == ANT_attribute_schema::TYPE_INT64)
+					{
+					if (!py::isinstance<py::int_>(e))
+						{
+						delete set;
+						throw py::type_error("int64 field needs int values: " + name);
+						}
+					set->add_int(fi, py::cast<long long>(e));
+					}
+				else	/* TYPE_STRING */
+					{
+					if (!py::isinstance<py::str>(e))
+						{
+						delete set;
+						throw py::type_error("string field needs str values: " + name);
+						}
+					set->add_string(fi, py::cast<std::string>(e).c_str());
+					}
+				}
+			}
+		else
+			{
+			if (type == ANT_attribute_schema::TYPE_INT64)
+				{
+				if (!py::isinstance<py::int_>(val) || py::isinstance<py::bool_>(val))
+					{
+					delete set;
+					throw py::type_error("int64 field needs an int: " + name);
+					}
+				set->set_int(fi, py::cast<long long>(val));
+				}
+			else if (type == ANT_attribute_schema::TYPE_STRING)
+				{
+				if (!py::isinstance<py::str>(val))
+					{
+					delete set;
+					throw py::type_error("string field needs a str: " + name);
+					}
+				set->set_string(fi, py::cast<std::string>(val).c_str());
+				}
+			else	/* TYPE_BOOL */
+				{
+				if (!py::isinstance<py::bool_>(val))
+					{
+					delete set;
+					throw py::type_error("bool field needs a bool: " + name);
+					}
+				set->set_bool(fi, py::cast<bool>(val) ? 1 : 0);
+				}
+			}
+		}
+	}
+if (has_payload)
+	{
+	if (py::isinstance<py::bytes>(payload))
+		{
+		std::string s = py::cast<std::string>(payload);
+		set->set_payload(s.data(), (long long)s.size());
+		}
+	else if (py::isinstance<py::str>(payload))
+		{
+		std::string s = py::cast<std::string>(payload);
+		set->set_payload(s.data(), (long long)s.size());
+		}
+	else
+		{
+		delete set;
+		throw py::type_error("payload must be bytes or str");
+		}
+	}
+return set;
+}
+
+/*
 	HIT
 	----
 	Plain-data result row returned by search(); mirrors hits_to_array in the
@@ -401,9 +529,11 @@ struct PySegmentIndex
 		calls the 3-arg (vector-only) or 2-arg (lexical-only) overload. Rejects
 		zero vectors under the cosine metric before it reaches the engine
 		(mirrors the Node AddDocument zero-vector rejection, segment_index.cpp
-		~529-540). Later tasks extend this with attributes/payload.
+		~529-540). When `attributes` and/or `payload` are given,
+		build_attribute_set() constructs an ANT_attribute_set and the 6-arg
+		engine overload is used instead.
 	*/
-	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none())
+	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none(), py::object attributes = py::none(), py::object payload = py::none())
 	{
 	require_open();
 	std::vector<float> vec;
@@ -421,8 +551,22 @@ struct PySegmentIndex
 			}
 		vptr = vec.data();
 		}
+	ANT_attribute_set *set = build_attribute_set(engine, attributes, payload);	// NULL if neither given; throws (and self-frees) on error
 	long long handle;
-	if (!multi_vectors.is_none())
+	if (set != NULL)
+		{
+		long long num_mv = 0;
+		const float *mvptr = NULL;
+		std::vector<float> mv;
+		if (!multi_vectors.is_none())
+			{
+			mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
+			mvptr = num_mv > 0 ? mv.data() : NULL;
+			}
+		handle = engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set);
+		delete set;
+		}
+	else if (!multi_vectors.is_none())
 		{
 		long long num_mv = 0;
 		std::vector<float> mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
@@ -717,7 +861,7 @@ PYBIND11_MODULE(_core, m)
 		.def("close", &PySegmentIndex::close)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
-		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none())
+		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
 		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
 		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"))
 		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"))
