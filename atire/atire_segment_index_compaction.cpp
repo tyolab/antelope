@@ -159,14 +159,20 @@ if (vector_dimension_current != 0)
 		segment_filename(vec_name, sizeof(vec_name), output_generation, "vec");
 		ANT_vector_store_writer vec_writer;
 		long vec_failed = vec_writer.create(vec_name, vector_dimension_current) != 0;
+		float *merge_buf = new float[vector_dimension_current];
 		for (input = 0; !vec_failed && input < input_count; input++)
 			for (docid = 0; !vec_failed && docid < doc_counts[input]; docid++)
 				{
 				if (vec_renumberer->renumber(input, docid) < 0)
 					continue;		/* tombstoned: dropped, exactly like its postings */
-				const float *row = (inputs[input]->vectors != NULL && inputs[input]->vectors->has(docid)) ? inputs[input]->vectors->get(docid) : NULL;
+				float *row;
+				if (inputs[input]->vectors != NULL && inputs[input]->vectors->has(docid))
+					{ inputs[input]->vectors->reconstruct(docid, merge_buf); row = merge_buf; }
+				else
+					row = NULL;
 				vec_failed = vec_writer.append(row) != 0;
 				}
+		delete [] merge_buf;
 		if (!vec_failed)
 			vec_failed = vec_writer.finish() != 0;
 		delete vec_renumberer;
@@ -234,13 +240,15 @@ if (signature_bits_current != 0 && query_signer != NULL)
 		{
 		ANT_signature_store_writer sig_writer;
 		unsigned char *sig = new unsigned char[query_signer->signature_bytes()];
+		float *recon_buf = new float[vector_dimension_current];
 		long failed = sig_writer.create(out_vsig, signature_bits_current) != 0;
 		for (long long d = 0; !failed && d < out_docs; d++)
 			{
-			if (out_vectors->has(d)) { query_signer->sign(out_vectors->get(d), sig); failed = sig_writer.append(sig) != 0; }
+			if (out_vectors->has(d)) { out_vectors->reconstruct(d, recon_buf); query_signer->sign(recon_buf, sig); failed = sig_writer.append(sig) != 0; }
 			else failed = sig_writer.append(NULL) != 0;
 			}
 		if (!failed) sig_writer.finish(); else sig_writer.abandon();
+		delete [] recon_buf;
 		delete [] sig;
 		}
 	delete out_vectors;

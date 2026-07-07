@@ -372,15 +372,17 @@ for (which = 0; which < segment_count; which++)
 
 	ANT_signature_store_writer sig_writer;
 	unsigned char *sig = new unsigned char[query_signer->signature_bytes()];
+	float *recon_buf = new float[vector_dimension_current];
 	long failed = sig_writer.create(vsig_name, signature_bits_current) != 0;
 	for (docid = 0; !failed && docid < docs; docid++)
 		{
 		if (vectors->has(docid))
-			{ query_signer->sign(vectors->get(docid), sig); failed = sig_writer.append(sig) != 0; }
+			{ vectors->reconstruct(docid, recon_buf); query_signer->sign(recon_buf, sig); failed = sig_writer.append(sig) != 0; }
 		else
 			failed = sig_writer.append(NULL) != 0;
 		}
 	if (!failed) sig_writer.finish(); else sig_writer.abandon();
+	delete [] recon_buf;
 	delete [] sig;
 	delete vectors;
 	}
@@ -660,7 +662,7 @@ for (which = 0; which < segment_count; which++)
 			if (!segments[which].vectors->has(docid))
 				continue;
 			ANT_vector_candidate_insert(best, &best_count, top_k,
-				ANT_vector_store::kernel(query, segments[which].vectors->get(docid), vector_dimension_current, vector_metric),
+				segments[which].vectors->score(docid, query, vector_metric),
 				segments[which].generation, docid);
 			}
 		}
