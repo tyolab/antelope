@@ -3235,6 +3235,75 @@ printf("test_exact_mode_matches_float OK\n");
 }
 
 /*
+	TEST_QUANTIZATION_COEXISTS_WITH_APPROX_AND_HNSW()
+	--------------------------------------------------
+	Proves int8 replace-mode quantization (V4), signature-based approximate
+	search (V2), and HNSW (V3) all coexist correctly on the same index across
+	the full lifecycle: add -> flush (multiple generations) -> delete ->
+	maintain/compact -> search via every entry point.
+*/
+static void test_quantization_coexists_with_approx_and_hnsw(void)
+{
+char *dir = make_index_dir();
+long long dim = 24, n = 90, i, d;
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->set_approximate_config(256) == 0);				/* V2 signatures */
+CHECK(index->set_hnsw_config(16, 200) == 0);				/* V3 graph */
+CHECK(index->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);	/* V4 int8 */
+
+srand(101);
+float *data = new float[n * dim];
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 2000 - 1000) / 500.0f;
+for (i = 0; i < n; i++)
+	{
+	/* avoid the all-zero vector (invalid under cosine) */
+	int nonzero = 0; for (d = 0; d < dim; d++) if (data[i*dim+d] != 0.0f) nonzero = 1;
+	if (!nonzero) data[i*dim] = 0.5f;
+	char key[32]; sprintf(key, "d%lld", i);
+	char doc[64]; sprintf(doc, "<DOC>doc %lld quokka term%lld</DOC>", i, i % 5);
+	CHECK(index->add_document(key, doc, data + i * dim) >= 0);
+	if (i % 30 == 29) CHECK(index->flush() == 0);			/* 3 disk generations */
+	}
+CHECK(index->flush() == 0);									/* flush any tail */
+
+/* replace mode + hnsw + approx all wrote their sidecars */
+CHECK(dir_has_glob(dir, "seg_*.qvec"));
+CHECK(!dir_has_glob(dir, "seg_*.vec"));						/* replace: no float sidecar */
+CHECK(dir_has_glob(dir, "seg_*.vsig"));
+CHECK(dir_has_glob(dir, "seg_*.hnsw"));
+
+/* delete a few live docs, then compact everything together */
+CHECK(index->delete_document("d3") == 0);
+CHECK(index->delete_document("d40") == 0);
+CHECK(index->delete_document("d77") == 0);
+CHECK(index->maintain() == 0);
+CHECK(dir_has_glob(dir, "seg_*.qvec"));						/* merged output is int8 */
+CHECK(!dir_has_glob(dir, "seg_*.vec"));
+
+/* every search entry point returns sane top-k over the compacted int8 index */
+float q[24]; for (d = 0; d < dim; d++) q[d] = data[30 * dim + d];
+long long k = 5;
+CHECK(index->search_vector(q, k) >= 1);
+CHECK(index->search_vector_approx(q, k) >= 1);
+CHECK(index->search_vector_hnsw(q, k) >= 1);
+char qtext[] = "quokka";
+CHECK(index->search_hybrid(qtext, q, k) >= 1);
+CHECK(index->search_hybrid_approx(qtext, q, k) >= 1);
+CHECK(index->search_hybrid_hnsw(qtext, q, k) >= 1);
+
+/* result count stays bounded by the live document count post-delete/compact */
+long long nh = index->search_vector(q, 50);
+CHECK(nh >= 1 && nh <= index->get_document_count());
+
+delete index;
+delete [] data;
+delete [] dir;
+printf("test_quantization_coexists_with_approx_and_hnsw OK\n");
+}
+
+/*
 	TEST_DECOMPRESS_BUFFER_REUSE()
 	------------------------------
 	allocate_decompress_buffer() runs on every NRT rebuild (open_from_memory_index).
@@ -3333,6 +3402,7 @@ test_wal_replay_mid_autoflush();
 test_wal_fsync_durability();
 test_flush_replace_mode();
 test_exact_mode_matches_float();
+test_quantization_coexists_with_approx_and_hnsw();
 printf("PASSED\n");
 return 0;
 }
