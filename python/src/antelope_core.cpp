@@ -5,6 +5,7 @@
 #include <vector>
 #include "atire_segment_index.h"
 #include "attribute_store.h"
+#include "filter.h"
 
 namespace py = pybind11;
 
@@ -197,6 +198,219 @@ if (has_payload)
 		}
 	}
 return set;
+}
+
+/*
+	JSON_NODE_TO_FILTER()
+	------------------------
+	Recursive dict -> ANT_filter translator, ported from the Node addon's
+	json_node_to_filter() (nodejs/addon/segment_index.cpp ~531-781). Returns an
+	UNBUILT ANT_filter* (the caller must still call build() against a schema),
+	or throws py::type_error on any malformed node -- freeing every
+	already-built sub-tree on the failure path so a bad leaf deep in an
+	'and'/'or' never leaks its already-translated siblings.
+
+	Node is JS-Number-based (no int/bool distinction); Python distinguishes
+	int from bool (bool is an int subclass), so every int64 leaf/list element
+	is guarded with `!py::isinstance<py::bool_>` -- mirroring the same rule
+	used in build_attribute_set() above.
+*/
+static ANT_filter *json_node_to_filter(py::handle v, const ANT_attribute_schema *schema)
+{
+if (!py::isinstance<py::dict>(v))
+	throw py::type_error("malformed filter: node must be a dict");
+py::dict node = py::reinterpret_borrow<py::dict>(v);
+if (py::len(node) != 1)
+	throw py::type_error("malformed filter: node must have exactly one operator key");
+std::string op;
+py::handle operand;
+for (auto it : node)
+	{
+	op = py::str(it.first);
+	operand = it.second;
+	}
+
+if (op == "and" || op == "or")
+	{
+	if (!py::isinstance<py::list>(operand) && !py::isinstance<py::tuple>(operand))
+		throw py::type_error("malformed filter: 'and'/'or' value must be a list");
+	std::vector<ANT_filter *> children;
+	for (auto e : py::reinterpret_borrow<py::sequence>(operand))
+		{
+		ANT_filter *child;
+		try
+			{
+			child = json_node_to_filter(e, schema);
+			}
+		catch (...)
+			{
+			for (auto c : children)
+				delete c;
+			throw;
+			}
+		children.push_back(child);
+		}
+	int n = (int)children.size();
+	ANT_filter **raw = children.empty() ? (ANT_filter **)NULL : &children[0];
+	return (op == "and") ? ANT_filter::and_list(raw, n) : ANT_filter::or_list(raw, n);
+	}
+if (op == "not")
+	{
+	ANT_filter *child = json_node_to_filter(operand, schema);   // throws propagate (nothing to free)
+	return ANT_filter::not_(child);
+	}
+if (op == "eq")
+	{
+	if (!py::isinstance<py::dict>(operand))
+		throw py::type_error("malformed filter: 'eq' value must be {field: value}");
+	py::dict spec = py::reinterpret_borrow<py::dict>(operand);
+	if (py::len(spec) != 1)
+		throw py::type_error("malformed filter: 'eq' must have one field");
+	std::string field;
+	py::handle value;
+	for (auto it : spec)
+		{
+		field = py::str(it.first);
+		value = it.second;
+		}
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		throw py::type_error("filter references unknown field: " + field);
+	switch (schema->type(fi))
+		{
+		case ANT_attribute_schema::TYPE_INT64:
+			if (!py::isinstance<py::int_>(value) || py::isinstance<py::bool_>(value))
+				throw py::type_error("eq on int64 field requires an int: " + field);
+			return ANT_filter::eq_int(field.c_str(), py::cast<long long>(value));
+		case ANT_attribute_schema::TYPE_STRING:
+			if (!py::isinstance<py::str>(value))
+				throw py::type_error("eq on string field requires a str: " + field);
+			return ANT_filter::eq_string(field.c_str(), py::cast<std::string>(value).c_str());
+		case ANT_attribute_schema::TYPE_BOOL:
+			if (!py::isinstance<py::bool_>(value))
+				throw py::type_error("eq on bool field requires a bool: " + field);
+			return ANT_filter::eq_bool(field.c_str(), py::cast<bool>(value) ? 1 : 0);
+		}
+	throw py::type_error("eq on unsupported field type: " + field);
+	}
+if (op == "in")
+	{
+	if (!py::isinstance<py::dict>(operand))
+		throw py::type_error("malformed filter: 'in' value must be {field: [values]}");
+	py::dict spec = py::reinterpret_borrow<py::dict>(operand);
+	if (py::len(spec) != 1)
+		throw py::type_error("malformed filter: 'in' must have one field");
+	std::string field;
+	py::handle list_val;
+	for (auto it : spec)
+		{
+		field = py::str(it.first);
+		list_val = it.second;
+		}
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		throw py::type_error("filter references unknown field: " + field);
+	if (!py::isinstance<py::list>(list_val) && !py::isinstance<py::tuple>(list_val))
+		throw py::type_error("'in' value must be a list: " + field);
+	py::sequence list = py::reinterpret_borrow<py::sequence>(list_val);
+	int n = (int)py::len(list);
+	if (schema->type(fi) == ANT_attribute_schema::TYPE_INT64)
+		{
+		std::vector<long long> vals;
+		for (auto e : list)
+			{
+			if (!py::isinstance<py::int_>(e) || py::isinstance<py::bool_>(e))
+				throw py::type_error("'in' on int64 field requires ints: " + field);
+			vals.push_back(py::cast<long long>(e));
+			}
+		return ANT_filter::in_int(field.c_str(), vals.empty() ? (const long long *)NULL : &vals[0], n);
+		}
+	if (schema->type(fi) == ANT_attribute_schema::TYPE_STRING)
+		{
+		std::vector<std::string> holder;
+		for (auto e : list)
+			{
+			if (!py::isinstance<py::str>(e))
+				throw py::type_error("'in' on string field requires strs: " + field);
+			holder.push_back(py::cast<std::string>(e));
+			}
+		std::vector<const char *> ptrs;
+		for (auto &s : holder)
+			ptrs.push_back(s.c_str());
+		return ANT_filter::in_string(field.c_str(), ptrs.empty() ? (const char *const *)NULL : &ptrs[0], n);
+		}
+	throw py::type_error("'in' not supported on bool field: " + field);
+	}
+if (op == "range")
+	{
+	if (!py::isinstance<py::dict>(operand))
+		throw py::type_error("malformed filter: 'range' value must be {field: {gte/gt/lte/lt}}");
+	py::dict spec = py::reinterpret_borrow<py::dict>(operand);
+	if (py::len(spec) != 1)
+		throw py::type_error("malformed filter: 'range' must have one field");
+	std::string field;
+	py::handle bounds_val;
+	for (auto it : spec)
+		{
+		field = py::str(it.first);
+		bounds_val = it.second;
+		}
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		throw py::type_error("filter references unknown field: " + field);
+	if (schema->type(fi) != ANT_attribute_schema::TYPE_INT64)
+		throw py::type_error("range only supported on int64 field: " + field);
+	if (!py::isinstance<py::dict>(bounds_val))
+		throw py::type_error("range bounds must be a dict {gte/gt/lte/lt}: " + field);
+	py::dict b = py::reinterpret_borrow<py::dict>(bounds_val);
+	bool has_gte = b.contains("gte"), has_gt = b.contains("gt");
+	bool has_lte = b.contains("lte"), has_lt = b.contains("lt");
+	if (has_gte && has_gt)
+		throw py::type_error("range: specify at most one of 'gte'/'gt': " + field);
+	if (has_lte && has_lt)
+		throw py::type_error("range: specify at most one of 'lte'/'lt': " + field);
+	if (!has_gte && !has_gt && !has_lte && !has_lt)
+		throw py::type_error("range: at least one bound required: " + field);
+	int has_lo = (has_gte || has_gt) ? 1 : 0, has_hi = (has_lte || has_lt) ? 1 : 0;
+	int lo_incl = has_gte ? 1 : 0, hi_incl = has_lte ? 1 : 0;
+	long long lo = 0, hi = 0;
+	if (has_gte)
+		lo = py::cast<long long>(b["gte"]);
+	else if (has_gt)
+		lo = py::cast<long long>(b["gt"]);
+	if (has_lte)
+		hi = py::cast<long long>(b["lte"]);
+	else if (has_lt)
+		hi = py::cast<long long>(b["lt"]);
+	return ANT_filter::range_int(field.c_str(), lo, has_lo, hi, has_hi, lo_incl, hi_incl);
+	}
+throw py::type_error("malformed filter: unknown operator: " + op);
+}
+
+/*
+	PARSE_FILTER_OPTION()
+	------------------------
+	Top-level entry point used by every search method: None -> NULL
+	(unfiltered). A present filter requires a configured attribute schema
+	(else py::type_error). Translates the dict via json_node_to_filter() then
+	build()-checks it against the schema; a nonzero build() (type/field
+	mismatch not otherwise caught while translating) deletes the half-built
+	tree and raises py::type_error. Returns a built ANT_filter* that the
+	caller owns and must delete.
+*/
+static ANT_filter *parse_filter_option(py::handle filter, ATIRE_segment_index *engine)
+{
+if (filter.is_none())
+	return NULL;
+if (!engine->attributes_configured())
+	throw py::type_error("filter requires an attributes schema");
+ANT_filter *f = json_node_to_filter(filter, engine->attribute_schema());
+if (f->build(engine->attribute_schema()) != 0)
+	{
+	delete f;
+	throw py::type_error("filter type/field mismatch");
+	}
+return f;
 }
 
 /*
@@ -591,17 +805,19 @@ struct PySegmentIndex
 		writable copy is passed rather than the const std::string's data().
 		The GIL is released only around the engine call.
 	*/
-	py::list search(const std::string &text, long long k)
+	py::list search(const std::string &text, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::string buf = text;
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search(&buf[0], k);
+	count = flt ? engine->search(&buf[0], k, flt) : engine->search(&buf[0], k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -609,17 +825,19 @@ struct PySegmentIndex
 		PYSEGMENTINDEX::SEARCH_VECTOR()
 		-----------------------------------
 	*/
-	py::list search_vector(py::object vector, long long k)
+	py::list search_vector(py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_vector(vec.data(), k);
+	count = flt ? engine->search_vector(vec.data(), k, flt) : engine->search_vector(vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -630,18 +848,20 @@ struct PySegmentIndex
 		vector are converted to engine-owned buffers before the GIL is
 		released, matching search()'s writable-copy pattern.
 	*/
-	py::list search_hybrid(const std::string &text, py::object vector, long long k)
+	py::list search_hybrid(const std::string &text, py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_hybrid(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid(&buf[0], vec.data(), k, flt) : engine->search_hybrid(&buf[0], vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -651,17 +871,19 @@ struct PySegmentIndex
 		Signature-prefiltered top-k (transparently falls back to exact when
 		approximate search is unconfigured or the metric is incompatible).
 	*/
-	py::list search_vector_approx(py::object vector, long long k)
+	py::list search_vector_approx(py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_vector_approx(vec.data(), k);
+	count = flt ? engine->search_vector_approx(vec.data(), k, flt) : engine->search_vector_approx(vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -669,17 +891,19 @@ struct PySegmentIndex
 		PYSEGMENTINDEX::SEARCH_VECTOR_HNSW()
 		---------------------------------------
 	*/
-	py::list search_vector_hnsw(py::object vector, long long k)
+	py::list search_vector_hnsw(py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_vector_hnsw(vec.data(), k);
+	count = flt ? engine->search_vector_hnsw(vec.data(), k, flt) : engine->search_vector_hnsw(vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -687,18 +911,20 @@ struct PySegmentIndex
 		PYSEGMENTINDEX::SEARCH_HYBRID_APPROX()
 		-----------------------------------------
 	*/
-	py::list search_hybrid_approx(const std::string &text, py::object vector, long long k)
+	py::list search_hybrid_approx(const std::string &text, py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_hybrid_approx(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid_approx(&buf[0], vec.data(), k, flt) : engine->search_hybrid_approx(&buf[0], vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -706,18 +932,20 @@ struct PySegmentIndex
 		PYSEGMENTINDEX::SEARCH_HYBRID_HNSW()
 		---------------------------------------
 	*/
-	py::list search_hybrid_hnsw(const std::string &text, py::object vector, long long k)
+	py::list search_hybrid_hnsw(const std::string &text, py::object vector, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_hybrid_hnsw(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid_hnsw(&buf[0], vec.data(), k, flt) : engine->search_hybrid_hnsw(&buf[0], vec.data(), k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -785,9 +1013,9 @@ struct PySegmentIndex
 		MaxSim rerank of the top first_stage_n candidates over multi-vectors,
 		publishing top_k. text and vector may each be None, but not both (the
 		Node binding guards this same case to avoid a search(NULL) SIGSEGV in
-		the engine). No filter parameter yet (Task 8).
+		the engine).
 	*/
-	py::list search_rerank(py::object text, py::object vector, py::object query_multi_vectors, long long first_stage_n, long long k)
+	py::list search_rerank(py::object text, py::object vector, py::object query_multi_vectors, long long first_stage_n, long long k, py::object filter = py::none())
 	{
 	require_open();
 	if (k < 1)
@@ -811,11 +1039,14 @@ struct PySegmentIndex
 	long long num_qv = 0;
 	std::vector<float> qmv = extract_multivectors(query_multi_vectors, engine->rerank_dimension(), &num_qv);
 	const float *qmvptr = num_qv > 0 ? qmv.data() : NULL;
+	ANT_filter *flt = parse_filter_option(filter, engine);
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k);
+	count = flt ? engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k, flt)
+	            : engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k);
 	}
+	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -862,17 +1093,17 @@ PYBIND11_MODULE(_core, m)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
 		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
-		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
-		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"))
-		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"))
-		.def("search_vector_approx", &PySegmentIndex::search_vector_approx, py::arg("vector"), py::arg("k"))
-		.def("search_vector_hnsw", &PySegmentIndex::search_vector_hnsw, py::arg("vector"), py::arg("k"))
-		.def("search_hybrid_approx", &PySegmentIndex::search_hybrid_approx, py::arg("text"), py::arg("vector"), py::arg("k"))
-		.def("search_hybrid_hnsw", &PySegmentIndex::search_hybrid_hnsw, py::arg("text"), py::arg("vector"), py::arg("k"))
+		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_vector_approx", &PySegmentIndex::search_vector_approx, py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_vector_hnsw", &PySegmentIndex::search_vector_hnsw, py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_hybrid_approx", &PySegmentIndex::search_hybrid_approx, py::arg("text"), py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
+		.def("search_hybrid_hnsw", &PySegmentIndex::search_hybrid_hnsw, py::arg("text"), py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
 		.def("flush", &PySegmentIndex::flush)
 		.def("build_signatures", &PySegmentIndex::build_signatures)
 		.def("build_hnsw", &PySegmentIndex::build_hnsw)
-		.def("search_rerank", &PySegmentIndex::search_rerank, py::arg("text"), py::arg("vector"), py::arg("query_multi_vectors"), py::arg("first_stage_n"), py::arg("k"))
+		.def("search_rerank", &PySegmentIndex::search_rerank, py::arg("text"), py::arg("vector"), py::arg("query_multi_vectors"), py::arg("first_stage_n"), py::arg("k"), py::arg("filter") = py::none())
 		.def("build_quantized", &PySegmentIndex::build_quantized)
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
