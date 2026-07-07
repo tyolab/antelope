@@ -23,6 +23,7 @@ class ANT_index_tombstones;
 class ANT_search_engine;
 class ANT_memory_index;
 class ANT_vector_store;
+class ANT_multivector_store;
 class ANT_write_ahead_log;
 class ANT_signature;
 class ANT_signature_store;
@@ -52,6 +53,7 @@ public:
 	ANT_vector_store *exact_vectors;	// float32 resident for exact-mode rerank; NULL otherwise
 	ANT_signature_store *signatures;	// NULL when absent/degraded/approximate-off
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
+	ANT_multivector_store *multivectors;	// V5 late-interaction sidecar; NULL unless rerank configured
 	} ;
 
 private:

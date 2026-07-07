@@ -3437,6 +3437,26 @@ delete [] dir;
 printf("test_decompress_buffer_reuse OK\n");
 }
 
+static void test_flush_writes_mvec(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);
+float mv[2*8]; for (int i = 0; i < 2*8; i++) mv[i] = (float)(i%5+1)/7.0f;
+for (int i = 0; i < 20; i++)
+	{ char k[16]; sprintf(k,"d%d",i); char d[48]; sprintf(d,"<DOC>doc %d</DOC>",i);
+	  CHECK(ix->add_document(k, d, NULL, mv, 2) >= 0); }
+CHECK(ix->flush() == 0);
+CHECK(dir_has_glob(dir, "seg_*.mvec"));
+delete ix;
+ATIRE_segment_index *re = new ATIRE_segment_index();
+CHECK(re->open(dir) == 0);
+CHECK(re->rerank_configured() != 0);
+delete re; delete [] dir;
+printf("test_flush_writes_mvec OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -3499,6 +3519,7 @@ test_flush_replace_mode();
 test_exact_mode_matches_float();
 test_exact_mode_matches_float_after_compaction();
 test_quantization_coexists_with_approx_and_hnsw();
+test_flush_writes_mvec();
 printf("PASSED\n");
 return 0;
 }

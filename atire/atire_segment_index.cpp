@@ -27,6 +27,7 @@
 #include "../source/version.h"
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
+#include "../source/multivector_store.h"
 #include "../source/wal.h"
 #include "../source/signature.h"
 #include "../source/signature_store.h"
@@ -127,6 +128,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].exact_vectors;
 	delete segments[which].signatures;
 	delete segments[which].hnsw_graph;
+	delete segments[which].multivectors;
 	}
 delete [] segments;
 
@@ -169,6 +171,8 @@ remove(filename);
 segment_filename(filename, sizeof(filename), generation, "vsig");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "hnsw");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "mvec");
 remove(filename);
 }
 
@@ -1082,6 +1086,40 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 		}
 	}
 
+/*
+	V5: persist the memory segment's multi-vectors (late-interaction rerank
+	sidecar) alongside .vec/.qvec/.vsig/.hnsw, when rerank is configured and at
+	least one buffered vector exists.  Same crash contract as the sibling
+	sidecars above: best-effort, non-fatal to the flush -- a failure simply
+	leaves the segment rerank-less until the next flush/backfill.  writer_generation
+	and writer_documents are still valid here (the writer teardown below has not
+	run yet), so they are used directly rather than re-capturing locals.
+*/
+if (rerank_configured() && writer_multivector_total > 0)
+	{
+	char mvec_filename[1024];
+	segment_filename(mvec_filename, sizeof(mvec_filename), writer_generation, "mvec");
+	ANT_multivector_store_writer mvw;
+	if (mvw.create(mvec_filename, rerank_dimension_current) == 0)
+		{
+		mvw.set_quantization(rerank_quant_current == RERANK_QUANT_INT8
+		                     ? ANT_multivector_store_writer::QUANT_INT8
+		                     : ANT_multivector_store_writer::QUANT_OFF);
+		long long mv_offset = 0, mv_failed = 0, docid;
+		for (docid = 0; !mv_failed && docid < writer_documents; docid++)
+			{
+			long long m = (writer_multivector_counts != NULL) ? writer_multivector_counts[docid] : 0;
+			const float *rows = (m > 0) ? writer_multivector_data + mv_offset * rerank_dimension_current : NULL;
+			mv_failed = mvw.append(rows, m) != 0;
+			mv_offset += m;
+			}
+		if (!mv_failed)
+			mvw.finish();		/* best-effort: a failure leaves the segment rerank-less, non-fatal to flush */
+		else
+			mvw.abandon();
+		}
+	}
+
 segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");
 if (writer_tombstones->count() > 0)
 	if (writer_tombstones->save(del_filename) != 0)
@@ -1272,6 +1310,15 @@ if (vector_dimension_current != 0 && hnsw_M_current != 0)
 	}
 else
 	segments[segment_count].hnsw_graph = NULL;
+
+if (rerank_configured())
+	{
+	char mvec_filename[1024];
+	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
+	segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
+	}
+else
+	segments[segment_count].multivectors = NULL;
 
 segment_count++;
 
