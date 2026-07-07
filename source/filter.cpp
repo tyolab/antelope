@@ -171,42 +171,79 @@ return node;
 }
 
 /*
+	ANT_FILTER::AND_LIST()
+	-----------------------
+	AND of n children from an array (ownership transferred; the pointers are
+	copied into a fresh child array).  n==0 => an AND node with no children,
+	which evaluates to the identity (matches all).
+*/
+ANT_filter *ANT_filter::and_list(ANT_filter *const *children, int n)
+{
+int i;
+ANT_filter *node = new ANT_filter(KIND_AND);
+node->children = new ANT_filter *[n > 0 ? n : 1];
+node->child_count = n;
+for (i = 0; i < n; i++)
+	node->children[i] = children[i];
+return node;
+}
+
+/*
+	ANT_FILTER::OR_LIST()
+	----------------------
+	OR of n children from an array (ownership transferred).  n==0 => an OR
+	node with no children, which evaluates to matches-none.
+*/
+ANT_filter *ANT_filter::or_list(ANT_filter *const *children, int n)
+{
+int i;
+ANT_filter *node = new ANT_filter(KIND_OR);
+node->children = new ANT_filter *[n > 0 ? n : 1];
+node->child_count = n;
+for (i = 0; i < n; i++)
+	node->children[i] = children[i];
+return node;
+}
+
+/*
 	ANT_FILTER::AND_()
 	-------------------
+	Collects the varargs into a local array and delegates to and_list().
 */
 ANT_filter *ANT_filter::and_(int n, ...)
 {
 int i;
 va_list args;
-ANT_filter *node = new ANT_filter(KIND_AND);
-node->children = new ANT_filter *[n];
-node->child_count = n;
+ANT_filter **collected = new ANT_filter *[n > 0 ? n : 1];
 
 va_start(args, n);
 for (i = 0; i < n; i++)
-	node->children[i] = va_arg(args, ANT_filter *);
+	collected[i] = va_arg(args, ANT_filter *);
 va_end(args);
 
+ANT_filter *node = and_list(collected, n);
+delete [] collected;
 return node;
 }
 
 /*
 	ANT_FILTER::OR_()
 	------------------
+	Collects the varargs into a local array and delegates to or_list().
 */
 ANT_filter *ANT_filter::or_(int n, ...)
 {
 int i;
 va_list args;
-ANT_filter *node = new ANT_filter(KIND_OR);
-node->children = new ANT_filter *[n];
-node->child_count = n;
+ANT_filter **collected = new ANT_filter *[n > 0 ? n : 1];
 
 va_start(args, n);
 for (i = 0; i < n; i++)
-	node->children[i] = va_arg(args, ANT_filter *);
+	collected[i] = va_arg(args, ANT_filter *);
 va_end(args);
 
+ANT_filter *node = or_list(collected, n);
+delete [] collected;
 return node;
 }
 

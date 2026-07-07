@@ -360,4 +360,80 @@ const hits = index.searchRerank(
 - `options.firstStageN` — how many stage-1 candidates to rerank (default `100`).
 - `options.topK` — how many reranked hits to return (default `10`).
 
+### Filtered search + payloads
+
+Attach structured attributes to documents and constrain any search to the
+documents whose attributes satisfy a JSON predicate. You can also stash an
+opaque per-document payload blob that is returned on every matching hit.
+
+Declare the attribute schema up front with the `attributes` constructor option.
+Each value is a type token: `'int64'`, `'string'`, or `'bool'` (scalar), or
+`'int64[]'` / `'string[]'` (multi-valued). `'bool[]'` is not allowed — bool is
+scalar only. The schema is immutable once the index is opened.
+
+```js
+const index = new SegmentIndex({
+  dimension: 128,
+  metric: 'cosine',
+  attributes: { tenant: 'string', lang: 'string[]', rank: 'int64', keep: 'bool' }
+});
+index.open(dir);
+```
+
+Supply attributes and/or a payload via a trailing options object on
+`addDocument` / `updateDocument` (the argument after `multiVectors`):
+
+```js
+index.addDocument('doc-1', '<DOC>hello world</DOC>', vec, null, {
+  attributes: { tenant: 'acme', lang: ['en', 'fr'], rank: 5, keep: true },
+  payload: 'arbitrary bytes'          // Buffer or string
+});
+```
+
+Multi-valued fields take an array; scalar fields take a single value. The
+`payload` is a `Buffer` or a `string`; it is copied verbatim and returned on
+hits (see below).
+
+Pass a `filter` in the options object of any search method. The predicate is a
+JSON tree with exactly one operator key per node:
+
+| Operator | Shape | Meaning |
+| --- | --- | --- |
+| `eq` | `{ eq: { field: value } }` | field equals value (int64/string/bool; CONTAINS for multi-valued) |
+| `in` | `{ in: { field: [v1, v2, …] } }` | field matches any listed value (int64 or string) |
+| `range` | `{ range: { field: { gte?, gt?, lte?, lt? } } }` | int64 field within bounds (at most one lower + one upper) |
+| `and` | `{ and: [ … ] }` | all sub-predicates match |
+| `or` | `{ or: [ … ] }` | any sub-predicate matches |
+| `not` | `{ not: … }` | sub-predicate does not match |
+
+```js
+// one tenant only
+index.searchVector(qvec, 10, { filter: { eq: { tenant: 'acme' } } });
+
+// keep === true AND (lang contains 'fr')
+index.search('report', 10, {
+  filter: { and: [ { eq: { keep: true } }, { in: { lang: ['fr'] } } ] }
+});
+
+// rank >= 3
+index.searchHybrid('report', qvec, 10, { filter: { range: { rank: { gte: 3 } } } });
+
+// negation
+index.searchVector(qvec, 10, { filter: { not: { eq: { tenant: 'acme' } } } });
+```
+
+The `filter` option is accepted by `search`, `searchVector`, `searchHybrid`,
+`searchVectorApprox`, `searchHybridApprox`, `searchVectorHnsw`,
+`searchHybridHnsw`, and `searchRerank`. A filter requires an attribute schema
+(else the call throws), and a field/type mismatch — e.g. a number for a string
+field, or a `range` on a non-int64 field — throws a `TypeError`.
+
+Every hit that has a payload carries it as a `Buffer`:
+
+```js
+const hits = index.searchVector(qvec, 10, { filter: { eq: { tenant: 'acme' } } });
+for (const h of hits)
+  if (h.payload) console.log(h.key, h.payload.toString('utf8'));
+```
+
 TypeScript definitions are provided in `segment_index.d.ts`.

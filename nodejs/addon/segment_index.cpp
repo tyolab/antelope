@@ -10,7 +10,11 @@
 */
 #include <napi.h>
 #include <string.h>
+#include <string>
+#include <vector>
 #include "../../atire/atire_segment_index.h"
+#include "../../source/attribute_store.h"
+#include "../../source/filter.h"
 
 class SegmentIndexWrap : public Napi::ObjectWrap<SegmentIndexWrap>
 {
@@ -38,6 +42,8 @@ private:
 	long option_quantize;				// ATIRE_segment_index::QUANTIZE_OFF/REPLACE/EXACT
 	long long option_rerank_dim;		// 0 = off
 	long option_rerank_quant;			// ATIRE_segment_index::RERANK_QUANT_FLOAT/INT8
+	ANT_attribute_schema option_attributes;	// attribute filter schema captured at construction
+	bool option_has_attributes;			// true when options.attributes was supplied
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -111,6 +117,7 @@ option_hnsw_ef_search = 0;			// unset
 option_quantize = ATIRE_segment_index::QUANTIZE_OFF;
 option_rerank_dim = 0;				// off
 option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+option_has_attributes = false;
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -210,6 +217,46 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 			option_rerank_quant = (q == "float") ? ATIRE_segment_index::RERANK_QUANT_FLOAT : ATIRE_segment_index::RERANK_QUANT_INT8;
 			}
 		}
+	if (options.Has("attributes") && !options.Get("attributes").IsUndefined() && !options.Get("attributes").IsNull())
+		{
+		Napi::Value attrs_val = options.Get("attributes");
+		if (!attrs_val.IsObject())
+			{
+			Napi::TypeError::New(env, "attributes must be an object { field: '<type>' }").ThrowAsJavaScriptException();
+			return;
+			}
+		Napi::Object attrs = attrs_val.As<Napi::Object>();
+		Napi::Array keys = attrs.GetPropertyNames();
+		for (uint32_t k = 0; k < keys.Length(); k++)
+			{
+			std::string name = keys.Get(k).ToString().Utf8Value();
+			std::string spec = attrs.Get(name).ToString().Utf8Value();
+			int multi = 0;
+			if (spec.size() >= 2 && spec.compare(spec.size() - 2, 2, "[]") == 0)
+				{
+				multi = 1;
+				spec.erase(spec.size() - 2);
+				}
+			int type;
+			if (spec == "int64")
+				type = ANT_attribute_schema::TYPE_INT64;
+			else if (spec == "string")
+				type = ANT_attribute_schema::TYPE_STRING;
+			else if (spec == "bool")
+				type = ANT_attribute_schema::TYPE_BOOL;
+			else
+				{
+				Napi::TypeError::New(env, "attribute type must be 'int64', 'string', 'bool' (with optional '[]')").ThrowAsJavaScriptException();
+				return;
+				}
+			if (option_attributes.add_field(name.c_str(), type, multi) != 0)
+				{
+				Napi::TypeError::New(env, "invalid attribute field (duplicate name, too many fields, name too long, or bool[] not allowed)").ThrowAsJavaScriptException();
+				return;
+				}
+			}
+		option_has_attributes = true;
+		}
 	}
 }
 
@@ -306,6 +353,11 @@ if (option_quantize != ATIRE_segment_index::QUANTIZE_OFF)
    e.g. a different dimension already persisted). */
 if (option_rerank_dim > 0)
 	engine->set_rerank_config(option_rerank_dim, option_rerank_quant);
+/* Attribute filter schema is index-wide and immutable once set; apply it here
+   after a successful open, before the first flush (mirrors the rerank
+   placement).  Non-fatal if unsupported -- filtering simply stays off. */
+if (option_has_attributes)
+	engine->set_attributes_config(option_attributes);
 state = OPEN;
 return env.Undefined();
 }
@@ -468,6 +520,408 @@ return buffer;
 }
 
 /*
+	JSON_NODE_TO_FILTER()
+	----------------------
+	Recursively translates a JS predicate node into an UNBUILT ANT_filter tree.
+	The node must be an object carrying exactly one operator key
+	(and/or/not/eq/in/range).  On malformed input a TypeError is thrown and
+	NULL is returned; every already-allocated sub-tree is freed on the failure
+	path so no filter node leaks.
+*/
+static ANT_filter *json_node_to_filter(Napi::Env env, Napi::Value v, const ANT_attribute_schema *schema)
+{
+if (!v.IsObject() || v.IsArray())
+	{
+	Napi::TypeError::New(env, "malformed filter: node must be an object").ThrowAsJavaScriptException();
+	return NULL;
+	}
+Napi::Object node = v.As<Napi::Object>();
+Napi::Array node_keys = node.GetPropertyNames();
+if (node_keys.Length() != 1)
+	{
+	Napi::TypeError::New(env, "malformed filter: node must have exactly one operator key").ThrowAsJavaScriptException();
+	return NULL;
+	}
+std::string op = node_keys.Get(0u).ToString().Utf8Value();
+Napi::Value operand = node.Get(op);
+
+if (op == "and" || op == "or")
+	{
+	if (!operand.IsArray())
+		{
+		Napi::TypeError::New(env, "malformed filter: 'and'/'or' value must be an array").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Array arr = operand.As<Napi::Array>();
+	int n = (int)arr.Length();
+	std::vector<ANT_filter *> children;
+	children.reserve(n > 0 ? n : 1);
+	for (int i = 0; i < n; i++)
+		{
+		ANT_filter *child = json_node_to_filter(env, arr.Get((uint32_t)i), schema);
+		if (child == NULL)
+			{
+			for (size_t j = 0; j < children.size(); j++)
+				delete children[j];
+			return NULL;		// exception already pending
+			}
+		children.push_back(child);
+		}
+	ANT_filter **raw = children.empty() ? (ANT_filter **)NULL : &children[0];
+	return (op == "and") ? ANT_filter::and_list(raw, n) : ANT_filter::or_list(raw, n);
+	}
+
+if (op == "not")
+	{
+	ANT_filter *child = json_node_to_filter(env, operand, schema);
+	if (child == NULL)
+		return NULL;		// exception already pending
+	return ANT_filter::not_(child);
+	}
+
+if (op == "eq")
+	{
+	if (!operand.IsObject() || operand.IsArray())
+		{
+		Napi::TypeError::New(env, "malformed filter: 'eq' value must be { field: value }").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Object spec = operand.As<Napi::Object>();
+	std::string field = spec.GetPropertyNames().Get(0u).ToString().Utf8Value();
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		{
+		Napi::TypeError::New(env, "filter references unknown field").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Value value = spec.Get(field);
+	switch (schema->type(fi))
+		{
+		case ANT_attribute_schema::TYPE_INT64:
+			if (!value.IsNumber())
+				{
+				Napi::TypeError::New(env, "eq on int64 field requires a number").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			return ANT_filter::eq_int(field.c_str(), value.As<Napi::Number>().Int64Value());
+		case ANT_attribute_schema::TYPE_STRING:
+			if (!value.IsString())
+				{
+				Napi::TypeError::New(env, "eq on string field requires a string").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			return ANT_filter::eq_string(field.c_str(), value.As<Napi::String>().Utf8Value().c_str());
+		case ANT_attribute_schema::TYPE_BOOL:
+			if (!value.IsBoolean())
+				{
+				Napi::TypeError::New(env, "eq on bool field requires a boolean").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			return ANT_filter::eq_bool(field.c_str(), value.As<Napi::Boolean>().Value() ? 1 : 0);
+		}
+	Napi::TypeError::New(env, "eq on unsupported field type").ThrowAsJavaScriptException();
+	return NULL;
+	}
+
+if (op == "in")
+	{
+	if (!operand.IsObject() || operand.IsArray())
+		{
+		Napi::TypeError::New(env, "malformed filter: 'in' value must be { field: [values] }").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Object spec = operand.As<Napi::Object>();
+	std::string field = spec.GetPropertyNames().Get(0u).ToString().Utf8Value();
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		{
+		Napi::TypeError::New(env, "filter references unknown field").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Value list_val = spec.Get(field);
+	if (!list_val.IsArray())
+		{
+		Napi::TypeError::New(env, "'in' value must be an array").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Array list = list_val.As<Napi::Array>();
+	int n = (int)list.Length();
+	if (schema->type(fi) == ANT_attribute_schema::TYPE_INT64)
+		{
+		std::vector<long long> vals;
+		vals.reserve(n > 0 ? n : 1);
+		for (int i = 0; i < n; i++)
+			{
+			Napi::Value e = list.Get((uint32_t)i);
+			if (!e.IsNumber())
+				{
+				Napi::TypeError::New(env, "'in' on int64 field requires numbers").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			vals.push_back(e.As<Napi::Number>().Int64Value());
+			}
+		return ANT_filter::in_int(field.c_str(), vals.empty() ? (const long long *)NULL : &vals[0], n);
+		}
+	if (schema->type(fi) == ANT_attribute_schema::TYPE_STRING)
+		{
+		std::vector<std::string> holder;
+		holder.reserve(n > 0 ? n : 1);
+		for (int i = 0; i < n; i++)
+			{
+			Napi::Value e = list.Get((uint32_t)i);
+			if (!e.IsString())
+				{
+				Napi::TypeError::New(env, "'in' on string field requires strings").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			holder.push_back(e.As<Napi::String>().Utf8Value());
+			}
+		std::vector<const char *> ptrs;
+		ptrs.reserve(n > 0 ? n : 1);
+		for (int i = 0; i < n; i++)
+			ptrs.push_back(holder[i].c_str());
+		return ANT_filter::in_string(field.c_str(), ptrs.empty() ? (const char *const *)NULL : &ptrs[0], n);
+		}
+	Napi::TypeError::New(env, "'in' not supported on bool field").ThrowAsJavaScriptException();
+	return NULL;
+	}
+
+if (op == "range")
+	{
+	if (!operand.IsObject() || operand.IsArray())
+		{
+		Napi::TypeError::New(env, "malformed filter: 'range' value must be { field: { gte/gt/lte/lt } }").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Object spec = operand.As<Napi::Object>();
+	std::string field = spec.GetPropertyNames().Get(0u).ToString().Utf8Value();
+	long fi = schema->field_index(field.c_str());
+	if (fi < 0)
+		{
+		Napi::TypeError::New(env, "filter references unknown field").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	if (schema->type(fi) != ANT_attribute_schema::TYPE_INT64)
+		{
+		Napi::TypeError::New(env, "range only supported on int64 field").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Value bounds_val = spec.Get(field);
+	if (!bounds_val.IsObject() || bounds_val.IsArray())
+		{
+		Napi::TypeError::New(env, "range bounds must be an object { gte/gt/lte/lt }").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Object bounds = bounds_val.As<Napi::Object>();
+	bool has_gte = bounds.Has("gte"), has_gt = bounds.Has("gt");
+	bool has_lte = bounds.Has("lte"), has_lt = bounds.Has("lt");
+	if (has_gte && has_gt)
+		{
+		Napi::TypeError::New(env, "range: specify at most one of 'gte'/'gt'").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	if (has_lte && has_lt)
+		{
+		Napi::TypeError::New(env, "range: specify at most one of 'lte'/'lt'").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	if (!has_gte && !has_gt && !has_lte && !has_lt)
+		{
+		Napi::TypeError::New(env, "range: at least one bound (gte/gt/lte/lt) is required").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	int has_lo = (has_gte || has_gt) ? 1 : 0;
+	int has_hi = (has_lte || has_lt) ? 1 : 0;
+	int lo_incl = has_gte ? 1 : 0;
+	int hi_incl = has_lte ? 1 : 0;
+	long long lo = 0, hi = 0;
+	if (has_gte)
+		lo = bounds.Get("gte").As<Napi::Number>().Int64Value();
+	else if (has_gt)
+		lo = bounds.Get("gt").As<Napi::Number>().Int64Value();
+	if (has_lte)
+		hi = bounds.Get("lte").As<Napi::Number>().Int64Value();
+	else if (has_lt)
+		hi = bounds.Get("lt").As<Napi::Number>().Int64Value();
+	return ANT_filter::range_int(field.c_str(), lo, has_lo, hi, has_hi, lo_incl, hi_incl);
+	}
+
+Napi::TypeError::New(env, "malformed filter: unknown operator").ThrowAsJavaScriptException();
+return NULL;
+}
+
+/*
+	PARSE_FILTER_OPTION()
+	----------------------
+	Top-level filter-option handler.  undefined/null => NULL (unfiltered).  A
+	present filter REQUIRES a configured attribute schema; the predicate is
+	translated then build()-checked against the schema (a field/type mismatch
+	throws).  Returns a built, ready-to-pass ANT_filter* (caller deletes it),
+	or NULL with an exception pending on any error.
+*/
+static ANT_filter *parse_filter_option(Napi::Env env, Napi::Value filterVal, ATIRE_segment_index *engine)
+{
+if (filterVal.IsUndefined() || filterVal.IsNull())
+	return NULL;
+if (!engine->attributes_configured())
+	{
+	Napi::TypeError::New(env, "filter requires an attributes schema").ThrowAsJavaScriptException();
+	return NULL;
+	}
+ANT_filter *f = json_node_to_filter(env, filterVal, engine->attribute_schema());
+if (f == NULL)
+	return NULL;		// exception already pending
+if (f->build(engine->attribute_schema()) != 0)
+	{
+	delete f;
+	Napi::TypeError::New(env, "filter type/field mismatch").ThrowAsJavaScriptException();
+	return NULL;
+	}
+return f;
+}
+
+/*
+	BUILD_ATTRIBUTE_SET()
+	----------------------
+	Translates an add/update options object { attributes?, payload? } into a
+	heap ANT_attribute_set (caller deletes it).  Returns NULL WITHOUT an
+	exception when there is nothing to ingest (no options object, or neither
+	attributes nor payload, or attributes not configured on the index) so the
+	caller falls back to the existing lean overloads.  On malformed input a
+	TypeError is thrown and NULL is returned -- the caller distinguishes the
+	two via env.IsExceptionPending().
+*/
+static ANT_attribute_set *build_attribute_set(Napi::Env env, Napi::Value optsVal, ATIRE_segment_index *engine)
+{
+if (!optsVal.IsObject() || optsVal.IsArray())
+	return NULL;
+Napi::Object opts = optsVal.As<Napi::Object>();
+bool has_attrs = opts.Has("attributes") && !opts.Get("attributes").IsUndefined() && !opts.Get("attributes").IsNull();
+bool has_payload = opts.Has("payload") && !opts.Get("payload").IsUndefined() && !opts.Get("payload").IsNull();
+if ((!has_attrs && !has_payload) || !engine->attributes_configured())
+	return NULL;
+
+const ANT_attribute_schema *schema = engine->attribute_schema();
+ANT_attribute_set *set = new ANT_attribute_set(schema);
+
+if (has_attrs)
+	{
+	Napi::Value attrs_val = opts.Get("attributes");
+	if (!attrs_val.IsObject() || attrs_val.IsArray())
+		{
+		delete set;
+		Napi::TypeError::New(env, "attributes must be an object { field: value | [values] }").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	Napi::Object attrs = attrs_val.As<Napi::Object>();
+	Napi::Array keys = attrs.GetPropertyNames();
+	for (uint32_t k = 0; k < keys.Length(); k++)
+		{
+		std::string field = keys.Get(k).ToString().Utf8Value();
+		long fi = schema->field_index(field.c_str());
+		if (fi < 0)
+			{
+			delete set;
+			Napi::TypeError::New(env, "attributes reference an unknown field").ThrowAsJavaScriptException();
+			return NULL;
+			}
+		int type = schema->type(fi);
+		Napi::Value value = attrs.Get(field);
+		if (value.IsArray())
+			{
+			if (type == ANT_attribute_schema::TYPE_BOOL)
+				{
+				delete set;
+				Napi::TypeError::New(env, "bool attribute cannot be multi-valued").ThrowAsJavaScriptException();
+				return NULL;
+				}
+			Napi::Array list = value.As<Napi::Array>();
+			for (uint32_t i = 0; i < list.Length(); i++)
+				{
+				Napi::Value e = list.Get(i);
+				if (type == ANT_attribute_schema::TYPE_INT64)
+					{
+					if (!e.IsNumber())
+						{
+						delete set;
+						Napi::TypeError::New(env, "int64 attribute values must be numbers").ThrowAsJavaScriptException();
+						return NULL;
+						}
+					set->add_int(fi, e.As<Napi::Number>().Int64Value());
+					}
+				else	/* TYPE_STRING */
+					{
+					if (!e.IsString())
+						{
+						delete set;
+						Napi::TypeError::New(env, "string attribute values must be strings").ThrowAsJavaScriptException();
+						return NULL;
+						}
+					set->add_string(fi, e.As<Napi::String>().Utf8Value().c_str());
+					}
+				}
+			}
+		else
+			{
+			switch (type)
+				{
+				case ANT_attribute_schema::TYPE_INT64:
+					if (!value.IsNumber())
+						{
+						delete set;
+						Napi::TypeError::New(env, "int64 attribute requires a number").ThrowAsJavaScriptException();
+						return NULL;
+						}
+					set->set_int(fi, value.As<Napi::Number>().Int64Value());
+					break;
+				case ANT_attribute_schema::TYPE_STRING:
+					if (!value.IsString())
+						{
+						delete set;
+						Napi::TypeError::New(env, "string attribute requires a string").ThrowAsJavaScriptException();
+						return NULL;
+						}
+					set->set_string(fi, value.As<Napi::String>().Utf8Value().c_str());
+					break;
+				case ANT_attribute_schema::TYPE_BOOL:
+					if (!value.IsBoolean())
+						{
+						delete set;
+						Napi::TypeError::New(env, "bool attribute requires a boolean").ThrowAsJavaScriptException();
+						return NULL;
+						}
+					set->set_bool(fi, value.As<Napi::Boolean>().Value() ? 1 : 0);
+					break;
+				}
+			}
+		}
+	}
+
+if (has_payload)
+	{
+	Napi::Value pv = opts.Get("payload");
+	if (pv.IsBuffer())
+		{
+		Napi::Buffer<unsigned char> buf = pv.As<Napi::Buffer<unsigned char> >();
+		set->set_payload(buf.Data(), (long long)buf.Length());
+		}
+	else if (pv.IsString())
+		{
+		std::string s = pv.As<Napi::String>().Utf8Value();
+		set->set_payload(s.data(), (long long)s.size());
+		}
+	else
+		{
+		delete set;
+		Napi::TypeError::New(env, "payload must be a Buffer or string").ThrowAsJavaScriptException();
+		return NULL;
+		}
+	}
+
+return set;
+}
+
+/*
 	HITS_TO_ARRAY()
 	---------------
 	Deep-copies the engine's hit list (valid only until the next search)
@@ -484,6 +938,8 @@ for (long long which = 0; which < count; which++)
 	entry.Set("score", Napi::Number::New(env, hit->score));
 	entry.Set("generation", Napi::Number::New(env, (double)hit->generation));
 	entry.Set("docid", Napi::Number::New(env, (double)hit->docid));
+	if (hit->payload != NULL && hit->payload_length > 0)
+		entry.Set("payload", Napi::Buffer<unsigned char>::Copy(env, hit->payload, (size_t)hit->payload_length));
 	result.Set((uint32_t)which, entry);
 	}
 return result;
@@ -549,13 +1005,28 @@ if (info.Length() >= 4 && !info[3].IsUndefined() && !info[3].IsNull())
 		}
 	}
 
-long long handle = num_vectors > 0
-	? engine->add_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
-	: (vector != NULL
-		? engine->add_document(key.c_str(), text.c_str(), vector)
-		: engine->add_document(key.c_str(), text.c_str()));
+ANT_attribute_set *attr_set = NULL;
+if (info.Length() >= 5)
+	{
+	attr_set = build_attribute_set(env, info[4], engine);
+	if (env.IsExceptionPending())
+		{
+		delete [] scratch;
+		delete [] mv_scratch;
+		return env.Undefined();		// TypeError already thrown
+		}
+	}
+
+long long handle = attr_set != NULL
+	? engine->add_document(key.c_str(), text.c_str(), vector, multivector, num_vectors, attr_set)
+	: (num_vectors > 0
+		? engine->add_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
+		: (vector != NULL
+			? engine->add_document(key.c_str(), text.c_str(), vector)
+			: engine->add_document(key.c_str(), text.c_str())));
 delete [] scratch;
 delete [] mv_scratch;
+delete attr_set;
 
 if (handle < 0)
 	{
@@ -620,13 +1091,28 @@ if (info.Length() >= 4 && !info[3].IsUndefined() && !info[3].IsNull())
 		}
 	}
 
-long long handle = num_vectors > 0
-	? engine->update_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
-	: (vector != NULL
-		? engine->update_document(key.c_str(), text.c_str(), vector)
-		: engine->update_document(key.c_str(), text.c_str()));
+ANT_attribute_set *attr_set = NULL;
+if (info.Length() >= 5)
+	{
+	attr_set = build_attribute_set(env, info[4], engine);
+	if (env.IsExceptionPending())
+		{
+		delete [] scratch;
+		delete [] mv_scratch;
+		return env.Undefined();		// TypeError already thrown
+		}
+	}
+
+long long handle = attr_set != NULL
+	? engine->update_document(key.c_str(), text.c_str(), vector, multivector, num_vectors, attr_set)
+	: (num_vectors > 0
+		? engine->update_document(key.c_str(), text.c_str(), vector, multivector, num_vectors)
+		: (vector != NULL
+			? engine->update_document(key.c_str(), text.c_str(), vector)
+			: engine->update_document(key.c_str(), text.c_str())));
 delete [] scratch;
 delete [] mv_scratch;
+delete attr_set;
 
 if (handle < 0)
 	{
@@ -681,7 +1167,14 @@ long long top_k = info[1].As<Napi::Number>().Int64Value();
 if (top_k < 1)
 	return Napi::Array::New(env, 0);
 std::string mutable_query = query;		// engine may modify the buffer
-long long count = engine->search(&mutable_query[0], top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 3 && info[2].IsObject())
+	filterVal = info[2].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	return env.Undefined();
+long long count = (filter != NULL) ? engine->search(&mutable_query[0], top_k, filter) : engine->search(&mutable_query[0], top_k);
+delete filter;
 return hits_to_array(env, engine, count);
 }
 
@@ -717,7 +1210,17 @@ const float *vector = extract_vector(env, info[0], dimension, &scratch);
 if (vector == NULL)
 	return env.Undefined();		// TypeError already thrown
 
-long long count = engine->search_vector(vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 3 && info[2].IsObject())
+	filterVal = info[2].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_vector(vector, top_k, filter) : engine->search_vector(vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -775,7 +1278,17 @@ if (has_vector)
 		return env.Undefined();		// TypeError already thrown
 	}
 
-long long count = engine->search_hybrid(text_ptr, vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 4 && info[3].IsObject())
+	filterVal = info[3].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_hybrid(text_ptr, vector, top_k, filter) : engine->search_hybrid(text_ptr, vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -809,7 +1322,17 @@ const float *vector = extract_vector(env, info[0], dimension, &scratch);
 if (vector == NULL)
 	return env.Undefined();		// TypeError already thrown
 
-long long count = engine->search_vector_approx(vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 3 && info[2].IsObject())
+	filterVal = info[2].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_vector_approx(vector, top_k, filter) : engine->search_vector_approx(vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -864,7 +1387,17 @@ if (has_vector)
 		return env.Undefined();		// TypeError already thrown
 	}
 
-long long count = engine->search_hybrid_approx(text_ptr, vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 4 && info[3].IsObject())
+	filterVal = info[3].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_hybrid_approx(text_ptr, vector, top_k, filter) : engine->search_hybrid_approx(text_ptr, vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -898,7 +1431,17 @@ const float *vector = extract_vector(env, info[0], dimension, &scratch);
 if (vector == NULL)
 	return env.Undefined();		// TypeError already thrown
 
-long long count = engine->search_vector_hnsw(vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 3 && info[2].IsObject())
+	filterVal = info[2].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_vector_hnsw(vector, top_k, filter) : engine->search_vector_hnsw(vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -953,7 +1496,17 @@ if (has_vector)
 		return env.Undefined();		// TypeError already thrown
 	}
 
-long long count = engine->search_hybrid_hnsw(text_ptr, vector, top_k);
+Napi::Value filterVal = env.Undefined();
+if (info.Length() >= 4 && info[3].IsObject())
+	filterVal = info[3].As<Napi::Object>().Get("filter");
+ANT_filter *filter = parse_filter_option(env, filterVal, engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL) ? engine->search_hybrid_hnsw(text_ptr, vector, top_k, filter) : engine->search_hybrid_hnsw(text_ptr, vector, top_k);
+delete filter;
 delete [] scratch;
 return hits_to_array(env, engine, count);
 }
@@ -1044,7 +1597,17 @@ if (top_k < 1)
 	return Napi::Array::New(env, 0);
 	}
 
-long long count = engine->search_rerank(text_ptr, vector, query_multivector, num_query_vecs, first_stage_n, top_k);
+ANT_filter *filter = parse_filter_option(env, options.Get("filter"), engine);
+if (env.IsExceptionPending())
+	{
+	delete [] scratch;
+	delete [] mv_scratch;
+	return env.Undefined();
+	}
+long long count = (filter != NULL)
+	? engine->search_rerank(text_ptr, vector, query_multivector, num_query_vecs, first_stage_n, top_k, filter)
+	: engine->search_rerank(text_ptr, vector, query_multivector, num_query_vecs, first_stage_n, top_k);
+delete filter;
 delete [] scratch;
 delete [] mv_scratch;
 return hits_to_array(env, engine, count);

@@ -39,6 +39,8 @@ public:
 	static ANT_filter *in_string(const char *field, const char *const *values, int n);
 	static ANT_filter *and_(int n, ...);		// n child pointers, ownership transferred to the AND node
 	static ANT_filter *or_(int n, ...);
+	static ANT_filter *and_list(ANT_filter *const *children, int n);	// AND of n children (ownership transferred); n==0 => identity (matches all)
+	static ANT_filter *or_list(ANT_filter *const *children, int n);		// OR of n children (ownership transferred); n==0 => matches none
 	static ANT_filter *not_(ANT_filter *child);	// ownership transferred
 	long build(const ANT_attribute_schema *schema);		// 0 = ok (well-typed), nonzero = type/field error
 	// Task 5 implements this — declared only:
