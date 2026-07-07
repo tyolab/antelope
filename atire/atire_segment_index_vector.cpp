@@ -9,6 +9,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <dirent.h>
 #include <unistd.h>
 #include <time.h>
@@ -497,6 +498,114 @@ rerank_dimension_current = dimension;
 rerank_quant_current = quant;
 if (save_rerank_config() != 0)
 	{ rerank_dimension_current = 0; rerank_quant_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_ATTRIBUTES_CONFIG()
+	------------------------------------------------
+	Reads <dir>/attributes.config (magic/version/field_count/(name,type,multi)*).
+	Absent => leaves attribute_schema_current unchanged (unconfigured).
+	Garbage => treated as absent (defensive parse, mirrors load_rerank_config).
+*/
+long ATIRE_segment_index::load_attributes_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long field_count, i;
+char name[64];
+int32_t type, multi;
+const char *tag = "ANTATTR1";
+ANT_attribute_schema schema;
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/attributes.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&field_count, sizeof(field_count), 1, fp) != 1
+	|| field_count < 0 || field_count > ANT_attribute_schema::MAX_FIELDS)
+	{ fclose(fp); return 0; }
+
+for (i = 0; i < field_count; i++)
+	{
+	if (fread(name, sizeof(name), 1, fp) != 1
+		|| fread(&type, sizeof(type), 1, fp) != 1
+		|| fread(&multi, sizeof(multi), 1, fp) != 1)
+		{ fclose(fp); return 0; }
+	name[sizeof(name) - 1] = '\0';
+	if (schema.add_field(name, (int)type, (int)multi) != 0)
+		{ fclose(fp); return 0; }
+	}
+fclose(fp);
+attribute_schema_current = schema;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_ATTRIBUTES_CONFIG()
+	------------------------------------------------
+	Atomic write (temp + rename) of the index-wide attribute schema config.
+*/
+long ATIRE_segment_index::save_attributes_config(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long field_count = attribute_schema_current.count(), i;
+char name[64];
+int32_t type, multi;
+const char *tag = "ANTATTR1";
+
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/attributes.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&field_count, sizeof(field_count), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+for (i = 0; i < field_count; i++)
+	{
+	memset(name, 0, sizeof(name));
+	strncpy(name, attribute_schema_current.name(i), sizeof(name) - 1);
+	type = (int32_t)attribute_schema_current.type(i);
+	multi = (int32_t)attribute_schema_current.is_multi(i);
+	if (fwrite(name, sizeof(name), 1, fp) != 1 || fwrite(&type, sizeof(type), 1, fp) != 1
+		|| fwrite(&multi, sizeof(multi), 1, fp) != 1)
+		{ fclose(fp); remove(temp); return 1; }
+	}
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_ATTRIBUTES_CONFIG()
+	-------------------------------------------------
+	Configure the index-wide filterable attribute schema.  Requires the index
+	to be open.  Once set (non-empty), it is immutable: setting the SAME
+	schema again is a no-op success (idempotent), but any change is rejected.
+	Mirrors set_rerank_config()'s "first enable wins, reject different"
+	contract.
+*/
+long ATIRE_segment_index::set_attributes_config(const ANT_attribute_schema &schema)
+{
+if (directory == NULL)
+	return 1;					// must be open
+if (schema.count() == 0)
+	return 1;					// reject empty schema
+if (attribute_schema_current.count() != 0)		// already set: immutable
+	return attribute_schema_current.equals(schema) ? 0 : 1;
+attribute_schema_current = schema;
+if (save_attributes_config() != 0)
+	{ attribute_schema_current = ANT_attribute_schema(); return 1; }
 return 0;
 }
 

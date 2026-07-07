@@ -15,6 +15,8 @@
 #ifndef ATIRE_SEGMENT_INDEX_H_
 #define ATIRE_SEGMENT_INDEX_H_
 
+#include "../source/attribute_store.h"
+
 class ATIRE_API;
 class ATIRE_indexer;
 class ANT_index_manifest;
@@ -104,6 +106,8 @@ private:
 
 	long long rerank_dimension_current;		// 0 = rerank not configured
 	long rerank_quant_current;				// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+
+	ANT_attribute_schema attribute_schema_current;		// count()==0 => not configured
 
 	/* memory-segment vector buffer, parallel to the writer's docids */
 	float *writer_vector_data;
@@ -223,6 +227,14 @@ public:
 	long set_rerank_config(long long dimension, long quant_mode);	// immutable once set; 0 on success
 	long rerank_configured(void) { return rerank_dimension_current != 0; }
 	long long rerank_dimension(void) { return rerank_dimension_current; }
+
+	long load_attributes_config(void);
+	long save_attributes_config(void);
+	long set_attributes_config(const ANT_attribute_schema &schema);	// immutable once set; 0 on success
+	long attributes_configured(void) { return attribute_schema_current.count() != 0; }
+	long attribute_field_count(void) { return attribute_schema_current.count(); }
+	int attribute_field_type(long i) { return attribute_schema_current.type(i); }
+	const ANT_attribute_schema *attribute_schema(void) { return &attribute_schema_current; }
 
 	long set_durable(long on);				// before open(); 1 if already open; 0 on success -- enables the WAL
 	void set_wal_fsync(long on);			// fsync() every WAL append when on; may be called before or after open()

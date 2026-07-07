@@ -352,6 +352,7 @@ rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
 load_rerank_config();
+load_attributes_config();
 if (vector_config_pending)
 	{
 	if (vector_dimension_current != 0)

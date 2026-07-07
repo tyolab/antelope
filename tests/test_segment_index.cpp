@@ -2184,6 +2184,38 @@ delete [] dir;
 printf("test_rerank_config_persist OK\n");
 }
 
+static void test_attributes_config_persist(void)
+{
+char *dir = make_index_dir();
+{
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->attributes_configured() == 0);
+	ANT_attribute_schema s;
+	CHECK(s.add_field("tenant", ANT_attribute_schema::TYPE_STRING, 0) == 0);
+	CHECK(s.add_field("created", ANT_attribute_schema::TYPE_INT64, 0) == 0);
+	CHECK(s.add_field("lang", ANT_attribute_schema::TYPE_STRING, 1) == 0);
+	CHECK(s.add_field("archived", ANT_attribute_schema::TYPE_BOOL, 0) == 0);
+	CHECK(s.add_field("flags", ANT_attribute_schema::TYPE_BOOL, 1) != 0);		/* multi bool rejected */
+	CHECK(ix->set_attributes_config(s) == 0);
+	CHECK(ix->attributes_configured() != 0);
+	CHECK(ix->attribute_field_count() == 4);
+	delete ix;
+}
+{
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->attributes_configured() != 0);				/* persisted */
+	CHECK(ix->attribute_field_count() == 4);
+	ANT_attribute_schema other;
+	other.add_field("tenant", ANT_attribute_schema::TYPE_STRING, 0);
+	CHECK(ix->set_attributes_config(other) != 0);			/* different schema: rejected (immutable) */
+	delete ix;
+}
+delete [] dir;
+printf("test_attributes_config_persist OK\n");
+}
+
 static void test_flush_writes_signatures(void)
 {
 char *dir = make_index_dir();
@@ -3621,6 +3653,7 @@ test_approx_config_persists();
 test_hnsw_config_persists();
 test_quantization_config_persist();
 test_rerank_config_persist();
+test_attributes_config_persist();
 test_writer_multivector_capture();
 test_flush_writes_signatures();
 test_flush_builds_hnsw();
