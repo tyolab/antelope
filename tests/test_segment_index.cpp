@@ -2198,6 +2198,41 @@ static void test_writer_attribute_capture(void)
 	printf("test_writer_attribute_capture OK\n");
 }
 
+static void test_flush_writes_attr_pay(void)
+{
+	char *dir = make_index_dir();
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s;
+	s.add_field("n", ANT_attribute_schema::TYPE_INT64, 0);
+	s.add_field("tag", ANT_attribute_schema::TYPE_STRING, 1);
+	CHECK(ix->set_attributes_config(s) == 0);
+	long long i;
+	for (i = 0; i < 20; i++)
+		{
+		ANT_attribute_set A(ix->attribute_schema());
+		A.set_int(0, i);
+		if (i % 2 == 0) A.add_string(1, "even");
+		char pay[32]; int plen = sprintf(pay, "payload-%lld", i);
+		A.set_payload(pay, plen);
+		char key[16]; sprintf(key, "d%lld", i);
+		CHECK(ix->add_document(key, "<DOC>term term</DOC>", NULL, NULL, 0, &A) >= 0);
+		}
+	CHECK(ix->flush() == 0);
+	/* seg_*.attr and seg_*.pay now exist on disk */
+	CHECK(dir_has_glob(dir, "*.attr") == 1);
+	CHECK(dir_has_glob(dir, "*.pay") == 1);
+	/* reopen: schema persisted, still configured */
+	delete ix;
+	ATIRE_segment_index *ix2 = new ATIRE_segment_index();
+	CHECK(ix2->open(dir) == 0);
+	CHECK(ix2->attributes_configured() == 1);
+	CHECK(ix2->attribute_field_count() == 2);
+	delete ix2;
+	delete [] dir;
+	printf("test_flush_writes_attr_pay OK\n");
+}
+
 static void test_rerank_config_persist(void)
 {
 char *dir = make_index_dir();
@@ -3723,6 +3758,7 @@ test_global_stats_score_equality();
 	leaves that ordering-sensitive test on its original, known-good sequence.
 */
 test_writer_attribute_capture();
+test_flush_writes_attr_pay();
 test_wal_durability();
 test_wal_unhealthy();
 test_wal_replay_mid_autoflush();

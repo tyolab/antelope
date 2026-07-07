@@ -16,6 +16,7 @@
 #define ATIRE_SEGMENT_INDEX_H_
 
 #include "../source/attribute_store.h"
+#include "../source/payload_store.h"
 
 class ATIRE_API;
 class ATIRE_indexer;
@@ -56,6 +57,8 @@ public:
 	ANT_signature_store *signatures;	// NULL when absent/degraded/approximate-off
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
 	ANT_multivector_store *multivectors;	// V5 late-interaction sidecar; NULL unless rerank configured
+	ANT_attribute_store *attributes;	// filter columns; NULL unless attributes configured
+	ANT_payload_store *payload;			// opaque per-doc blob; NULL unless attributes configured
 	} ;
 
 private:

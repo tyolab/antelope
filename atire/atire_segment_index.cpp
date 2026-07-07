@@ -132,6 +132,8 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].signatures;
 	delete segments[which].hnsw_graph;
 	delete segments[which].multivectors;
+	delete segments[which].attributes;
+	delete segments[which].payload;
 	}
 delete [] segments;
 
@@ -176,6 +178,10 @@ remove(filename);
 segment_filename(filename, sizeof(filename), generation, "hnsw");
 remove(filename);
 segment_filename(filename, sizeof(filename), generation, "mvec");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "attr");
+remove(filename);
+segment_filename(filename, sizeof(filename), generation, "pay");
 remove(filename);
 }
 
@@ -1258,6 +1264,64 @@ if (rerank_configured() && writer_multivector_total > 0)
 		}
 	}
 
+/*
+	Filtered ANN: persist the memory segment's captured attribute columns
+	(.attr) and opaque payloads (.pay).  Both sidecars cover ALL
+	writer_documents docs -- a docid whose writer_attribute_sets slot is NULL
+	(or beyond capacity) yields an empty row / empty payload -- so the loaded
+	stores have document_count == the segment's doc count and are NOT treated
+	as degraded.  Only then do the filter's missing-field semantics (a doc
+	lacking a field => leaf false, NOT => true) apply correctly.  Best-effort
+	and non-fatal to the flush, exactly like the mvec block above.
+*/
+if (attributes_configured())
+	{
+	char attr_filename[1024], pay_filename[1024];
+	segment_filename(attr_filename, sizeof(attr_filename), writer_generation, "attr");
+	segment_filename(pay_filename, sizeof(pay_filename), writer_generation, "pay");
+	ANT_attribute_store_writer attw;
+	if (attw.create(attr_filename, &attribute_schema_current) == 0)
+		{
+		long attr_failed = 0;
+		long long docid, field, i, ncols = attribute_schema_current.count();
+		for (docid = 0; docid < writer_documents; docid++)
+			{
+			attw.begin_document();
+			ANT_attribute_set *set = (writer_attribute_sets != NULL && docid < writer_attribute_sets_capacity) ? writer_attribute_sets[docid] : NULL;
+			if (set != NULL)
+				for (field = 0; field < ncols; field++)
+					{
+					if (!set->has(field)) continue;
+					int type = attribute_schema_current.type(field);
+					int multi = attribute_schema_current.is_multi(field);
+					if (type == ANT_attribute_schema::TYPE_INT64)
+						{ if (multi) for (i = 0; i < set->ints(field); i++) attw.add_int(field, set->int_get(field, i));
+						  else attw.set_int(field, set->int_get(field, 0)); }
+					else if (type == ANT_attribute_schema::TYPE_STRING)
+						{ if (multi) for (i = 0; i < set->strings(field); i++) attw.add_string(field, set->string_get(field, i));
+						  else attw.set_string(field, set->string_get(field, 0)); }
+					else /* TYPE_BOOL */
+						attw.set_bool(field, set->boolean(field));
+					}
+			attw.end_document();
+			}
+		if (attw.finish() != 0) attr_failed = 1;
+		(void)attr_failed;	/* best-effort: a failed .attr leaves the segment filter-less for that seg; non-fatal */
+		}
+	ANT_payload_store_writer payw;
+	if (payw.create(pay_filename) == 0)
+		{
+		long long docid;
+		for (docid = 0; docid < writer_documents; docid++)
+			{
+			ANT_attribute_set *set = (writer_attribute_sets != NULL && docid < writer_attribute_sets_capacity) ? writer_attribute_sets[docid] : NULL;
+			if (set != NULL) { long long len = 0; const unsigned char *p = set->payload_bytes(&len); payw.append(p, len); }
+			else payw.append(NULL, 0);
+			}
+		if (payw.finish() != 0) { /* best-effort */ }
+		}
+	}
+
 segment_filename(del_filename, sizeof(del_filename), writer_generation, "del");
 if (writer_tombstones->count() > 0)
 	if (writer_tombstones->save(del_filename) != 0)
@@ -1457,6 +1521,20 @@ if (rerank_configured())
 	}
 else
 	segments[segment_count].multivectors = NULL;
+
+if (attributes_configured())
+	{
+	char attr_filename[1024], pay_filename[1024];
+	segment_filename(attr_filename, sizeof(attr_filename), generation, "attr");
+	segment_filename(pay_filename, sizeof(pay_filename), generation, "pay");
+	segments[segment_count].attributes = ANT_attribute_store::load(attr_filename, &attribute_schema_current, engine->get_document_count());
+	segments[segment_count].payload = ANT_payload_store::load(pay_filename, engine->get_document_count());
+	}
+else
+	{
+	segments[segment_count].attributes = NULL;
+	segments[segment_count].payload = NULL;
+	}
 
 segment_count++;
 
