@@ -735,19 +735,22 @@ struct PySegmentIndex
 	}
 
 	/*
-		PYSEGMENTINDEX::ADD_DOCUMENT()
+		PYSEGMENTINDEX::WRITE_DOCUMENT()
 		---------------------------------
-		Lexical-only when vector is None; otherwise converts vector via
-		extract_vector(). When multi_vectors is also given, flattens it via
+		Shared body for add_document() and update_document(). Lexical-only
+		when vector is None; otherwise converts vector via extract_vector().
+		When multi_vectors is also given, flattens it via
 		extract_multivectors() and calls the 5-arg engine overload; otherwise
 		calls the 3-arg (vector-only) or 2-arg (lexical-only) overload. Rejects
 		zero vectors under the cosine metric before it reaches the engine
 		(mirrors the Node AddDocument zero-vector rejection, segment_index.cpp
 		~529-540). When `attributes` and/or `payload` are given,
 		build_attribute_set() constructs an ANT_attribute_set and the 6-arg
-		engine overload is used instead.
+		engine overload is used instead. `is_update` selects between the
+		engine's add_document() (insert) and update_document() (upsert)
+		overload families; both share identical signatures/return semantics.
 	*/
-	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none(), py::object attributes = py::none(), py::object payload = py::none())
+	py::dict write_document(bool is_update, const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none(), py::object attributes = py::none(), py::object payload = py::none())
 	{
 	require_open();
 	std::vector<float> vec;
@@ -777,25 +780,80 @@ struct PySegmentIndex
 			mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
 			mvptr = num_mv > 0 ? mv.data() : NULL;
 			}
-		handle = engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set);
+		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set) : engine->add_document(key.c_str(), text.c_str(), vptr, mvptr, num_mv, set);
 		delete set;
 		}
 	else if (!multi_vectors.is_none())
 		{
 		long long num_mv = 0;
 		std::vector<float> mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);
-		handle = engine->add_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv);
+		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv) : engine->add_document(key.c_str(), text.c_str(), vptr, num_mv > 0 ? mv.data() : NULL, num_mv);
 		}
 	else if (vptr != NULL)
-		handle = engine->add_document(key.c_str(), text.c_str(), vptr);
+		handle = is_update ? engine->update_document(key.c_str(), text.c_str(), vptr) : engine->add_document(key.c_str(), text.c_str(), vptr);
 	else
-		handle = engine->add_document(key.c_str(), text.c_str());
+		handle = is_update ? engine->update_document(key.c_str(), text.c_str()) : engine->add_document(key.c_str(), text.c_str());
 	if (handle == -1)
-		throw std::runtime_error("add_document failed (empty document or index not writable)");
+		throw std::runtime_error(is_update ? "update_document failed (empty document or index not writable)" : "add_document failed (empty document or index not writable)");
 	py::dict d;
 	d["generation"] = handle >> 40;
 	d["docid"] = handle & ((1LL << 40) - 1);
 	return d;
+	}
+
+	/*
+		PYSEGMENTINDEX::ADD_DOCUMENT()
+		---------------------------------
+		Inserts a new document. See write_document() for the shared body.
+	*/
+	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none(), py::object attributes = py::none(), py::object payload = py::none())
+	{
+	return write_document(false, key, text, vector, multi_vectors, attributes, payload);
+	}
+
+	/*
+		PYSEGMENTINDEX::UPDATE_DOCUMENT()
+		------------------------------------
+		Upserts a document (replaces the existing document under `key`, or
+		inserts it if unknown). See write_document() for the shared body.
+	*/
+	py::dict update_document(const std::string &key, const std::string &text, py::object vector = py::none(), py::object multi_vectors = py::none(), py::object attributes = py::none(), py::object payload = py::none())
+	{
+	return write_document(true, key, text, vector, multi_vectors, attributes, payload);
+	}
+
+	/*
+		PYSEGMENTINDEX::DELETE_DOCUMENT()
+		------------------------------------
+		Deletes a document by key. Returns True if the key was known and
+		deleted, False if the key was unknown (engine returns 1).
+	*/
+	bool delete_document(const std::string &key)
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->delete_document(key.c_str());
+	}
+	return rc == 0;
+	}
+
+	/*
+		PYSEGMENTINDEX::MAINTAIN()
+		------------------------------
+		Runs the tiered merge policy to quiescence. Throws on failure.
+	*/
+	void maintain()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->maintain();
+	}
+	if (rc != 0)
+		throw std::runtime_error("maintain failed");
 	}
 
 	/*
@@ -1093,6 +1151,9 @@ PYBIND11_MODULE(_core, m)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
 		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
+		.def("update_document", &PySegmentIndex::update_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
+		.def("delete_document", &PySegmentIndex::delete_document, py::arg("key"))
+		.def("maintain", &PySegmentIndex::maintain)
 		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"), py::arg("filter") = py::none())
 		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
 		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"), py::arg("filter") = py::none())
