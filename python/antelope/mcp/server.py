@@ -41,6 +41,17 @@ class _Server:
             raise KeyError(name)
         return tm.get_tool(name).fn(**args)
 
+    async def read_resource_for_test(self, uri):
+        """Read a registered resource's content by URI.
+
+        Async because the installed FastMCP's ResourceManager.get_resource()
+        is itself a coroutine function (returns None if uri is unregistered);
+        the resource object's own .read() is async too."""
+        res = await self.mcp._resource_manager.get_resource(uri)
+        if res is None:
+            raise KeyError(uri)
+        return await res.read()
+
 
 def build_server(index_dir: str, writable: bool = False) -> "_Server":
     ix = antelope.SegmentIndex()
@@ -61,5 +72,18 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
         """Number of live documents in the index."""
         return await asyncio.to_thread(ix.document_count)
 
-    # schema resource (Task 12) + writable tools (Task 13) are added later.
+    @mcp.resource("antelope://index/schema")
+    def index_schema() -> dict:
+        """Attribute schema (filterable fields + types) and index config."""
+        return {"attributes": ix.schema(), "config": ix.info()}
+
+    @mcp.tool()
+    async def index_info() -> dict:
+        """Attribute schema + index config (dimension, metric, document_count).
+
+        Use this to discover which fields you can filter on and how to shape a
+        filter for the `search` tool."""
+        return await asyncio.to_thread(lambda: {"attributes": ix.schema(), "config": ix.info()})
+
+    # writable tools (Task 13) are added later.
     return _Server(mcp, ix, writable, index_dir)

@@ -1,5 +1,7 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/stl.h>
+#include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -664,6 +666,35 @@ struct PySegmentIndex
 	if (engine == NULL)
 		throw std::runtime_error("open failed: bad directory, corrupt index, or vector config mismatch");
 
+	/*
+		Backfill option_metric from the persisted vector.config when this
+		PySegmentIndex was constructed without an explicit metric kwarg (the
+		common case for a read-only reopen of a pre-existing index, e.g. the
+		MCP server's build_server()): ATIRE_segment_index has no public
+		getter for the restored metric, so option_metric would otherwise
+		silently read back as the constructor default (dot) even though the
+		engine itself is genuinely scoring with the real, persisted metric.
+		This mirrors load_vector_config()'s own parsing of the file (two
+		lines: dimension, metric); if the file is absent/short/garbage,
+		option_metric is left as-is.
+	*/
+	if (engine->vector_dimension() > 0)
+		{
+		std::string path = directory + "/vector.config";
+		FILE *fp = fopen(path.c_str(), "rb");
+		if (fp != NULL)
+			{
+			char line[64];
+			long metric = -1;
+			if (fgets(line, sizeof(line), fp) != NULL &&			// dimension line (skip)
+				fgets(line, sizeof(line), fp) != NULL)				// metric line
+				metric = atol(line);
+			fclose(fp);
+			if (metric >= ATIRE_segment_index::VECTOR_METRIC_DOT && metric <= ATIRE_segment_index::VECTOR_METRIC_L2)
+				option_metric = metric;
+			}
+		}
+
 	/* post-open, all non-fatal */
 	if (option_approx_bits >= 0)
 		{
@@ -706,6 +737,55 @@ struct PySegmentIndex
 	{
 	require_open();
 	return engine->vector_dimension();
+	}
+
+	/*
+		PYSEGMENTINDEX::SCHEMA()
+		---------------------------
+		[{name, type, multi}] for every configured attribute field; [] when no
+		attribute schema is configured on this index.
+	*/
+	py::list schema()
+	{
+	require_open();
+	py::list out;
+	if (!engine->attributes_configured())
+		return out;
+	const ANT_attribute_schema *s = engine->attribute_schema();
+	static const char *type_names[] = {"int64", "string", "bool"};
+	for (long i = 0; i < s->count(); i++)
+		{
+		py::dict f;
+		f["name"] = std::string(s->name(i));
+		int t = s->type(i);
+		f["type"] = std::string((t >= 0 && t <= 2) ? type_names[t] : "unknown");
+		f["multi"] = (bool)s->is_multi(i);
+		out.append(f);
+		}
+	return out;
+	}
+
+	/*
+		PYSEGMENTINDEX::INFO()
+		--------------------------
+		{dimension, metric, document_count}. dimension 0 => vectors disabled.
+		metric comes from option_metric (see open()'s post-open backfill,
+		which restores it from the persisted vector.config when this
+		PySegmentIndex was constructed without an explicit metric kwarg --
+		e.g. a read-only MCP server reopening a pre-existing index -- since
+		ATIRE_segment_index has no public getter for the restored metric).
+	*/
+	py::dict info()
+	{
+	require_open();
+	py::dict d;
+	d["dimension"] = (long long)engine->vector_dimension();
+	const char *metric = (option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE) ? "cosine"
+	                    : (option_metric == ATIRE_segment_index::VECTOR_METRIC_L2)     ? "l2"
+	                    : "dot";
+	d["metric"] = std::string(metric);
+	d["document_count"] = (long long)engine->get_document_count();
+	return d;
 	}
 
 	/*
@@ -1150,6 +1230,8 @@ PYBIND11_MODULE(_core, m)
 		.def("close", &PySegmentIndex::close)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
+		.def("schema", &PySegmentIndex::schema)
+		.def("info", &PySegmentIndex::info)
 		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
 		.def("update_document", &PySegmentIndex::update_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none(), py::arg("multi_vectors") = py::none(), py::arg("attributes") = py::none(), py::arg("payload") = py::none())
 		.def("delete_document", &PySegmentIndex::delete_document, py::arg("key"))
