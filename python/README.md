@@ -200,3 +200,72 @@ ix.search("alpha", 10, filter={
 | `attributes`/`payload` given but the index has no `attributes` schema | `ValueError` |
 
 `python/tests/test_errors.py` is the regression lock for this table.
+
+## MCP server
+
+`antelope.mcp` is a [FastMCP](https://github.com/modelcontextprotocol/python-sdk)
+stdio server that exposes a single open index to LLM agents/clients over the
+[Model Context Protocol](https://modelcontextprotocol.io). Install the `mcp`
+extra to get it:
+
+```sh
+pip install "./python[mcp]"
+```
+
+### Launching
+
+```sh
+antelope-mcp --index /path/to/index              # read-only
+antelope-mcp --index /path/to/index --writable   # + mutation tools
+# or:
+python -m antelope.mcp --index /path/to/index
+```
+
+The index directory can also come from the `ANTELOPE_INDEX` environment
+variable instead of `--index`. The server speaks stdio, so it's meant to be
+launched as a subprocess by an MCP client (Claude Desktop, an agent framework,
+the `mcp` Python SDK, …) — it does not listen on a network port.
+
+### Tools and resources (read-only, default)
+
+| tool | signature | returns |
+|---|---|---|
+| `search` | `(query: str, k: int = 10, filter: dict \| None = None)` | `list[{key, score, payload?}]` — lexical search, same `filter` grammar as `SegmentIndex.search` |
+| `document_count` | `()` | `int` |
+| `index_info` | `()` | `{attributes, config}` — the attribute schema plus `{dimension, metric, document_count}` |
+
+| resource | contents |
+|---|---|
+| `antelope://index/schema` | `{attributes, config}` (same shape as `index_info`) |
+
+### Mutation tools (`--writable` only)
+
+`add_document`, `update_document`, `delete_document`, `flush`, `maintain` —
+lexical-only (no `vector`/`multi_vectors` parameters exposed), mirroring
+`SegmentIndex`'s write surface. Absent entirely unless the server is started
+with `--writable`.
+
+Payloads come back on `search` hits as UTF-8 text under `payload` when the
+stored bytes decode cleanly, or base64 under `payload_b64` otherwise.
+
+### Client example
+
+```python
+import asyncio, sys
+from mcp import ClientSession, StdioServerParameters
+from mcp.client.stdio import stdio_client
+
+params = StdioServerParameters(
+    command=sys.executable, args=["-m", "antelope.mcp", "--index", "/path/to/index"],
+)
+
+async def main():
+    async with stdio_client(params) as (read, write):
+        async with ClientSession(read, write) as session:
+            await session.initialize()
+            tools = await session.list_tools()
+            result = await session.call_tool("search", {"query": "apple", "k": 5})
+            hits = result.structuredContent["result"]  # [{key, score, ...}, ...]
+
+asyncio.run(main())
+```
