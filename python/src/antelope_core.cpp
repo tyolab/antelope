@@ -7,6 +7,21 @@
 namespace py = pybind11;
 
 /*
+	HIT
+	----
+	Plain-data result row returned by search(); mirrors hits_to_array in the
+	Node addon (nodejs/addon/segment_index.cpp ~line 930).
+*/
+struct Hit
+{
+	std::string key;
+	double score;
+	long long generation;
+	long long docid;
+	py::object payload;   // py::bytes when present, else py::none()
+};
+
+/*
 	PYSEGMENTINDEX
 	---------------
 	pybind11-facing wrapper around ATIRE_segment_index, mirroring the Node-API
@@ -285,6 +300,71 @@ struct PySegmentIndex
 	require_open();
 	return engine->vector_dimension();
 	}
+
+	/*
+		PYSEGMENTINDEX::HITS_TO_LIST()
+		---------------------------------
+		Builds the Python-visible list of Hit objects from the engine's
+		current result buffer. Caller must hold the GIL (this constructs
+		Python objects).
+	*/
+	py::list hits_to_list(long long count)
+	{
+	py::list out;
+	for (long long i = 0; i < count; i++)
+		{
+		ATIRE_segment_index::hit *h = engine->get_hit(i);
+		Hit hit;
+		hit.key = (h->filename != NULL) ? h->filename : "";
+		hit.score = h->score;
+		hit.generation = h->generation;
+		hit.docid = h->docid;
+		hit.payload = (h->payload != NULL && h->payload_length > 0)
+			? py::object(py::bytes(reinterpret_cast<const char*>(h->payload), (size_t)h->payload_length))
+			: py::object(py::none());
+		out.append(hit);
+		}
+	return out;
+	}
+
+	/*
+		PYSEGMENTINDEX::ADD_DOCUMENT()
+		---------------------------------
+		Lexical-only 2-arg form (key, text). Later tasks extend this with
+		vector/multi_vectors/attributes/payload.
+	*/
+	py::dict add_document(const std::string &key, const std::string &text)
+	{
+	require_open();
+	long long handle = engine->add_document(key.c_str(), text.c_str());
+	if (handle == -1)
+		throw std::runtime_error("add_document failed (empty document or index not writable)");
+	py::dict d;
+	d["generation"] = handle >> 40;
+	d["docid"] = handle & ((1LL << 40) - 1);
+	return d;
+	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH()
+		----------------------------
+		Lexical search. The engine mutates the query buffer in place, so a
+		writable copy is passed rather than the const std::string's data().
+		The GIL is released only around the engine call.
+	*/
+	py::list search(const std::string &text, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::string buf = text;
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search(&buf[0], k);
+	}
+	return hits_to_list(count);
+	}
 };
 
 PYBIND11_MODULE(_core, m)
@@ -296,12 +376,22 @@ PYBIND11_MODULE(_core, m)
 		return true;
 	});
 
+	py::class_<Hit>(m, "Hit")
+		.def_readonly("key", &Hit::key)
+		.def_readonly("score", &Hit::score)
+		.def_readonly("generation", &Hit::generation)
+		.def_readonly("docid", &Hit::docid)
+		.def_readonly("payload", &Hit::payload)
+		.def("__repr__", [](const Hit &h){ return std::string("<Hit key=") + h.key + ">"; });
+
 	py::class_<PySegmentIndex>(m, "SegmentIndex")
 		.def(py::init([](py::kwargs kw) { return new PySegmentIndex(kw); }))
 		.def("open", &PySegmentIndex::open, py::arg("directory"))
 		.def("close", &PySegmentIndex::close)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
+		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"))
+		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
 }
