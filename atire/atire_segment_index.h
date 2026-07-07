@@ -31,6 +31,7 @@ class ANT_write_ahead_log;
 class ANT_signature;
 class ANT_signature_store;
 class ANT_hnsw;
+class ANT_filter;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -191,15 +192,17 @@ private:
 	void writer_attribute_capture(long long docid, const ANT_attribute_set *attributes);	// deep-clone into the per-docid attribute buffer (Task 6: capture only)
 	void reset_writer_vectors(void);
 
-	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
+	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);
 	long long vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best);	// signature-prefiltered gatherer; caller guarantees metric != L2 and approximate configured
 	// exact-scan the live memory buffer into best[] (shared tail of all three vector_candidates_* gatherers)
-	void scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k);
+	void scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits = NULL);
+	unsigned char *evaluate_filter_for_segment(long long which, const ANT_filter *filter);	// per-disk-segment match bitset (caller frees); NULL if filter==NULL
+	unsigned char *evaluate_filter_for_live(const ANT_filter *filter);						// live-buffer match bitset (caller frees); NULL if filter==NULL
 	double maxsim_live(long long docid, const float *query_vecs, long long num_query_vecs);	// MaxSim over the writer's live multi-vector buffer for one docid
 	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
 	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW };
 	// unified cores behind the public search_vector*/search_hybrid* wrappers; mode picks the gatherer, everything else (sort/fuse/publish) is identical
-	long long search_vector_impl(const float *query, long long top_k, vector_search_mode mode);
+	long long search_vector_impl(const float *query, long long top_k, vector_search_mode mode, const ANT_filter *filter = NULL);
 	long long search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode);
 	char *resolve_hit_filename(long long generation, long long docid, char *buffer, long long buffer_size);
 	void populate_hit_payload(hit *slot);	// fills slot->payload/payload_length from the owning segment (or live buffer) by slot->generation+docid
@@ -304,6 +307,7 @@ public:
 
 	long long search(char *query, long long top_k);			// returns number of hits stored
 	long long search_vector(const float *query, long long top_k);	// exact top-k across memory buffer + disk stores
+	long long search_vector(const float *query, long long top_k, const ANT_filter *filter);	// filtered exact
 	long long search_vector_approx(const float *query, long long top_k);	// signature-prefiltered top-k; transparently falls back to exact for L2 / unconfigured
 	long long search_hybrid(char *query_text, const float *query_vector, long long top_k);	// RRF fusion of lexical + vector top-k; either side may be absent
 	long long search_hybrid_approx(char *query_text, const float *query_vector, long long top_k);	// like search_hybrid(), but the vector leg is signature-prefiltered; transparently falls back to search_hybrid() for L2 / unconfigured

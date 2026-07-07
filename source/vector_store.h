@@ -74,7 +74,7 @@ public:
 	void reconstruct(long long docid, float *out);
 	double score(long long docid, const float *query, long metric);
 
-	void scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k);
+	void scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits = NULL);
 
 	static long normalize(float *vector, long long dimension);	// in place; nonzero if magnitude is zero
 	static double kernel(const float *a, const float *b, long long dimension, long metric);

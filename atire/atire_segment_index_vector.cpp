@@ -26,6 +26,7 @@
 #include "../source/version.h"
 #include "../source/index_merge.h"
 #include "../source/vector_store.h"
+#include "../source/filter.h"
 #include "../source/wal.h"
 #include "../source/signature.h"
 #include "../source/signature_store.h"
@@ -933,7 +934,7 @@ return (writer_multivector_counts != NULL && docid < writer_multivector_counts_c
 	vector_candidates_* gatherers, so it lives here once.  Expects query already
 	normalized in cosine mode (each gatherer normalizes up front).
 */
-void ATIRE_segment_index::scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k)
+void ATIRE_segment_index::scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits)
 {
 long long docid;
 
@@ -943,8 +944,45 @@ for (docid = 0; docid < writer_documents; docid++)
 		continue;
 	if (writer_tombstones->is_deleted(docid))
 		continue;
+	if (filter_bits != NULL && !(filter_bits[docid >> 3] & (1 << (docid & 7))))
+		continue;
 	ANT_vector_candidate_insert(best, best_count, top_k, ANT_vector_store::kernel(query, writer_vector_data + docid * vector_dimension_current, vector_dimension_current, vector_metric), writer_generation, docid);
 	}
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::EVALUATE_FILTER_FOR_SEGMENT()
+	--------------------------------------------------
+	Evaluate `filter` against disk segment `which`'s attribute store into a
+	fresh match bitset (caller frees).  NULL filter => NULL (unfiltered).  A
+	NULL/degraded attribute store yields an all-zero bitset (nothing admitted).
+*/
+unsigned char *ATIRE_segment_index::evaluate_filter_for_segment(long long which, const ANT_filter *filter)
+{
+if (filter == NULL)
+	return NULL;
+long long docs = segments[which].engine->get_document_count();
+long long bytes = (docs + 7) / 8;
+unsigned char *bits = new unsigned char[bytes > 0 ? bytes : 1];
+filter->evaluate(segments[which].attributes, docs, bits);	/* attributes NULL/degraded => all-zero => nothing admitted from this segment */
+return bits;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::EVALUATE_FILTER_FOR_LIVE()
+	-----------------------------------------------
+	Evaluate `filter` against the live NRT buffer's captured attribute sets into
+	a fresh match bitset (caller frees).  NULL filter => NULL (unfiltered).
+*/
+unsigned char *ATIRE_segment_index::evaluate_filter_for_live(const ANT_filter *filter)
+{
+if (filter == NULL)
+	return NULL;
+long long docs = writer_documents;
+long long bytes = (docs + 7) / 8;
+unsigned char *bits = new unsigned char[bytes > 0 ? bytes : 1];
+filter->evaluate_live(writer_attribute_sets, writer_attribute_sets_capacity, docs, bits);
+return bits;
 }
 
 /*
@@ -955,7 +993,7 @@ for (docid = 0; docid < writer_documents; docid++)
 	normalized at insertion -- see add_document_core()).  Returns the
 	candidate count; caller supplies best[top_k].
 */
-long long ATIRE_segment_index::vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best)
+long long ATIRE_segment_index::vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
 {
 long long which, best_count = 0;
 float *normalized = NULL;
@@ -979,10 +1017,14 @@ for (which = 0; which < segment_count; which++)
 	if (segments[which].vectors != NULL)
 		{
 		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k);
+		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+		delete [] fbits;
 		}
 
-scan_live_buffer_exact(query, best, &best_count, top_k);
+unsigned char *lbits = evaluate_filter_for_live(filter);
+scan_live_buffer_exact(query, best, &best_count, top_k, lbits);
+delete [] lbits;
 
 delete [] normalized;
 return best_count;
@@ -1018,7 +1060,7 @@ return one->docid < two->docid ? -1 : (one->docid == two->docid ? 0 : 1);
 	hits' filenames freed at entry) -- results[]/results_count are shared with
 	search(); only one of the two result sets exists at a time.
 */
-long long ATIRE_segment_index::search_vector_impl(const float *query, long long top_k, vector_search_mode mode)
+long long ATIRE_segment_index::search_vector_impl(const float *query, long long top_k, vector_search_mode mode, const ANT_filter *filter)
 {
 char filename_buffer[4096];
 long long which, count;
@@ -1032,7 +1074,7 @@ if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 best = new ANT_vector_candidate[top_k];
 count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best)
 	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best)
-	: vector_candidates(query, top_k, best);
+	: vector_candidates(query, top_k, best, filter);
 qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
 
 for (which = 0; which < count; which++)
@@ -1070,6 +1112,11 @@ return results_count;
 long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
 {
 return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);
+}
+
+long long ATIRE_segment_index::search_vector(const float *query, long long top_k, const ANT_filter *filter)
+{
+return search_vector_impl(query, top_k, VECTOR_MODE_EXACT, filter);
 }
 
 /*

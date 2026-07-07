@@ -246,7 +246,7 @@ return sum;
 	Exhaustive scan of present, non-tombstoned documents; tombstones filtered
 	inline so no over-fetch is needed on the vector side.
 */
-void ANT_vector_store::scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k)
+void ANT_vector_store::scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits)
 {
 long long docid;
 
@@ -257,6 +257,8 @@ for (docid = 0; docid < documents; docid++)
 	if (!has(docid))
 		continue;
 	if (tombstones != NULL && tombstones->is_deleted(docid))
+		continue;
+	if (filter_bits != NULL && !(filter_bits[docid >> 3] & (1 << (docid & 7))))
 		continue;
 	ANT_vector_candidate_insert(best, best_count, top_k, score(docid, query, metric), generation, docid);	// score() handles both backends
 	}
