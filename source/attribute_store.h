@@ -142,4 +142,50 @@ public:
 	void abandon(void);
 } ;
 
+/*
+	class ANT_ATTRIBUTE_SET
+	-------------------------
+	A caller-filled, per-document typed attribute builder plus an opaque
+	payload blob.  Deep-copyable (clone()) and enumerable so the NRT writer
+	can capture a snapshot at add_document() time and later drain it to the
+	.attr / payload sidecars at flush.  Setters that reference an out-of-range
+	field index (or a NULL schema) are silent no-ops -- the real type checking
+	happened at schema build time.
+*/
+class ANT_attribute_set
+{
+	const ANT_attribute_schema *schema;
+	int present_flag[ANT_attribute_schema::MAX_FIELDS];
+	long long *int_vals[ANT_attribute_schema::MAX_FIELDS];
+	long int_count[ANT_attribute_schema::MAX_FIELDS];
+	long int_cap[ANT_attribute_schema::MAX_FIELDS];
+	char **str_vals[ANT_attribute_schema::MAX_FIELDS];
+	long str_count[ANT_attribute_schema::MAX_FIELDS];
+	long str_cap[ANT_attribute_schema::MAX_FIELDS];
+	int bool_vals[ANT_attribute_schema::MAX_FIELDS];
+	unsigned char *payload;
+	long long payload_len;
+public:
+	ANT_attribute_set(const ANT_attribute_schema *schema);
+	~ANT_attribute_set();
+	// setters (field = schema field index; out-of-range or type-mismatched field is a silent no-op):
+	void set_int(long field, long long value);		// single: clears then holds exactly this value
+	void add_int(long field, long long value);		// multi: append
+	void set_string(long field, const char *value);	// single: clears then holds exactly this value
+	void add_string(long field, const char *value);	// multi: append
+	void set_bool(long field, int value);
+	void set_payload(const void *ptr, long long len);	// copies len bytes; len 0 / ptr NULL clears
+	// accessors (Task 7 + test hooks):
+	const ANT_attribute_schema *get_schema(void) const { return schema; }
+	int has(long field) const;						// present_flag (0/1)
+	long present_field_count(void) const;			// number of fields with present_flag set
+	long ints(long field) const;					// # int values held
+	long long int_get(long field, long i) const;
+	long strings(long field) const;					// # string values held
+	const char *string_get(long field, long i) const;
+	int boolean(long field) const;					// bool value (0/1)
+	const unsigned char *payload_bytes(long long *len) const;	// (ptr,len); (NULL,0) if none
+	ANT_attribute_set *clone(void) const;			// deep heap copy
+} ;
+
 #endif /* ATTRIBUTE_STORE_H_ */

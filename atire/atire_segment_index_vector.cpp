@@ -57,6 +57,15 @@ writer_multivector_counts = NULL;
 writer_multivector_capacity = 0;
 writer_multivector_total = 0;
 writer_multivector_counts_capacity = 0;
+
+if (writer_attribute_sets != NULL)
+	{
+	for (long long i = 0; i < writer_attribute_sets_capacity; i++)
+		delete writer_attribute_sets[i];
+	delete [] writer_attribute_sets;
+	writer_attribute_sets = NULL;
+	}
+writer_attribute_sets_capacity = 0;
 }
 
 /*

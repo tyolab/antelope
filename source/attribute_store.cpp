@@ -1156,3 +1156,269 @@ for (f = 0; f < ANT_attribute_schema::MAX_FIELDS; f++)
 	dict_count[f] = 0;
 	}
 }
+
+/*
+	ANT_ATTRIBUTE_SET::ANT_ATTRIBUTE_SET()
+	----------------------------------------
+	Zero-init every per-field array; no values held and no payload.
+*/
+ANT_attribute_set::ANT_attribute_set(const ANT_attribute_schema *schema)
+{
+long f;
+
+this->schema = schema;
+for (f = 0; f < ANT_attribute_schema::MAX_FIELDS; f++)
+	{
+	present_flag[f] = 0;
+	int_vals[f] = NULL;
+	int_count[f] = 0;
+	int_cap[f] = 0;
+	str_vals[f] = NULL;
+	str_count[f] = 0;
+	str_cap[f] = 0;
+	bool_vals[f] = 0;
+	}
+payload = NULL;
+payload_len = 0;
+}
+
+/*
+	ANT_ATTRIBUTE_SET::~ANT_ATTRIBUTE_SET()
+	-----------------------------------------
+*/
+ANT_attribute_set::~ANT_attribute_set()
+{
+long f, i;
+
+for (f = 0; f < ANT_attribute_schema::MAX_FIELDS; f++)
+	{
+	delete [] int_vals[f];
+	if (str_vals[f] != NULL)
+		{
+		for (i = 0; i < str_count[f]; i++)
+			free(str_vals[f][i]);
+		delete [] str_vals[f];
+		}
+	}
+free(payload);
+}
+
+/*
+	ANT_ATTRIBUTE_SET::SET_INT()
+	------------------------------
+	Single-valued: clear then append exactly this value.
+*/
+void ANT_attribute_set::set_int(long field, long long value)
+{
+if (schema == NULL || field < 0 || field >= schema->count())
+	return;
+present_flag[field] = 1;
+int_count[field] = 0;
+add_int(field, value);
+}
+
+/*
+	ANT_ATTRIBUTE_SET::ADD_INT()
+	------------------------------
+	Multi-valued: mark present and append (grow geometrically).
+*/
+void ANT_attribute_set::add_int(long field, long long value)
+{
+if (schema == NULL || field < 0 || field >= schema->count())
+	return;
+present_flag[field] = 1;
+if (int_count[field] >= int_cap[field])
+	{
+	long new_cap = int_cap[field] == 0 ? 4 : int_cap[field] * 2;
+	long long *grown = new long long[new_cap];
+	if (int_vals[field] != NULL)
+		memcpy(grown, int_vals[field], (size_t)(int_count[field] * sizeof(long long)));
+	delete [] int_vals[field];
+	int_vals[field] = grown;
+	int_cap[field] = new_cap;
+	}
+int_vals[field][int_count[field]++] = value;
+}
+
+/*
+	ANT_ATTRIBUTE_SET::SET_STRING()
+	---------------------------------
+	Single-valued: clear then append exactly this value.
+*/
+void ANT_attribute_set::set_string(long field, const char *value)
+{
+long i;
+
+if (schema == NULL || field < 0 || field >= schema->count())
+	return;
+present_flag[field] = 1;
+if (str_vals[field] != NULL)
+	for (i = 0; i < str_count[field]; i++)
+		{
+		free(str_vals[field][i]);
+		str_vals[field][i] = NULL;
+		}
+str_count[field] = 0;
+add_string(field, value);
+}
+
+/*
+	ANT_ATTRIBUTE_SET::ADD_STRING()
+	---------------------------------
+	Multi-valued: mark present and append an owned copy (grow geometrically).
+*/
+void ANT_attribute_set::add_string(long field, const char *value)
+{
+char *copy;
+
+if (schema == NULL || field < 0 || field >= schema->count() || value == NULL)
+	return;
+present_flag[field] = 1;
+if (str_count[field] >= str_cap[field])
+	{
+	long new_cap = str_cap[field] == 0 ? 4 : str_cap[field] * 2;
+	char **grown = new char *[new_cap];
+	if (str_vals[field] != NULL)
+		memcpy(grown, str_vals[field], (size_t)(str_count[field] * sizeof(char *)));
+	delete [] str_vals[field];
+	str_vals[field] = grown;
+	str_cap[field] = new_cap;
+	}
+copy = (char *)malloc(strlen(value) + 1);
+strcpy(copy, value);
+str_vals[field][str_count[field]++] = copy;
+}
+
+/*
+	ANT_ATTRIBUTE_SET::SET_BOOL()
+	-------------------------------
+*/
+void ANT_attribute_set::set_bool(long field, int value)
+{
+if (schema == NULL || field < 0 || field >= schema->count())
+	return;
+present_flag[field] = 1;
+bool_vals[field] = value ? 1 : 0;
+}
+
+/*
+	ANT_ATTRIBUTE_SET::SET_PAYLOAD()
+	----------------------------------
+	Replace the opaque payload with a copy of len bytes; len 0 / ptr NULL clears.
+*/
+void ANT_attribute_set::set_payload(const void *ptr, long long len)
+{
+free(payload);
+payload = NULL;
+payload_len = 0;
+if (ptr == NULL || len <= 0)
+	return;
+payload = (unsigned char *)malloc((size_t)len);
+memcpy(payload, ptr, (size_t)len);
+payload_len = len;
+}
+
+/*
+	ANT_ATTRIBUTE_SET accessors
+	-----------------------------
+*/
+int ANT_attribute_set::has(long field) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS)
+	return 0;
+return present_flag[field] ? 1 : 0;
+}
+
+long ANT_attribute_set::present_field_count(void) const
+{
+long f, n = 0;
+
+for (f = 0; f < ANT_attribute_schema::MAX_FIELDS; f++)
+	if (present_flag[f])
+		n++;
+return n;
+}
+
+long ANT_attribute_set::ints(long field) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS)
+	return 0;
+return int_count[field];
+}
+
+long long ANT_attribute_set::int_get(long field, long i) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS || i < 0 || i >= int_count[field])
+	return 0;
+return int_vals[field][i];
+}
+
+long ANT_attribute_set::strings(long field) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS)
+	return 0;
+return str_count[field];
+}
+
+const char *ANT_attribute_set::string_get(long field, long i) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS || i < 0 || i >= str_count[field])
+	return NULL;
+return str_vals[field][i];
+}
+
+int ANT_attribute_set::boolean(long field) const
+{
+if (field < 0 || field >= ANT_attribute_schema::MAX_FIELDS)
+	return 0;
+return bool_vals[field] ? 1 : 0;
+}
+
+const unsigned char *ANT_attribute_set::payload_bytes(long long *len) const
+{
+if (len != NULL)
+	*len = payload_len;
+return payload;
+}
+
+/*
+	ANT_ATTRIBUTE_SET::CLONE()
+	----------------------------
+	Deep heap copy sharing the same schema pointer.
+*/
+ANT_attribute_set *ANT_attribute_set::clone(void) const
+{
+ANT_attribute_set *copy = new ANT_attribute_set(schema);
+long f, i;
+
+for (f = 0; f < ANT_attribute_schema::MAX_FIELDS; f++)
+	{
+	copy->present_flag[f] = present_flag[f];
+	copy->bool_vals[f] = bool_vals[f];
+	if (int_count[f] > 0)
+		{
+		copy->int_vals[f] = new long long[int_count[f]];
+		memcpy(copy->int_vals[f], int_vals[f], (size_t)(int_count[f] * sizeof(long long)));
+		copy->int_count[f] = int_count[f];
+		copy->int_cap[f] = int_count[f];
+		}
+	if (str_count[f] > 0)
+		{
+		copy->str_vals[f] = new char *[str_count[f]];
+		for (i = 0; i < str_count[f]; i++)
+			{
+			copy->str_vals[f][i] = (char *)malloc(strlen(str_vals[f][i]) + 1);
+			strcpy(copy->str_vals[f][i], str_vals[f][i]);
+			}
+		copy->str_count[f] = str_count[f];
+		copy->str_cap[f] = str_count[f];
+		}
+	}
+if (payload != NULL && payload_len > 0)
+	{
+	copy->payload = (unsigned char *)malloc((size_t)payload_len);
+	memcpy(copy->payload, payload, (size_t)payload_len);
+	copy->payload_len = payload_len;
+	}
+return copy;
+}

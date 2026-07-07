@@ -97,6 +97,9 @@ writer_multivector_total = 0;
 writer_multivector_counts = NULL;
 writer_multivector_counts_capacity = 0;
 
+writer_attribute_sets = NULL;
+writer_attribute_sets_capacity = 0;
+
 durable = 0;
 wal_fsync_pending = 0;
 wal = NULL;
@@ -615,7 +618,7 @@ return 0;
 	point this document's docid must already be recorded in ITS segment's
 	vector buffer, or the flush would serialise the segment without it.
 */
-long long ATIRE_segment_index::add_document_core(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors)
+long long ATIRE_segment_index::add_document_core(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors, const ANT_attribute_set *attributes)
 {
 char *key_copy, *doc_copy;
 long long before, docid;
@@ -676,6 +679,8 @@ if (vector_dimension_current != 0)
 	writer_vector_append(docid, vector);
 if (rerank_configured())
 	writer_multivector_append(docid, multivector, num_vectors);
+if (attributes_configured() && attributes != NULL)
+	writer_attribute_capture(docid, attributes);
 
 writer_documents++;
 writer_engine_stale = 1;
@@ -821,6 +826,41 @@ return handle;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::ADD_DOCUMENT()  (vector + multi-vector + attributes overload)
+	--------------------------------------------------------------------------------------
+	Task 6: capture-only -- the caller-supplied attribute set + payload is
+	deep-cloned into the writer's per-docid attribute buffer (see
+	writer_attribute_capture()); flush to the .attr / payload sidecars is a
+	later task.  The doc-level vector preamble (cosine normalization /
+	disabled-index and zero-vector rejection) is identical to the 5-arg
+	overload above; only the extra `attributes` argument is threaded through
+	to add_document_core().
+*/
+long long ATIRE_segment_index::add_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors, const ANT_attribute_set *attributes)
+{
+float *normalized = NULL;
+long long handle;
+
+if (vector != NULL && vector_dimension_current == 0)
+	return -1;			// vectors on a non-vector index
+if (vector != NULL && vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, vector, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{
+		delete [] normalized;
+		return -1;		// zero vector is meaningless under cosine
+		}
+	vector = normalized;
+	}
+
+handle = add_document_core(key, document, vector, multivector, num_vectors, attributes);
+delete [] normalized;
+return handle;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::TOMBSTONE()
 	--------------------------------
 	Mark (generation, docid) deleted.  For a disk segment the .del file is
@@ -916,6 +956,34 @@ return handle;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()  (vector + multi-vector + attributes overload)
+	-----------------------------------------------------------------------------------------
+	Upsert, as above, but threads the attribute set/payload through to the
+	6-arg add_document() so the new copy's captured attributes (Task 6:
+	capture-only) are buffered for its docid.  WAL 'U' record logs only the
+	doc-level vector, same as the other overloads -- attribute WAL durability
+	is out of scope for this task.
+*/
+long long ATIRE_segment_index::update_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors, const ANT_attribute_set *attributes)
+{
+long long old_generation, old_docid;
+long had_old = keymap->find(key, &old_generation, &old_docid);
+
+wal_suppress_add = 1;
+long long handle = add_document(key, document, vector, multivector, num_vectors, attributes);		// also repoints the keymap at the new copy
+wal_suppress_add = 0;
+if (handle < 0)
+	return -1;
+
+if (wal != NULL && !wal_replaying)
+	wal->append('U', key, document, vector);
+
+if (had_old)
+	tombstone(old_generation, old_docid);
+return handle;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::UPDATE_DOCUMENT()
 	-----------------------------------------
 	Lexical-only path: one code path with the vector overload above.
@@ -923,6 +991,74 @@ return handle;
 long long ATIRE_segment_index::update_document(const char *key, const char *document)
 {
 return update_document(key, document, NULL);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_ATTRIBUTE_CAPTURE()
+	--------------------------------------------------
+	Deep-clone the caller's attribute set into the writer's per-docid
+	attribute buffer (parallel to the writer's docids), growing the pointer
+	array geometrically to fit `docid` -- exactly like the counts array in
+	writer_multivector_append().  Task 6: capture only; the drain to the
+	.attr / payload sidecars is Task 7.
+*/
+void ATIRE_segment_index::writer_attribute_capture(long long docid, const ANT_attribute_set *attributes)
+{
+if (writer_attribute_sets == NULL)
+	{
+	writer_attribute_sets_capacity = 1024;
+	writer_attribute_sets = new ANT_attribute_set *[writer_attribute_sets_capacity];
+	for (long long i = 0; i < writer_attribute_sets_capacity; i++)
+		writer_attribute_sets[i] = NULL;
+	}
+if (docid >= writer_attribute_sets_capacity)
+	{
+	long long new_capacity = writer_attribute_sets_capacity * 2;
+	while (docid >= new_capacity)
+		new_capacity *= 2;
+	ANT_attribute_set **grown = new ANT_attribute_set *[new_capacity];
+	memcpy(grown, writer_attribute_sets, (size_t)(writer_attribute_sets_capacity * sizeof(ANT_attribute_set *)));
+	for (long long i = writer_attribute_sets_capacity; i < new_capacity; i++)
+		grown[i] = NULL;
+	delete [] writer_attribute_sets;
+	writer_attribute_sets = grown;
+	writer_attribute_sets_capacity = new_capacity;
+	}
+
+delete writer_attribute_sets[docid];		// a re-add of the same docid -- shouldn't happen, but be safe
+writer_attribute_sets[docid] = attributes->clone();
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_ATTRIBUTE_COUNT_FOR_TEST()
+	----------------------------------------------------------
+	Test hook (Task 6): the number of present fields captured for `docid` in
+	the live writer segment; 0 if none / out of range.
+*/
+long ATIRE_segment_index::writer_attribute_count_for_test(long long docid)
+{
+docid &= (1LL << 40) - 1;		// accept either a raw docid or a make_handle() handle (docid is its low 40 bits)
+if (writer_attribute_sets != NULL && docid >= 0 && docid < writer_attribute_sets_capacity && writer_attribute_sets[docid] != NULL)
+	return writer_attribute_sets[docid]->present_field_count();
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::WRITER_PAYLOAD_LEN_FOR_TEST()
+	------------------------------------------------------
+	Test hook (Task 6): the captured payload length for `docid`; 0 if no set /
+	no payload / out of range.
+*/
+long long ATIRE_segment_index::writer_payload_len_for_test(long long docid)
+{
+docid &= (1LL << 40) - 1;		// accept either a raw docid or a make_handle() handle (docid is its low 40 bits)
+if (writer_attribute_sets != NULL && docid >= 0 && docid < writer_attribute_sets_capacity && writer_attribute_sets[docid] != NULL)
+	{
+	long long len = 0;
+	writer_attribute_sets[docid]->payload_bytes(&len);
+	return len;
+	}
+return 0;
 }
 
 /*

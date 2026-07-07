@@ -122,6 +122,10 @@ private:
 	int *writer_multivector_counts;			// M per writer docid
 	long long writer_multivector_counts_capacity;	// in docs
 
+	/* memory-segment attribute/payload capture, parallel to the writer's docids (Task 6: capture only) */
+	ANT_attribute_set **writer_attribute_sets;		// per-docid deep-clone (NULL where a doc has no attributes); NULL array until first use
+	long long writer_attribute_sets_capacity;		// in docs
+
 	/*
 		Durable (WAL) mode.  wal is NULL unless set_durable(1) was called
 		before open().  wal_fsync_pending records a set_wal_fsync() call
@@ -167,7 +171,7 @@ private:
 	long tombstone(long long generation, long long docid);		// 0 on success, 1 if the generation is unknown
 	long rebuild_keymap(void);			// reconstruct the keymap from segments' stored filenames when keymap.log is lost; 0 on success, nonzero if a .del save fails
 
-	long long add_document_core(const char *key, const char *document, const float *vector, const float *multivector = NULL, long long num_vectors = 0);	// shared body; vector may be NULL; multivector/num_vectors default to none (Task 4: capture only)
+	long long add_document_core(const char *key, const char *document, const float *vector, const float *multivector = NULL, long long num_vectors = 0, const ANT_attribute_set *attributes = NULL);	// shared body; vector may be NULL; multivector/num_vectors default to none (Task 4: capture only); attributes default to none (Task 6: capture only)
 
 	long load_vector_config(void);			// reads <dir>/vector.config; 0 = ok (absent is ok)
 	long save_vector_config(void);			// atomic write; 0 on success
@@ -179,6 +183,7 @@ private:
 	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best);	// Task 7
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	long writer_multivector_append(long long docid, const float *multivector, long long num_vectors);
+	void writer_attribute_capture(long long docid, const ANT_attribute_set *attributes);	// deep-clone into the per-docid attribute buffer (Task 6: capture only)
 	void reset_writer_vectors(void);
 
 	long long vector_candidates(const float *query, long long top_k, ANT_vector_candidate *best);
@@ -248,9 +253,11 @@ public:
 	long long add_document(const char *key, const char *document);		// returns handle, -1 on error
 	long long add_document(const char *key, const char *document, const float *vector);		// returns handle, -1 on error (also on vector rejection)
 	long long add_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors);	// returns handle, -1 on error; multivector may be NULL / num_vectors 0
+	long long add_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors, const ANT_attribute_set *attributes);	// returns handle, -1 on error; attributes may be NULL
 	long long update_document(const char *key, const char *document);	// upsert; returns new handle
 	long long update_document(const char *key, const char *document, const float *vector);	// upsert; returns new handle
 	long long update_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors);	// upsert; returns new handle
+	long long update_document(const char *key, const char *document, const float *vector, const float *multivector, long long num_vectors, const ANT_attribute_set *attributes);	// upsert; returns new handle
 	long delete_document(const char *key);								// 0 on success, 1 if key unknown
 
 	long flush(void);										// memory segment -> disk segment; 0 on success
@@ -269,6 +276,8 @@ public:
 	ANT_search_engine *disk_segment_engine(long long which);
 	ANT_memory_index *writer_memory_index_for_test(void);		// test hook: the live writer segment's memory index (NULL before open); used to observe decompress-buffer arena reuse
 	long long writer_multivector_count_for_test(long long docid);	// test hook: M for docid; 0 if none; -1 if out of range
+	long writer_attribute_count_for_test(long long docid);	// test hook: # present fields captured for docid; 0 if none/out of range
+	long long writer_payload_len_for_test(long long docid);	// test hook: captured payload length for docid; 0 if none
 
 	/*
 		Set the auto-flush threshold: add_document() calls flush() once the

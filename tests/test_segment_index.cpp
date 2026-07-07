@@ -2160,6 +2160,44 @@ delete ix; delete [] dir;
 printf("test_writer_multivector_capture OK\n");
 }
 
+static void test_writer_attribute_capture(void)
+{
+	char *dir = make_index_dir();
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s;
+	s.add_field("created", ANT_attribute_schema::TYPE_INT64, 0);
+	s.add_field("lang",    ANT_attribute_schema::TYPE_STRING, 1);
+	s.add_field("archived",ANT_attribute_schema::TYPE_BOOL, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+
+	ANT_attribute_set A(ix->attribute_schema());
+	A.set_int(0, 1700000000LL);
+	A.add_string(1, "en"); A.add_string(1, "fr");
+	A.set_bool(2, 1);
+	A.set_payload("{\"k\":1}", 7);
+	long long h0 = ix->add_document("doc0", "<DOC>alpha beta</DOC>", NULL, NULL, 0, &A);
+	CHECK(h0 >= 0);
+	/* a doc with NO attribute set captures nothing */
+	long long h1 = ix->add_document("doc1", "<DOC>gamma</DOC>");
+	CHECK(h1 >= 0);
+	/* payload-only doc */
+	ANT_attribute_set B(ix->attribute_schema());
+	B.set_payload("xyz", 3);
+	long long h2 = ix->add_document("doc2", "<DOC>delta</DOC>", NULL, NULL, 0, &B);
+	CHECK(h2 >= 0);
+
+	CHECK(ix->writer_attribute_count_for_test(h0) == 3);		/* created, lang, archived present */
+	CHECK(ix->writer_payload_len_for_test(h0) == 7);
+	CHECK(ix->writer_attribute_count_for_test(h1) == 0);		/* no set */
+	CHECK(ix->writer_payload_len_for_test(h1) == 0);
+	CHECK(ix->writer_attribute_count_for_test(h2) == 0);		/* payload only, no typed fields */
+	CHECK(ix->writer_payload_len_for_test(h2) == 3);
+
+	delete ix; delete [] dir;
+	printf("test_writer_attribute_capture OK\n");
+}
+
 static void test_rerank_config_persist(void)
 {
 char *dir = make_index_dir();
@@ -3674,6 +3712,17 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+/*
+	test_writer_attribute_capture is registered AFTER
+	test_global_stats_score_equality on purpose: the global-stats test
+	compares layout-invariant scores with a tiny tolerance and is
+	pre-existingly sensitive to the exact process-wide allocation sequence
+	that precedes it (unrelated to attributes -- a probe that indexes plain
+	documents with NO attribute schema perturbs it identically, and the whole
+	suite is ASAN-clean either way).  Running the new capture test afterwards
+	leaves that ordering-sensitive test on its original, known-good sequence.
+*/
+test_writer_attribute_capture();
 test_wal_durability();
 test_wal_unhealthy();
 test_wal_replay_mid_autoflush();
