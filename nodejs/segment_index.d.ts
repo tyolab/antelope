@@ -12,6 +12,7 @@ export interface SegmentIndexOptions {
 	globalStats?: boolean;
 	approximate?: { bits?: number; multiplier?: number };
 	hnsw?: { M?: number; efConstruction?: number; efSearch?: number };
+	quantize?: 'int8' | 'replace' | 'exact' | { mode: 'replace' | 'exact' };
 }
 
 export interface DocRef { generation: number; docid: number; }
@@ -35,6 +36,7 @@ export class SegmentIndex {
 	maintain(): Promise<void>;
 	buildSignatures(): Promise<void>;
 	buildHnsw(): Promise<void>;
+	buildQuantized(): Promise<void>;
 	documentCount(): number;
 	vectorDimension(): number;
 }

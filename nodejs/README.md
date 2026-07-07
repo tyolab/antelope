@@ -179,6 +179,7 @@ index.close();
 | `globalStats` | `boolean` | `true` | cross-segment N / mean-document-length ranking statistics; set `false` to rank each segment on its own local statistics instead |
 | `approximate` | `{ bits?, multiplier? }` | disabled | opt-in approximate vector search (see below) |
 | `hnsw` | `{ M?, efConstruction?, efSearch? }` | disabled | opt-in HNSW graph vector search (see below) |
+| `quantize` | `'int8' \| { mode }` | disabled | opt-in int8 vector quantization (see below) |
 
 ### Approximate vector search (V2)
 
@@ -253,5 +254,44 @@ const mixed = index.searchHybridHnsw('quokka food', queryEmbedding, 10);
 HNSW search only applies to the `cosine` and `l2` metrics; a `dot` index (or
 one where `hnsw` was never configured) transparently falls back to exact
 results, so these methods are always safe to call.
+
+### Quantized vectors (V4)
+
+To shrink the on-disk (and page-cache) footprint of vector segments, each
+document vector's float32 components can be quantized to int8, giving
+roughly a 4x reduction in vector storage at the cost of some precision.
+
+Enable it with the `quantize` constructor option:
+
+```js
+const index = new SegmentIndex({
+  dimension: 768,
+  metric: 'cosine',
+  quantize: 'int8'
+});
+index.open('/var/data/myindex');
+```
+
+- `quantize: 'int8'` (equivalently `{ mode: 'replace' }`) — replace mode: only
+  the int8 `.qvec` sidecar is written; the float32 `.vec` is never persisted.
+  Lossy, smallest footprint.
+- `quantize: { mode: 'exact' }` — keeps the float32 `.vec` alongside the int8
+  `.qvec` so searches can rerank against exact vectors; costs roughly 1.25x
+  the RAM/disk of an unquantized index instead of the ~4x reduction of
+  replace mode, in exchange for no precision loss.
+
+Quantization mode is index-wide and must be set before the first `flush()`;
+like `hnsw`/`approximate` it is persisted on first enable and immutable
+afterwards (attempting to change it later is a non-fatal no-op — quantization
+just stays at whatever mode was already persisted).
+
+`await index.buildQuantized()` backfills the int8 `.qvec` sidecar for any
+existing float `.vec` segments that don't have one yet (idempotent) — call it
+once after enabling `quantize` on an index that already has data.
+
+Quantization needs **no new search methods** — `searchVector`,
+`searchVectorApprox`, `searchVectorHnsw`, and their `Hybrid` counterparts all
+work transparently against quantized segments exactly as they do against
+unquantized ones.
 
 TypeScript definitions are provided in `segment_index.d.ts`.

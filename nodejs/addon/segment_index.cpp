@@ -35,6 +35,7 @@ private:
 	long option_hnsw_M;					// -1 = not requested; 0 = engine default (16); >0 = explicit
 	long option_hnsw_ef_construction;	// 0 = engine default (200); >0 = explicit
 	long option_hnsw_ef_search;			// 0 = unset; >0 = set_ef_search()
+	long option_quantize;				// ATIRE_segment_index::QUANTIZE_OFF/REPLACE/EXACT
 
 	friend class MaintenanceWorker;		// async flush/maintain worker mutates state
 
@@ -75,6 +76,7 @@ public:
 	Napi::Value Maintain(const Napi::CallbackInfo &info);
 	Napi::Value BuildSignatures(const Napi::CallbackInfo &info);
 	Napi::Value BuildHnsw(const Napi::CallbackInfo &info);
+	Napi::Value BuildQuantized(const Napi::CallbackInfo &info);
 };
 
 /*
@@ -103,6 +105,7 @@ option_approx_multiplier = 0;		// unset
 option_hnsw_M = -1;					// not requested
 option_hnsw_ef_construction = 0;	// engine default
 option_hnsw_ef_search = 0;			// unset
+option_quantize = ATIRE_segment_index::QUANTIZE_OFF;
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 	{
@@ -165,6 +168,32 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 			option_hnsw_ef_construction = (long)h.Get("efConstruction").As<Napi::Number>().Int64Value();
 		if (h.Has("efSearch"))
 			option_hnsw_ef_search = (long)h.Get("efSearch").As<Napi::Number>().Int64Value();
+		}
+	if (options.Has("quantize"))
+		{
+		Napi::Value qv = options.Get("quantize");
+		std::string mode;
+		if (qv.IsString())
+			mode = qv.ToString().Utf8Value();
+		else if (qv.IsObject())
+			{
+			Napi::Object qo = qv.As<Napi::Object>();
+			mode = qo.Has("mode") ? qo.Get("mode").ToString().Utf8Value() : std::string("replace");
+			}
+		else
+			{
+			Napi::TypeError::New(env, "quantize must be 'int8'/'replace'/'exact' or { mode }").ThrowAsJavaScriptException();
+			return;
+			}
+		if (mode == "int8" || mode == "replace")
+			option_quantize = ATIRE_segment_index::QUANTIZE_REPLACE;
+		else if (mode == "exact")
+			option_quantize = ATIRE_segment_index::QUANTIZE_EXACT;
+		else
+			{
+			Napi::TypeError::New(env, "quantize mode must be 'int8', 'replace', or 'exact'").ThrowAsJavaScriptException();
+			return;
+			}
 		}
 	}
 }
@@ -253,6 +282,10 @@ if (option_hnsw_M >= 0)
 	if (option_hnsw_ef_search > 0)
 		engine->set_ef_search(option_hnsw_ef_search);
 	}
+/* Quantization is index-wide and must be set before the first flush; NON-FATAL
+   if it fails (mode stays off -- e.g. a different mode already persisted). */
+if (option_quantize != ATIRE_segment_index::QUANTIZE_OFF)
+	engine->set_quantization(option_quantize);
 state = OPEN;
 return env.Undefined();
 }
@@ -816,7 +849,7 @@ return hits_to_array(env, engine, count);
 class MaintenanceWorker : public Napi::AsyncWorker
 {
 public:
-	enum Operation { FLUSH, MAINTAIN, BUILD, BUILD_HNSW };
+	enum Operation { FLUSH, MAINTAIN, BUILD, BUILD_HNSW, BUILD_QUANTIZED };
 
 private:
 	SegmentIndexWrap *wrapper;
@@ -840,6 +873,7 @@ public:
 		case MAINTAIN:	result = wrapper->engine->maintain(); break;
 		case BUILD:		result = wrapper->engine->build_signatures(); break;
 		case BUILD_HNSW:	result = wrapper->engine->build_hnsw(); break;
+		case BUILD_QUANTIZED:	result = wrapper->engine->build_quantized(); break;
 		}
 	}
 
@@ -849,7 +883,7 @@ public:
 	if (result == 0)
 		deferred.Resolve(Env().Undefined());
 	else
-		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : operation == BUILD_HNSW ? "build_hnsw failed" : "maintain failed").Value());
+		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : operation == BUILD_HNSW ? "build_hnsw failed" : operation == BUILD_QUANTIZED ? "build_quantized failed" : "maintain failed").Value());
 	}
 
 	void OnError(const Napi::Error &error)
@@ -957,6 +991,31 @@ return worker->Promise();
 }
 
 /*
+	SEGMENTINDEXWRAP::BUILDQUANTIZED()
+	--------------------------------------
+	Idempotent backfill: rewrites float .vec disk segments as int8 .qvec
+	(replace mode).  Identical to BuildHnsw() except for the
+	MaintenanceWorker::BUILD_QUANTIZED operation tag -- see Flush()'s banner
+	comment for the busy-guard and never-throw-synchronously rules, which
+	apply here too.
+*/
+Napi::Value SegmentIndexWrap::BuildQuantized(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::BUILD_QUANTIZED);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
 	SEGMENTINDEXWRAP::REGISTER()
 	-------------------------------
 	Defines the complete method shape of the class in one place; the
@@ -983,6 +1042,7 @@ Napi::Function ctor = DefineClass(env, "SegmentIndex", {
 	InstanceMethod("maintain", &SegmentIndexWrap::Maintain),
 	InstanceMethod("buildSignatures", &SegmentIndexWrap::BuildSignatures),
 	InstanceMethod("buildHnsw", &SegmentIndexWrap::BuildHnsw),
+	InstanceMethod("buildQuantized", &SegmentIndexWrap::BuildQuantized),
 });
 exports.Set("SegmentIndex", ctor);
 return exports;
