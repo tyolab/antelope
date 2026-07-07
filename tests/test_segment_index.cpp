@@ -3057,6 +3057,127 @@ delete [] dir_single;
 printf("test_global_stats_score_equality OK\n");
 }
 
+/*
+	TEST_FILTER_MATCHALL_IDENTITY()
+	-------------------------------
+	A match-all filter -- NOT(match-none) -- must yield byte-identical results to
+	the unfiltered path: same hit count, same docids, same order, and (because the
+	same score computation runs and every candidate is admitted) exact fp-equal
+	scores.  Exercises the vector and lexical entry points.
+*/
+static void test_filter_matchall_identity(void)
+{
+	char *dir = make_index_dir();
+	long long i, d, dim = 8;
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+	CHECK(ix->open(dir) == 0);
+	ANT_attribute_schema s; s.add_field("g", ANT_attribute_schema::TYPE_INT64, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	srand(101);
+	float *data = new float[40*dim];
+	for (i = 0; i < 40*dim; i++) data[i] = (float)(rand()%2000-1000)/500.0f;
+	for (i = 0; i < 40; i++)
+		{
+		ANT_attribute_set A(ix->attribute_schema()); A.set_int(0, i);
+		char key[16]; sprintf(key, "d%lld", i);
+		/*
+			Distinct "apple" term frequency per doc so lexical scores are
+			distinct (no ties): under score ties the filtered over-pull path
+			may legitimately break ties differently than the direct unfiltered
+			path, which would defeat an order-sensitive byte-identity check.
+		*/
+		char doc[512]; long long p = sprintf(doc, "<DOC>");
+		for (long long r = 0; r <= i; r++) p += sprintf(doc+p, "apple ");
+		sprintf(doc+p, "</DOC>");
+		CHECK(ix->add_document(key, doc, data+i*dim, NULL, 0, &A) >= 0);
+		}
+	CHECK(ix->flush() == 0);
+	float q[8]; for (d = 0; d < dim; d++) q[d] = (float)(rand()%2000-1000)/500.0f;
+	ANT_filter *all = ANT_filter::not_(ANT_filter::or_list(NULL, 0));		/* match-all */
+	CHECK(all->build(ix->attribute_schema()) == 0);
+
+	/* unfiltered top-10 */
+	long long nu = ix->search_vector(q, 10);
+	long long ug[16]; double us[16];
+	for (i = 0; i < nu; i++) { ug[i] = ix->get_hit(i)->docid; us[i] = ix->get_hit(i)->score; }
+	/* match-all filtered top-10 -> identical docids, order, and scores */
+	long long nf = ix->search_vector(q, 10, all);
+	CHECK(nf == nu);
+	for (i = 0; i < nf; i++)
+		{
+		CHECK(ix->get_hit(i)->docid == ug[i]);
+		CHECK(ix->get_hit(i)->score == us[i]);		/* exact fp equality: same computation, all admitted */
+		}
+	/* same for lexical */
+	char qb[16]; strcpy(qb, "apple");
+	long long lu = ix->search(qb, 10);
+	long long lg[16]; for (i = 0; i < lu; i++) lg[i] = ix->get_hit(i)->docid;
+	long long lf = ix->search(qb, 10, all);
+	CHECK(lf == lu);
+	for (i = 0; i < lf; i++) CHECK(ix->get_hit(i)->docid == lg[i]);
+	delete all; delete [] data; delete ix; delete [] dir;
+	printf("test_filter_matchall_identity OK\n");
+}
+
+/*
+	TEST_FILTER_COEXISTENCE()
+	-------------------------
+	One index carries attributes + payloads alongside EVERY vector subsystem the
+	engine allows to coexist: V2 approximate signatures, V3 HNSW, V4 int8
+	quantization (REPLACE), and V5 multi-vector rerank.  A tenant=="acme" filter
+	must hold across all seven filter-aware entry points -- every returned hit is
+	an even docid (tenants[i%2]: acme==even) carrying the "acme" payload.
+*/
+static void test_filter_coexistence(void)
+{
+	char *dir = make_index_dir();
+	long long i, d, dim = 8;
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_COSINE) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_approximate_config(64) == 0);
+	CHECK(ix->set_hnsw_config(16, 100) == 0);
+	CHECK(ix->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);		/* V4 int8, coexists (see test_rerank_coexists_and_parity) */
+	CHECK(ix->set_rerank_config(dim, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	ANT_attribute_schema s;
+	s.add_field("tenant", ANT_attribute_schema::TYPE_STRING, 0);
+	s.add_field("keep",   ANT_attribute_schema::TYPE_BOOL, 0);
+	CHECK(ix->set_attributes_config(s) == 0);
+	srand(202);
+	const char *tenants[2] = {"acme","beta"};
+	float *data = new float[40*dim];
+	for (i = 0; i < 40*dim; i++) data[i] = (float)(rand()%2000-1000)/500.0f;
+	for (i = 0; i < 40; i++)
+		{
+		ANT_attribute_set A(ix->attribute_schema());
+		A.set_string(0, tenants[i % 2]);
+		A.set_bool(1, (i % 2) == 0);
+		A.set_payload(tenants[i % 2], (long long)strlen(tenants[i % 2]));
+		char key[16]; sprintf(key, "d%lld", i);
+		/* single-vector multivector row so rerank has data */
+		CHECK(ix->add_document(key, "<DOC>apple</DOC>", data+i*dim, data+i*dim, 1, &A) >= 0);
+		}
+	CHECK(ix->flush() == 0);
+	float q[8]; for (d = 0; d < dim; d++) q[d] = (float)(rand()%2000-1000)/500.0f;
+	float qmv[8]; for (d = 0; d < dim; d++) qmv[d] = q[d];
+	char qb[16]; strcpy(qb, "apple");
+	ANT_filter *f = ANT_filter::eq_string("tenant", "acme");
+	CHECK(f->build(ix->attribute_schema()) == 0);
+	long long n;	/* tenant acme == even docids by construction (tenants[i%2], acme at i even) */
+	#define ALL_ACME(N) do { for (i = 0; i < (N); i++) { CHECK((atoll(ix->get_hit(i)->filename+1) % 2) == 0); CHECK(ix->get_hit(i)->payload_length == 4); CHECK(memcmp(ix->get_hit(i)->payload,"acme",4)==0); } } while(0)
+	n = ix->search_vector(q, 8, f);         CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search_vector_approx(q, 8, f);  CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search_vector_hnsw(q, 8, f);    CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search_hybrid(qb, q, 8, f);     CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search_hybrid_hnsw(qb, q, 8, f);CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search_rerank(qb, q, qmv, 1, 20, 8, f); CHECK(n >= 1); ALL_ACME(n);
+	n = ix->search(qb, 8, f);               CHECK(n >= 1); ALL_ACME(n);
+	#undef ALL_ACME
+	delete f; delete [] data; delete ix; delete [] dir;
+	printf("test_filter_coexistence OK\n");
+}
+
 static void test_compact_preserves_attributes(void)
 {
 	char *dir = make_index_dir();
@@ -4006,6 +4127,8 @@ test_compaction_writes_qvec();
 test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
+test_filter_matchall_identity();
+test_filter_coexistence();
 test_compact_preserves_attributes();
 test_filtered_approx_hybrid_rerank();
 test_filtered_lexical_search();
