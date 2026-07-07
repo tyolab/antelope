@@ -3235,6 +3235,59 @@ printf("test_exact_mode_matches_float OK\n");
 }
 
 /*
+	TEST_EXACT_MODE_MATCHES_FLOAT_AFTER_COMPACTION()
+	-------------------------------------------------
+	Compaction must rebuild the merged .vec sidecar from the float
+	source-of-truth (segment.exact_vectors) when present, not from the lossy
+	int8 store. This test compacts an exact-mode index and a pure-float
+	index built from identical data, then compares SCORES (not just doc
+	handles) so a silent precision regression in the merge cannot hide
+	behind an unchanged top-k ordering.
+*/
+static void test_exact_mode_matches_float_after_compaction(void)
+{
+long long dim = 24, n = 80, k = 8, i, d;
+float *data = new float[n * dim]; srand(37);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+char *dq = make_index_dir();
+char *df = make_index_dir();
+ATIRE_segment_index *qx = new ATIRE_segment_index();	/* exact mode */
+ATIRE_segment_index *fx = new ATIRE_segment_index();	/* pure float */
+CHECK(qx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(qx->open(dq) == 0);
+CHECK(qx->set_quantization(ATIRE_segment_index::QUANTIZE_EXACT) == 0);
+CHECK(fx->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(fx->open(df) == 0);
+for (i = 0; i < n; i++)
+	{
+	char key[32]; sprintf(key, "d%lld", i);
+	char doc[48]; sprintf(doc, "<DOC>%lld</DOC>", i);
+	CHECK(qx->add_document(key, doc, data + i * dim) >= 0);
+	CHECK(fx->add_document(key, doc, data + i * dim) >= 0);
+	if (i == 39) { CHECK(qx->flush() == 0); CHECK(fx->flush() == 0); }	/* generation 1 */
+	}
+CHECK(qx->flush() == 0); CHECK(fx->flush() == 0);						/* generation 2 */
+
+long long gens[2]; gens[0] = 1; gens[1] = 2;
+CHECK(qx->compact(gens, 2) == 0);					/* merge under exact mode */
+CHECK(fx->compact(gens, 2) == 0);					/* merge under float mode */
+
+float query[24]; for (d = 0; d < dim; d++) query[d] = (float)(rand() % 2000 - 1000) / 500.0f;
+long long nq = qx->search_vector(query, k), nf = fx->search_vector(query, k);
+CHECK(nq == nf && nq >= 1);
+for (i = 0; i < nq; i++)
+	{
+	/* byte-identical: same doc AND same score after an exact-mode compaction */
+	CHECK(ATIRE_segment_index::make_handle(qx->get_hit(i)->generation, qx->get_hit(i)->docid)
+	   == ATIRE_segment_index::make_handle(fx->get_hit(i)->generation, fx->get_hit(i)->docid));
+	CHECK(qx->get_hit(i)->score == fx->get_hit(i)->score);
+	}
+delete qx; delete fx; delete [] data; delete [] dq; delete [] df;
+printf("test_exact_mode_matches_float_after_compaction OK\n");
+}
+
+/*
 	TEST_QUANTIZATION_COEXISTS_WITH_APPROX_AND_HNSW()
 	--------------------------------------------------
 	Proves int8 replace-mode quantization (V4), signature-based approximate
@@ -3402,6 +3455,7 @@ test_wal_replay_mid_autoflush();
 test_wal_fsync_durability();
 test_flush_replace_mode();
 test_exact_mode_matches_float();
+test_exact_mode_matches_float_after_compaction();
 test_quantization_coexists_with_approx_and_hnsw();
 printf("PASSED\n");
 return 0;

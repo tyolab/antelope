@@ -169,8 +169,10 @@ if (vector_dimension_current != 0)
 				if (vec_renumberer->renumber(input, docid) < 0)
 					continue;		/* tombstoned: dropped, exactly like its postings */
 				float *row;
-				if (inputs[input]->vectors != NULL && inputs[input]->vectors->has(docid))
-					{ inputs[input]->vectors->reconstruct(docid, merge_buf); row = merge_buf; }
+				ANT_vector_store *vsrc = inputs[input]->exact_vectors != NULL
+										 ? inputs[input]->exact_vectors : inputs[input]->vectors;
+				if (vsrc != NULL && vsrc->has(docid))
+					{ vsrc->reconstruct(docid, merge_buf); row = merge_buf; }
 				else
 					row = NULL;
 				vec_failed = vec_writer.append(row) != 0;
