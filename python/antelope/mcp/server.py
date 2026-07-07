@@ -85,5 +85,36 @@ def build_server(index_dir: str, writable: bool = False) -> "_Server":
         filter for the `search` tool."""
         return await asyncio.to_thread(lambda: {"attributes": ix.schema(), "config": ix.info()})
 
-    # writable tools (Task 13) are added later.
+    if writable:
+        @mcp.tool()
+        async def add_document(key: str, text: str,
+                               attributes: dict | None = None,
+                               payload: str | None = None) -> dict:
+            """Add a lexical document (no vector). Returns its {generation, docid} handle."""
+            return await asyncio.to_thread(
+                ix.add_document, key, text, None, None, attributes, payload)
+
+        @mcp.tool()
+        async def update_document(key: str, text: str,
+                                  attributes: dict | None = None,
+                                  payload: str | None = None) -> dict:
+            """Upsert a lexical document. Returns its {generation, docid} handle."""
+            return await asyncio.to_thread(
+                ix.update_document, key, text, None, None, attributes, payload)
+
+        @mcp.tool()
+        async def delete_document(key: str) -> bool:
+            """Delete a document by key. Returns True if it existed, False otherwise."""
+            return await asyncio.to_thread(ix.delete_document, key)
+
+        @mcp.tool()
+        async def flush() -> None:
+            """Flush the live buffer to a durable on-disk segment."""
+            await asyncio.to_thread(ix.flush)
+
+        @mcp.tool()
+        async def maintain() -> None:
+            """Run the tiered merge/compaction policy to quiescence."""
+            await asyncio.to_thread(ix.maintain)
+
     return _Server(mcp, ix, writable, index_dir)
