@@ -1,10 +1,40 @@
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 #include <stdexcept>
 #include <string>
+#include <vector>
 #include "atire_segment_index.h"
 #include "attribute_store.h"
 
 namespace py = pybind11;
+
+/*
+	EXTRACT_VECTOR()
+	------------------
+	Uniform converter for a Python list/tuple, numpy array (any numeric
+	dtype), or array.array into a std::vector<float>. Relies on pybind11's
+	stl caster (enabled by <pybind11/stl.h>), which iterates any Python
+	sequence of numbers -- correct for all three input shapes, though not
+	a zero-copy fast path (a buffer-protocol fast path for numpy/array.array
+	is a possible future optimization).
+*/
+static std::vector<float> extract_vector(py::handle v, long long dim)
+{
+if (dim < 1)
+	throw py::type_error("vectors are not enabled on this index");
+std::vector<float> out;
+try
+	{
+	out = v.cast<std::vector<float>>();
+	}
+catch (const py::cast_error &)
+	{
+	throw py::type_error("vector must be a sequence of numbers (list/numpy/array)");
+	}
+if ((long long)out.size() != dim)
+	throw py::value_error("vector dimension mismatch");
+return out;
+}
 
 /*
 	HIT
@@ -330,13 +360,31 @@ struct PySegmentIndex
 	/*
 		PYSEGMENTINDEX::ADD_DOCUMENT()
 		---------------------------------
-		Lexical-only 2-arg form (key, text). Later tasks extend this with
-		vector/multi_vectors/attributes/payload.
+		Lexical-only when vector is None; otherwise converts vector via
+		extract_vector() and calls the 3-arg engine overload. Rejects zero
+		vectors under the cosine metric before it reaches the engine (mirrors
+		the Node AddDocument zero-vector rejection, segment_index.cpp ~529-540).
+		Later tasks extend this with multi_vectors/attributes/payload.
 	*/
-	py::dict add_document(const std::string &key, const std::string &text)
+	py::dict add_document(const std::string &key, const std::string &text, py::object vector = py::none())
 	{
 	require_open();
-	long long handle = engine->add_document(key.c_str(), text.c_str());
+	long long handle;
+	if (vector.is_none())
+		handle = engine->add_document(key.c_str(), text.c_str());
+	else
+		{
+		std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+		if (option_metric == ATIRE_segment_index::VECTOR_METRIC_COSINE)
+			{
+			double norm = 0.0;
+			for (float f : vec)
+				norm += (double)f * f;
+			if (norm == 0.0)
+				throw py::value_error("zero vector is not valid under the cosine metric");
+			}
+		handle = engine->add_document(key.c_str(), text.c_str(), vec.data());
+		}
 	if (handle == -1)
 		throw std::runtime_error("add_document failed (empty document or index not writable)");
 	py::dict d;
@@ -365,6 +413,46 @@ struct PySegmentIndex
 	}
 	return hits_to_list(count);
 	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_VECTOR()
+		-----------------------------------
+	*/
+	py::list search_vector(py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_vector(vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_HYBRID()
+		-----------------------------------
+		RRF fusion of lexical + vector top-k. Both the query text and the
+		vector are converted to engine-owned buffers before the GIL is
+		released, matching search()'s writable-copy pattern.
+	*/
+	py::list search_hybrid(const std::string &text, py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::string buf = text;
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_hybrid(&buf[0], vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
 };
 
 PYBIND11_MODULE(_core, m)
@@ -390,8 +478,10 @@ PYBIND11_MODULE(_core, m)
 		.def("close", &PySegmentIndex::close)
 		.def("document_count", &PySegmentIndex::document_count)
 		.def("vector_dimension", &PySegmentIndex::vector_dimension)
-		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"))
+		.def("add_document", &PySegmentIndex::add_document, py::arg("key"), py::arg("text"), py::arg("vector") = py::none())
 		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
+		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"))
+		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"))
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
 }
