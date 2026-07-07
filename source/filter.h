@@ -23,8 +23,11 @@ private:
 	long long *int_values; int int_values_count;		// IN_INT
 	char **string_values; int string_values_count;		// EQ_STRING (1) / IN_STRING (n)
 	ANT_filter(int kind);
-	// Task 5: recursive evaluator; assumes attrs is valid (degraded check happens in evaluate()).
-	long evaluate_node(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const;
+	// Task 5/9: recursive evaluator; exactly one of (attrs) / (sets) drives the leaves.
+	// store mode: attrs != NULL, sets == NULL.  set mode: attrs == NULL, sets drives leaves.
+	long evaluate_node(ANT_attribute_store *attrs, ANT_attribute_set *const *sets, long long sets_count, long long documents, unsigned char *out_bits) const;
+	// set-mode leaf test: does this leaf match the given (possibly NULL) captured set?
+	long set_leaf_match(ANT_attribute_set *set) const;
 public:
 	~ANT_filter();
 	// factories (all heap-allocate; caller owns the returned root and deletes it):
@@ -40,6 +43,10 @@ public:
 	long build(const ANT_attribute_schema *schema);		// 0 = ok (well-typed), nonzero = type/field error
 	// Task 5 implements this — declared only:
 	long evaluate(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const;
+	// Task 9: evaluate over live captured sets (unflushed NRT docs).  For doc d the set is
+	// (sets && d < sets_count) ? sets[d] : NULL (NULL = doc has no attributes = every leaf false).
+	// No degraded short-circuit -- the sets ARE ground truth.
+	long evaluate_live(ANT_attribute_set *const *sets, long long sets_count, long long documents, unsigned char *out_bits) const;
 	// introspection (for tests + Task 5):
 	int node_kind(void) const { return kind; }
 	long resolved_field(void) const { return field_index; }

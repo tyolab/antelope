@@ -334,20 +334,143 @@ if (attrs == NULL || attrs->document_count() != documents)
 	return 0;
 	}
 
-return evaluate_node(attrs, documents, out_bits);
+return evaluate_node(attrs, NULL, 0, documents, out_bits);
+}
+
+/*
+	ANT_FILTER::EVALUATE_LIVE()
+	------------------------------
+	Entry point for the live NRT buffer: evaluate over captured
+	ANT_attribute_set snapshots (unflushed docs) instead of an on-disk
+	store.  The sets ARE ground truth, so there is NO degraded guard --
+	a doc whose set is NULL (or beyond sets_count) is treated as "every
+	field absent" (every leaf false), which is exactly how the disk
+	evaluate() treats a doc whose presence bits are all 0.  This keeps
+	live and disk semantics identical, including NOT over absent docs.
+*/
+long ANT_filter::evaluate_live(ANT_attribute_set *const *sets, long long sets_count, long long documents, unsigned char *out_bits) const
+{
+return evaluate_node(NULL, sets, sets_count, documents, out_bits);
+}
+
+/*
+	ANT_FILTER::SET_LEAF_MATCH()
+	------------------------------
+	Set-mode leaf test: does this (leaf) filter match the given captured
+	set?  A NULL set, or one missing the leaf's field, is leaf-false --
+	the same "missing implies leaf false" / CONTAINS-over-multi semantics
+	the on-disk store matchers use.  Only ever called on leaf kinds.
+*/
+long ANT_filter::set_leaf_match(ANT_attribute_set *set) const
+{
+long fi = field_index;
+long n, i, j;
+
+if (set == NULL || !set->has(fi))
+	return 0;
+
+switch (kind)
+	{
+	case KIND_EQ_INT:
+		n = set->ints(fi);
+		for (i = 0; i < n; i++)
+			if (set->int_get(fi, i) == int_value)
+				return 1;
+		return 0;
+
+	case KIND_RANGE_INT:
+		{
+		long long lo = has_lo ? range_lo : LLONG_MIN;
+		long long hi = has_hi ? range_hi : LLONG_MAX;
+		int li = has_lo ? lo_incl : 1;
+		int hii = has_hi ? hi_incl : 1;
+
+		n = set->ints(fi);
+		for (i = 0; i < n; i++)
+			{
+			long long v = set->int_get(fi, i);
+			if ((v > lo || (li && v == lo)) && (v < hi || (hii && v == hi)))
+				return 1;
+			}
+		return 0;
+		}
+
+	case KIND_IN_INT:
+		n = set->ints(fi);
+		for (i = 0; i < n; i++)
+			{
+			long long v = set->int_get(fi, i);
+			for (j = 0; j < int_values_count; j++)
+				if (v == int_values[j])
+					return 1;
+			}
+		return 0;
+
+	case KIND_EQ_STRING:
+		n = set->strings(fi);
+		for (i = 0; i < n; i++)
+			if (strcmp(set->string_get(fi, i), string_values[0]) == 0)
+				return 1;
+		return 0;
+
+	case KIND_IN_STRING:
+		n = set->strings(fi);
+		for (i = 0; i < n; i++)
+			{
+			const char *v = set->string_get(fi, i);
+			for (j = 0; j < string_values_count; j++)
+				if (strcmp(v, string_values[j]) == 0)
+					return 1;
+			}
+		return 0;
+
+	case KIND_EQ_BOOL:
+		return set->boolean(fi) == (bool_value ? 1 : 0) ? 1 : 0;
+
+	default:
+		return 0;
+	}
 }
 
 /*
 	ANT_FILTER::EVALUATE_NODE()
 	------------------------------
-	Recursive leaf/AND/OR/NOT evaluator.  Assumes attrs is valid and
-	attrs->document_count() == documents (checked once by evaluate()).
+	Recursive leaf/AND/OR/NOT evaluator.  Exactly one backend drives the
+	leaves: store mode (attrs != NULL) uses the Task 5 store matchers; set
+	mode (attrs == NULL) uses set_leaf_match() over the captured sets, where
+	doc d's set is (sets && d < sets_count) ? sets[d] : NULL.  The AND/OR/NOT
+	recursion and trailing-bit masking are identical across both modes.
 */
-long ANT_filter::evaluate_node(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const
+long ANT_filter::evaluate_node(ANT_attribute_store *attrs, ANT_attribute_set *const *sets, long long sets_count, long long documents, unsigned char *out_bits) const
 {
 long bytes = (long)((documents + 7) / 8);
 long long d;
 int i;
+
+/*
+	Leaf kinds in set mode share one loop: per doc, resolve the set and test
+	set_leaf_match().  Store mode keeps the Task 5 per-kind code below.
+*/
+if (attrs == NULL)
+	switch (kind)
+		{
+		case KIND_EQ_INT:
+		case KIND_EQ_BOOL:
+		case KIND_EQ_STRING:
+		case KIND_RANGE_INT:
+		case KIND_IN_INT:
+		case KIND_IN_STRING:
+			memset(out_bits, 0, bytes);
+			for (d = 0; d < documents; d++)
+				{
+				ANT_attribute_set *S = (sets != NULL && d < sets_count) ? sets[d] : NULL;
+				if (set_leaf_match(S))
+					ant_filter_set_bit(out_bits, d);
+				}
+			return 0;
+		default:
+			break;		/* AND/OR/NOT fall through to the shared logic below */
+		}
 
 switch (kind)
 	{
@@ -454,7 +577,7 @@ switch (kind)
 
 		for (i = 0; i < child_count; i++)
 			{
-			long rc = children[i]->evaluate_node(attrs, documents, tmp);
+			long rc = children[i]->evaluate_node(attrs, sets, sets_count, documents, tmp);
 			if (rc != 0)
 				{
 				delete [] tmp;
@@ -484,7 +607,7 @@ switch (kind)
 
 		for (i = 0; i < child_count; i++)
 			{
-			long rc = children[i]->evaluate_node(attrs, documents, tmp);
+			long rc = children[i]->evaluate_node(attrs, sets, sets_count, documents, tmp);
 			if (rc != 0)
 				{
 				delete [] tmp;
@@ -504,7 +627,7 @@ switch (kind)
 		long rc;
 		long b;
 
-		rc = children[0]->evaluate_node(attrs, documents, out_bits);
+		rc = children[0]->evaluate_node(attrs, sets, sets_count, documents, out_bits);
 		if (rc != 0)
 			{
 			memset(out_bits, 0, bytes);
