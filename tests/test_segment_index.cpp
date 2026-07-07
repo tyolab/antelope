@@ -3457,6 +3457,43 @@ delete re; delete [] dir;
 printf("test_flush_writes_mvec OK\n");
 }
 
+static void test_search_rerank_changes_order(void)
+{
+char *dir = make_index_dir();
+long long dim = 4, mvdim = 4;
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(dim, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_rerank_config(mvdim, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+
+float qvec[4]  = {1.0f, 0.0f, 0.0f, 0.0f};
+float Avec[4]  = {0.9f, 0.1f, 0.0f, 0.0f};		/* higher dot with qvec -> stage-1 winner */
+float Bvec[4]  = {0.5f, 0.5f, 0.0f, 0.0f};
+float qmv[4]   = {0.0f, 0.0f, 1.0f, 0.0f};
+float Amv[2*4] = {1,0,0,0, 0,1,0,0};			/* no dim-2 token */
+float Bmv[2*4] = {1,0,0,0, 0,0,1,0};			/* second token matches qmv exactly */
+CHECK(ix->add_document("A", "<DOC>alpha</DOC>", Avec, Amv, 2) >= 0);
+CHECK(ix->add_document("B", "<DOC>beta</DOC>",  Bvec, Bmv, 2) >= 0);
+
+/* LIVE-BUFFER (pre-flush / NRT) rerank: exercises maxsim_live -> B first */
+CHECK(ix->search_rerank(NULL, qvec, qmv, 1, 10, 2) == 2);
+CHECK(strcmp(ix->get_hit(0)->filename, "B") == 0);
+
+CHECK(ix->flush() == 0);
+
+/* stage-1 alone (from disk): A ranks first */
+CHECK(ix->search_vector(qvec, 2) == 2);
+CHECK(strcmp(ix->get_hit(0)->filename, "A") == 0);
+
+/* rerank over the disk segment: B's exact-match token wins MaxSim -> B first */
+long long n = ix->search_rerank(NULL, qvec, qmv, 1, 10, 2);
+CHECK(n == 2);
+CHECK(strcmp(ix->get_hit(0)->filename, "B") == 0);
+CHECK(ix->get_hit(0)->score >= ix->get_hit(1)->score);
+delete ix; delete [] dir;
+printf("test_search_rerank_changes_order OK\n");
+}
+
 int main(void)
 {
 test_nrt_add_and_search();
@@ -3520,6 +3557,7 @@ test_exact_mode_matches_float();
 test_exact_mode_matches_float_after_compaction();
 test_quantization_coexists_with_approx_and_hnsw();
 test_flush_writes_mvec();
+test_search_rerank_changes_order();
 printf("PASSED\n");
 return 0;
 }

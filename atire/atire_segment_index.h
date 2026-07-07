@@ -181,6 +181,7 @@ private:
 	long long vector_candidates_approx(const float *query, long long top_k, ANT_vector_candidate *best);	// signature-prefiltered gatherer; caller guarantees metric != L2 and approximate configured
 	// exact-scan the live memory buffer into best[] (shared tail of all three vector_candidates_* gatherers)
 	void scan_live_buffer_exact(const float *query, ANT_vector_candidate *best, long long *best_count, long long top_k);
+	double maxsim_live(long long docid, const float *query_vecs, long long num_query_vecs);	// MaxSim over the writer's live multi-vector buffer for one docid
 	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
 	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW };
 	// unified cores behind the public search_vector*/search_hybrid* wrappers; mode picks the gatherer, everything else (sort/fuse/publish) is identical
@@ -279,6 +280,7 @@ public:
 	long long search_vector_approx(const float *query, long long top_k);	// signature-prefiltered top-k; transparently falls back to exact for L2 / unconfigured
 	long long search_hybrid(char *query_text, const float *query_vector, long long top_k);	// RRF fusion of lexical + vector top-k; either side may be absent
 	long long search_hybrid_approx(char *query_text, const float *query_vector, long long top_k);	// like search_hybrid(), but the vector leg is signature-prefiltered; transparently falls back to search_hybrid() for L2 / unconfigured
+	long long search_rerank(char *query_text, const float *query_vector, const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k);	// stage 1 (lexical/vector/hybrid, whichever inputs are given) -> MaxSim rerank of the top first_stage_n over multi-vectors, publishing top_k; candidates without multi-vectors keep stage-1 order after the reranked ones
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents

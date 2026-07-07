@@ -29,6 +29,7 @@
 #include "../source/signature.h"
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
+#include "../source/multivector_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -1282,4 +1283,212 @@ long long ATIRE_segment_index::search_hybrid_hnsw(char *query_text, const float 
 if (hnsw_M_current == 0 || vector_metric == VECTOR_METRIC_DOT)
 	return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_EXACT);		// transparent fallback
 return search_hybrid_impl(query_text, query_vector, top_k, VECTOR_MODE_HNSW);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::MAXSIM_LIVE()
+	-----------------------------------
+	MaxSim(query_vecs, docid's multi-vectors) over the live writer's multi-
+	vector buffer: for each query vector, the best (highest) dot product
+	against any of docid's rows, summed across query vectors.  query_vecs is
+	assumed already L2-normalized by the caller (search_rerank()); the buffer
+	rows were normalized at capture time (writer_multivector_append()).
+	Returns 0.0 if docid has no captured rows.
+*/
+double ATIRE_segment_index::maxsim_live(long long docid, const float *query_vecs, long long num_query_vecs)
+{
+long long dim, off, d, i, j, m;
+double total;
+
+if (writer_multivector_counts == NULL || docid < 0 || docid >= writer_multivector_counts_capacity)
+	return 0.0;
+
+m = writer_multivector_counts[docid];
+if (m <= 0 || num_query_vecs <= 0)
+	return 0.0;
+
+dim = rerank_dimension_current;
+off = 0;
+for (d = 0; d < docid; d++)
+	off += writer_multivector_counts[d];
+
+total = 0.0;
+for (i = 0; i < num_query_vecs; i++)
+	{
+	double best = -1e30;
+
+	for (j = 0; j < m; j++)
+		{
+		const float *v = writer_multivector_data + (off + j) * dim;
+		double dot = 0.0;
+
+		for (d = 0; d < dim; d++)
+			dot += (double)query_vecs[i * dim + d] * (double)v[d];
+		if (dot > best)
+			best = dot;
+		}
+	total += best;
+	}
+
+return total;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_RERANK()
+	--------------------------------------
+	Two-stage retrieval: run the existing first-stage search (lexical / vector
+	/ hybrid, whichever of query_text and query_vector are given) to get up to
+	first_stage_n candidates into results[], then rescore each candidate by
+	MaxSim over its multi-vectors (live writer buffer or disk segment
+	sidecar, selected by matching the hit's generation) and reorder.
+	Candidates with multi-vectors are sorted by MaxSim score descending (ties
+	by generation, docid ascending); candidates without multi-vectors keep
+	their stage-1 relative order and are appended after the reranked ones
+	(graceful degradation).  Only the top_k survivors are published into
+	results[]; the rest have their filenames freed (reset_results()'s
+	convention) before results_count is set.
+
+	If rerank is not configured, or no query multi-vector is supplied, this
+	is just the plain first-stage search (still a sensible result).
+*/
+long long ATIRE_segment_index::search_rerank(char *query_text, const float *query_vector,
+		const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k)
+{
+long long dim = rerank_dimension_current, i, w, nc;
+float *qn;
+double *ms;
+char *has_mv;
+long long *order;
+hit *tmp;
+
+if (top_k < 1)
+	return 0;
+if (first_stage_n < top_k)
+	first_stage_n = top_k;
+
+if (!rerank_configured() || query_multivector == NULL || num_query_vecs < 1)
+	{
+	/* not usable -- plain first stage (still returns sensible hits) */
+	if (query_text != NULL && query_vector != NULL)
+		return search_hybrid(query_text, query_vector, top_k);
+	if (query_vector != NULL)
+		return search_vector(query_vector, top_k);
+	if (query_text != NULL)
+		return search(query_text, top_k);
+	return 0;
+	}
+
+qn = new float[num_query_vecs * dim];
+memcpy(qn, query_multivector, (size_t)(num_query_vecs * dim) * sizeof(float));
+for (i = 0; i < num_query_vecs; i++)
+	ANT_vector_store::normalize(qn + i * dim, dim);
+
+/* stage 1 -> results[] */
+if (query_text != NULL && query_vector != NULL)
+	search_hybrid(query_text, query_vector, first_stage_n);
+else if (query_vector != NULL)
+	search_vector(query_vector, first_stage_n);
+else
+	search(query_text, first_stage_n);
+
+nc = results_count;
+if (nc == 0)
+	{
+	delete [] qn;
+	return 0;
+	}
+
+ms = new double[nc];
+has_mv = new char[nc];
+for (i = 0; i < nc; i++)
+	{
+	long long gen = results[i].generation, did = results[i].docid;
+	double score = 0.0;
+	int found = 0;
+
+	if (gen == writer_generation)
+		{
+		if (writer_multivector_counts != NULL && did >= 0 && did < writer_multivector_counts_capacity && writer_multivector_counts[did] > 0)
+			{
+			score = maxsim_live(did, qn, num_query_vecs);
+			found = 1;
+			}
+		}
+	else
+		{
+		for (w = 0; w < segment_count; w++)
+			if (segments[w].generation == gen)
+				{
+				if (segments[w].multivectors != NULL && segments[w].multivectors->has(did))
+					{
+					score = segments[w].multivectors->maxsim(did, qn, num_query_vecs);
+					found = 1;
+					}
+				break;
+				}
+		}
+	ms[i] = score;
+	has_mv[i] = (char)found;
+	}
+
+/*
+	Build the publish order: multi-vector candidates first, sorted by MaxSim
+	score descending (ties by generation, docid ascending) via a stable
+	insertion sort over just that prefix, then the no-multi-vector
+	candidates appended in their original stage-1 order.
+*/
+order = new long long[nc];
+long long k = 0, a, b;
+
+for (i = 0; i < nc; i++)
+	if (has_mv[i])
+		order[k++] = i;
+for (a = 1; a < k; a++)
+	{
+	long long v = order[a];
+
+	b = a - 1;
+	while (b >= 0 && (ms[order[b]] < ms[v]
+			|| (ms[order[b]] == ms[v] && (results[order[b]].generation > results[v].generation
+			|| (results[order[b]].generation == results[v].generation && results[order[b]].docid > results[v].docid)))))
+		{
+		order[b + 1] = order[b];
+		b--;
+		}
+	order[b + 1] = v;
+	}
+for (i = 0; i < nc; i++)
+	if (!has_mv[i])
+		order[k++] = i;
+
+/*
+	Reorder into a temp array, overwrite the score with the MaxSim score for
+	reranked hits (stage-1 score is kept for the no-multi-vector tail), keep
+	only the top_k, and free the dropped tail's filenames the same way
+	reset_results() does (delete []) since they were allocated with new []
+	(resolve_hit_filename() / append_result() callers).
+*/
+tmp = new hit[nc];
+for (i = 0; i < nc; i++)
+	{
+	tmp[i] = results[order[i]];
+	if (has_mv[order[i]])
+		tmp[i].score = ms[order[i]];
+	}
+
+long long keep = (top_k < nc) ? top_k : nc;
+
+for (i = keep; i < nc; i++)
+	if (tmp[i].filename != NULL)
+		delete [] tmp[i].filename;
+for (i = 0; i < keep; i++)
+	results[i] = tmp[i];
+results_count = keep;
+
+delete [] tmp;
+delete [] order;
+delete [] ms;
+delete [] has_mv;
+delete [] qn;
+return results_count;
 }
