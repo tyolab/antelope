@@ -1,0 +1,79 @@
+"""
+Type stubs for the ``antelope._core`` pybind11 extension.
+
+Hand-written to match the actual signatures in
+``python/src/antelope_core.cpp`` (the ``.def(...)`` table at the bottom of
+that file is the source of truth -- keep this file in sync with it).
+"""
+from typing import Any, Optional, Sequence, Union
+
+# A vector accepted by add_document/update_document/search_vector*/search_rerank:
+# any Python sequence of numbers (list, tuple), a numpy ndarray, or an
+# array.array -- all consumed via pybind11's stl caster.
+VectorLike = Union[Sequence[float], Any]
+
+# A structured-attribute filter predicate tree; see python/README.md for the
+# and/or/not/eq/in/range grammar.
+Filter = dict[str, Any]
+
+# The {"generation": int, "docid": int} handle returned by add_document()/
+# update_document() (the packed 64-bit handle split into its two fields).
+Handle = dict[str, int]
+
+class Hit:
+    key: str
+    score: float
+    generation: int
+    docid: int
+    payload: Optional[bytes]
+
+class SegmentIndex:
+    def __init__(self, **options: Any) -> None: ...
+    def open(self, directory: str) -> None: ...
+    def close(self) -> None: ...
+    def __enter__(self) -> "SegmentIndex": ...
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> bool: ...
+    def document_count(self) -> int: ...
+    def vector_dimension(self) -> int: ...
+    def add_document(
+        self,
+        key: str,
+        text: str,
+        vector: Optional[VectorLike] = ...,
+        multi_vectors: Optional[Sequence[VectorLike]] = ...,
+        attributes: Optional[dict[str, Any]] = ...,
+        payload: Optional[Union[bytes, str]] = ...,
+    ) -> Handle: ...
+    def update_document(
+        self,
+        key: str,
+        text: str,
+        vector: Optional[VectorLike] = ...,
+        multi_vectors: Optional[Sequence[VectorLike]] = ...,
+        attributes: Optional[dict[str, Any]] = ...,
+        payload: Optional[Union[bytes, str]] = ...,
+    ) -> Handle: ...
+    def delete_document(self, key: str) -> bool: ...
+    def flush(self) -> None: ...
+    def maintain(self) -> None: ...
+    def build_signatures(self) -> None: ...
+    def build_hnsw(self) -> None: ...
+    def build_quantized(self) -> None: ...
+    def search(self, text: str, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_vector(self, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_vector_approx(self, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_vector_hnsw(self, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_hybrid(self, text: str, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_hybrid_approx(self, text: str, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_hybrid_hnsw(self, text: str, vector: VectorLike, k: int, filter: Optional[Filter] = ...) -> list[Hit]: ...
+    def search_rerank(
+        self,
+        text: Optional[str],
+        vector: Optional[VectorLike],
+        query_multi_vectors: Optional[Sequence[VectorLike]],
+        first_stage_n: int,
+        k: int,
+        filter: Optional[Filter] = ...,
+    ) -> list[Hit]: ...
+
+def _link_check() -> bool: ...

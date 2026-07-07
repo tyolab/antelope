@@ -32,3 +32,171 @@ to take several minutes.
 ```sh
 python -m pytest python/tests -v
 ```
+
+## API reference
+
+`import antelope` exposes two names: `antelope.SegmentIndex` (the engine handle)
+and `antelope.Hit` (a search-result row). Full signatures live in
+`antelope/_core.pyi` (this package ships `py.typed`, so type checkers pick up
+the stub automatically).
+
+### Opening an index
+
+All engine options (dimension, metric, attribute schema, approximate/HNSW/
+quantization/rerank config, durability, merge policy, …) are passed as keyword
+arguments to the constructor and applied when `open()` is called:
+
+```python
+import antelope
+
+ix = antelope.SegmentIndex(dimension=4, metric="cosine")
+ix.open("/path/to/index")      # creates the directory layout if new, reopens if existing
+...
+ix.close()
+```
+
+`SegmentIndex` is also a context manager — `close()` is called automatically on
+`__exit__`:
+
+```python
+with antelope.SegmentIndex(dimension=4, metric="cosine") as ix:
+    ix.open("/path/to/index")
+    ...
+```
+
+Common constructor options:
+
+| option | type | meaning |
+|---|---|---|
+| `dimension` | `int` | vector dimension (1–65536); omit for lexical-only |
+| `metric` | `"dot"` \| `"cosine"` \| `"l2"` | vector distance metric |
+| `attributes` | `dict[str, str]` | structured-attribute schema, e.g. `{"tenant": "string", "lang": "string[]", "rank": "int64", "keep": "bool"}` — append `"[]"` to a type for a multi-valued field |
+| `approximate` | `dict` | `{"bits": int, "multiplier": int}` — SimHash prefilter config |
+| `hnsw` | `dict` | `{"M": int, "ef_construction": int, "ef_search": int}` — HNSW graph config |
+| `quantize` | `str` \| `dict` | `"int8"`/`"replace"`/`"exact"`, or `{"mode": ...}` — int8 vector quantization |
+| `rerank` | `dict` | `{"dimension": int, "quantize": "float"\|"int8"}` — late-interaction multi-vector config |
+| `flush_threshold`, `merge_factor`, `tombstone_ratio`, `auto_maintain`, `durable`, `wal_fsync`, `global_stats` | — | write-path / durability tuning |
+
+Unknown keyword arguments are silently ignored.
+
+### Writing documents
+
+```python
+handle = ix.add_document(
+    "doc1",
+    "<DOC>hello world</DOC>",
+    vector=[0.1, 0.2, 0.3, 0.4],          # optional: list / tuple / array.array / numpy ndarray
+    multi_vectors=[[0.1, 0.2, 0.3, 0.4]], # optional: per-token vectors, for search_rerank
+    attributes={"tenant": "acme"},        # optional: requires an `attributes` schema
+    payload=b"raw bytes",                 # optional: bytes or str, returned verbatim on Hit.payload
+)
+# handle == {"generation": int, "docid": int}
+
+ix.update_document("doc1", "<DOC>hello world v2</DOC>", vector=[0.1, 0.2, 0.3, 0.5])  # upsert
+ix.delete_document("doc1")   # -> bool: True if it existed
+
+ix.flush()      # force the in-memory segment to disk (returns None; raises on failure)
+ix.maintain()   # run the tiered merge/compaction policy to quiescence
+```
+
+Vectors accept anything satisfying the buffer/sequence protocol — a plain
+`list`/`tuple`, `array.array('f', ...)`, or a `numpy.ndarray` all work; numpy
+is **not** a hard dependency, it's just one accepted input shape.
+
+### Backfill builders
+
+These are idempotent — safe to call any time after `flush()`; each writes the
+missing sidecar for every disk segment that needs it and no-ops otherwise.
+
+```python
+ix.build_signatures()  # .vsig SimHash sidecars, needed by search_vector_approx / search_hybrid_approx
+ix.build_hnsw()        # .hnsw graph sidecars, needed by search_vector_hnsw / search_hybrid_hnsw
+ix.build_quantized()   # .qvec int8 sidecars, needed when `quantize` is configured
+```
+
+### Search modes
+
+Every search method returns `list[Hit]`, ordered best-first, and accepts an
+optional `filter=` predicate (see below). `k` is the number of hits to return.
+
+```python
+ix.search("hello world", 10)                          # lexical (BM25/DFR)
+ix.search_vector([0.1, 0.2, 0.3, 0.4], 10)             # exact vector, brute force
+ix.search_vector_approx([0.1, 0.2, 0.3, 0.4], 10)      # SimHash-prefiltered approximate vector
+ix.search_vector_hnsw([0.1, 0.2, 0.3, 0.4], 10)        # HNSW graph approximate vector
+ix.search_hybrid("hello", [0.1, 0.2, 0.3, 0.4], 10)          # RRF fusion of lexical + exact vector
+ix.search_hybrid_approx("hello", [0.1, 0.2, 0.3, 0.4], 10)   # RRF fusion of lexical + approx vector
+ix.search_hybrid_hnsw("hello", [0.1, 0.2, 0.3, 0.4], 10)     # RRF fusion of lexical + HNSW vector
+
+# late-interaction MaxSim rerank: text and/or vector select stage-1 candidates
+# (first_stage_n of them), then query_multi_vectors reranks them via MaxSim to
+# produce the final top k. At least one of text/vector is required.
+ix.search_rerank(
+    "hello", [0.1, 0.2, 0.3, 0.4], [[0.1, 0.2, 0.3, 0.4]],
+    first_stage_n=50, k=10,
+)
+```
+
+`Hit` fields:
+
+| field | type | meaning |
+|---|---|---|
+| `key` | `str` | the document key passed to `add_document`/`update_document` |
+| `score` | `float` | ranking score (semantics depend on search mode) |
+| `generation` | `int` | segment generation the document currently lives in |
+| `docid` | `int` | document id within that segment |
+| `payload` | `Optional[bytes]` | the stored payload, or `None` if none was set |
+
+### Filtered search
+
+Every search method accepts `filter=` — a JSON-like predicate tree evaluated
+against the index's `attributes` schema (configured at construction). A filter
+requires an `attributes` schema; passing one on a schema-less index raises
+`TypeError`.
+
+Grammar (each node is a single-key dict `{operator: operand}`):
+
+| operator | operand | meaning |
+|---|---|---|
+| `eq` | `{field: value}` | field equals value (on a multi-valued field: value is a member) |
+| `in` | `{field: [values]}` | field equals one of the given values |
+| `range` | `{field: {gte?, gt?, lte?, lt?}}` | int64 field falls within the bounds (at least one bound required; at most one of `gte`/`gt`, at most one of `lte`/`lt`) |
+| `and` | `[node, ...]` | all sub-nodes match |
+| `or` | `[node, ...]` | any sub-node matches |
+| `not` | `node` | sub-node does not match |
+
+Example:
+
+```python
+ix = antelope.SegmentIndex(
+    dimension=4, metric="dot",
+    attributes={"tenant": "string", "lang": "string[]", "rank": "int64", "keep": "bool"},
+)
+ix.open(tempdir)
+ix.add_document("a", "<DOC>alpha</DOC>", vector=[1, 0, 0, 0],
+                 attributes={"tenant": "acme", "lang": ["en"], "rank": 10, "keep": True})
+ix.flush()
+
+ix.search("alpha", 10, filter={
+    "and": [
+        {"eq": {"tenant": "acme"}},
+        {"range": {"rank": {"gte": 5, "lt": 100}}},
+        {"not": {"eq": {"keep": False}}},
+    ],
+})
+```
+
+### Error mapping
+
+| condition | exception |
+|---|---|
+| bad constructor option (bad `dimension`/`metric`/`attributes` spec/`quantize` mode/…) | `ValueError` |
+| `open()` failure (bad/corrupt directory, vector config mismatch) | `RuntimeError` |
+| any operation before `open()` or after `close()` | `RuntimeError` ("index is not open") |
+| wrong vector length, or a zero vector under the `cosine` metric | `ValueError` |
+| malformed/mis-typed `filter` (unknown field, wrong operand type, unknown operator, filter given without an `attributes` schema) | `TypeError` |
+| `search_rerank` called with neither `text` nor `vector` | `ValueError` |
+| mis-typed `attributes`/`payload` on `add_document`/`update_document` (unknown field, wrong value type for the field's declared type) | `TypeError` |
+| `attributes`/`payload` given but the index has no `attributes` schema | `ValueError` |
+
+`python/tests/test_errors.py` is the regression lock for this table.
