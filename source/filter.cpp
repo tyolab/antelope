@@ -1,6 +1,8 @@
 #include <cstdarg>
 #include <cstring>
 #include <cstdlib>
+#include <climits>
+#include <new>
 #include "filter.h"
 
 /*
@@ -272,4 +274,250 @@ if (schema->type(field_index) != required_type)
 	return 1;
 
 return 0;
+}
+
+/*
+	ANT_FILTER_SET_BIT()
+	---------------------
+*/
+static inline void ant_filter_set_bit(unsigned char *bits, long long d)
+{
+bits[d >> 3] |= (unsigned char)(1 << (d & 7));
+}
+
+/*
+	ANT_FILTER_MASK_TAIL()
+	------------------------
+	Clear the padding bits (docid >= documents) in the final byte of a
+	((documents+7)/8)-byte bitset.  Leaves/AND/OR only ever set bits for
+	real docids so they never need this; NOT can turn padding 0s into 1s
+	via complement, so it must re-mask afterwards.
+*/
+static void ant_filter_mask_tail(unsigned char *bits, long long documents)
+{
+long bytes = (long)((documents + 7) / 8);
+
+if (bytes > 0 && (documents & 7) != 0)
+	bits[bytes - 1] &= (unsigned char)((1 << (documents & 7)) - 1);
+}
+
+/*
+	ANT_FILTER_SET_ALL_ONES()
+	---------------------------
+	AND's identity value: every real docid set, padding left at 0.
+*/
+static void ant_filter_set_all_ones(unsigned char *bits, long long documents)
+{
+long bytes = (long)((documents + 7) / 8);
+
+if (bytes > 0)
+	memset(bits, 0xFF, bytes);
+ant_filter_mask_tail(bits, documents);
+}
+
+/*
+	ANT_FILTER::EVALUATE()
+	------------------------
+	Entry point.  A degraded segment (no store, or a store whose document
+	count disagrees with the segment we're searching) must make the WHOLE
+	filter return all-zero -- this guard has to live here, before any tree
+	walk, because pushing "no store" down into per-leaf logic would make a
+	NOT wrongly complement into "every doc matches".
+*/
+long ANT_filter::evaluate(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const
+{
+long bytes = (long)((documents + 7) / 8);
+
+if (attrs == NULL || attrs->document_count() != documents)
+	{
+	memset(out_bits, 0, bytes);
+	return 0;
+	}
+
+return evaluate_node(attrs, documents, out_bits);
+}
+
+/*
+	ANT_FILTER::EVALUATE_NODE()
+	------------------------------
+	Recursive leaf/AND/OR/NOT evaluator.  Assumes attrs is valid and
+	attrs->document_count() == documents (checked once by evaluate()).
+*/
+long ANT_filter::evaluate_node(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const
+{
+long bytes = (long)((documents + 7) / 8);
+long long d;
+int i;
+
+switch (kind)
+	{
+	case KIND_EQ_INT:
+		memset(out_bits, 0, bytes);
+		for (d = 0; d < documents; d++)
+			if (attrs->int_equals(field_index, d, int_value))
+				ant_filter_set_bit(out_bits, d);
+		return 0;
+
+	case KIND_EQ_BOOL:
+		memset(out_bits, 0, bytes);
+		for (d = 0; d < documents; d++)
+			if (attrs->bool_equals(field_index, d, bool_value))
+				ant_filter_set_bit(out_bits, d);
+		return 0;
+
+	case KIND_EQ_STRING:
+		{
+		long id;
+
+		memset(out_bits, 0, bytes);
+		id = attrs->string_id(field_index, string_values[0]);
+		if (id >= 0)
+			for (d = 0; d < documents; d++)
+				if (attrs->string_matches(field_index, d, id))
+					ant_filter_set_bit(out_bits, d);
+		return 0;
+		}
+
+	case KIND_RANGE_INT:
+		{
+		long long lo, hi;
+		int li, hii;
+
+		lo = has_lo ? range_lo : LLONG_MIN;
+		hi = has_hi ? range_hi : LLONG_MAX;
+		li = has_lo ? lo_incl : 1;
+		hii = has_hi ? hi_incl : 1;
+
+		memset(out_bits, 0, bytes);
+		for (d = 0; d < documents; d++)
+			if (attrs->int_matches_range(field_index, d, lo, hi, li, hii))
+				ant_filter_set_bit(out_bits, d);
+		return 0;
+		}
+
+	case KIND_IN_INT:
+		memset(out_bits, 0, bytes);
+		for (d = 0; d < documents; d++)
+			for (i = 0; i < int_values_count; i++)
+				if (attrs->int_equals(field_index, d, int_values[i]))
+					{
+					ant_filter_set_bit(out_bits, d);
+					break;
+					}
+		return 0;
+
+	case KIND_IN_STRING:
+		{
+		long *ids;
+		int ids_count;
+
+		memset(out_bits, 0, bytes);
+		ids = new (std::nothrow) long[string_values_count > 0 ? string_values_count : 1];
+		if (ids == NULL)
+			return 1;
+
+		ids_count = 0;
+		for (i = 0; i < string_values_count; i++)
+			{
+			long id = attrs->string_id(field_index, string_values[i]);
+			if (id >= 0)
+				ids[ids_count++] = id;
+			}
+
+		for (d = 0; d < documents; d++)
+			for (i = 0; i < ids_count; i++)
+				if (attrs->string_matches(field_index, d, ids[i]))
+					{
+					ant_filter_set_bit(out_bits, d);
+					break;
+					}
+
+		delete [] ids;
+		return 0;
+		}
+
+	case KIND_AND:
+		{
+		unsigned char *tmp;
+		long b;
+
+		ant_filter_set_all_ones(out_bits, documents);
+		if (child_count == 0)
+			return 0;
+
+		tmp = new (std::nothrow) unsigned char[bytes];
+		if (tmp == NULL)
+			{
+			memset(out_bits, 0, bytes);
+			return 1;
+			}
+
+		for (i = 0; i < child_count; i++)
+			{
+			long rc = children[i]->evaluate_node(attrs, documents, tmp);
+			if (rc != 0)
+				{
+				delete [] tmp;
+				memset(out_bits, 0, bytes);
+				return rc;
+				}
+			for (b = 0; b < bytes; b++)
+				out_bits[b] &= tmp[b];
+			}
+
+		delete [] tmp;
+		return 0;
+		}
+
+	case KIND_OR:
+		{
+		unsigned char *tmp;
+		long b;
+
+		memset(out_bits, 0, bytes);
+		if (child_count == 0)
+			return 0;
+
+		tmp = new (std::nothrow) unsigned char[bytes];
+		if (tmp == NULL)
+			return 1;
+
+		for (i = 0; i < child_count; i++)
+			{
+			long rc = children[i]->evaluate_node(attrs, documents, tmp);
+			if (rc != 0)
+				{
+				delete [] tmp;
+				memset(out_bits, 0, bytes);
+				return rc;
+				}
+			for (b = 0; b < bytes; b++)
+				out_bits[b] |= tmp[b];
+			}
+
+		delete [] tmp;
+		return 0;
+		}
+
+	case KIND_NOT:
+		{
+		long rc;
+		long b;
+
+		rc = children[0]->evaluate_node(attrs, documents, out_bits);
+		if (rc != 0)
+			{
+			memset(out_bits, 0, bytes);
+			return rc;
+			}
+		for (b = 0; b < bytes; b++)
+			out_bits[b] = (unsigned char)~out_bits[b];
+		ant_filter_mask_tail(out_bits, documents);
+		return 0;
+		}
+
+	default:
+		memset(out_bits, 0, bytes);
+		return 1;
+	}
 }

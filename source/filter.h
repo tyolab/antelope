@@ -23,6 +23,8 @@ private:
 	long long *int_values; int int_values_count;		// IN_INT
 	char **string_values; int string_values_count;		// EQ_STRING (1) / IN_STRING (n)
 	ANT_filter(int kind);
+	// Task 5: recursive evaluator; assumes attrs is valid (degraded check happens in evaluate()).
+	long evaluate_node(ANT_attribute_store *attrs, long long documents, unsigned char *out_bits) const;
 public:
 	~ANT_filter();
 	// factories (all heap-allocate; caller owns the returned root and deletes it):
