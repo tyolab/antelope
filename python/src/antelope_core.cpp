@@ -453,6 +453,139 @@ struct PySegmentIndex
 	}
 	return hits_to_list(count);
 	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_VECTOR_APPROX()
+		-----------------------------------------
+		Signature-prefiltered top-k (transparently falls back to exact when
+		approximate search is unconfigured or the metric is incompatible).
+	*/
+	py::list search_vector_approx(py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_vector_approx(vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_VECTOR_HNSW()
+		---------------------------------------
+	*/
+	py::list search_vector_hnsw(py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_vector_hnsw(vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_HYBRID_APPROX()
+		-----------------------------------------
+	*/
+	py::list search_hybrid_approx(const std::string &text, py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::string buf = text;
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_hybrid_approx(&buf[0], vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::SEARCH_HYBRID_HNSW()
+		---------------------------------------
+	*/
+	py::list search_hybrid_hnsw(const std::string &text, py::object vector, long long k)
+	{
+	require_open();
+	if (k < 1)
+		return py::list();
+	std::string buf = text;
+	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
+	long long count;
+	{
+	py::gil_scoped_release release;
+	count = engine->search_hybrid_hnsw(&buf[0], vec.data(), k);
+	}
+	return hits_to_list(count);
+	}
+
+	/*
+		PYSEGMENTINDEX::FLUSH()
+		--------------------------
+		Minimal binding pulled forward from Task 9 (the mutation-surface task)
+		because this task's tests need a way to force the in-memory segment to
+		disk before the backfill builders (build_signatures/build_hnsw) and the
+		approximate/HNSW search paths -- which operate on disk segments -- have
+		anything to work with.
+	*/
+	void flush()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->flush();
+	}
+	if (rc != 0)
+		throw std::runtime_error("flush failed");
+	}
+
+	/*
+		PYSEGMENTINDEX::BUILD_SIGNATURES()
+		--------------------------------------
+		Idempotent backfill: writes a .vsig sidecar for every disk segment that
+		has vectors but no valid signature sidecar yet.
+	*/
+	void build_signatures()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->build_signatures();
+	}
+	if (rc != 0)
+		throw std::runtime_error("build_signatures failed");
+	}
+
+	/*
+		PYSEGMENTINDEX::BUILD_HNSW()
+		---------------------------------
+		Idempotent backfill: builds the .hnsw graph sidecar for disk segments
+		that have vectors but no valid HNSW sidecar yet.
+	*/
+	void build_hnsw()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->build_hnsw();
+	}
+	if (rc != 0)
+		throw std::runtime_error("build_hnsw failed");
+	}
 };
 
 PYBIND11_MODULE(_core, m)
@@ -482,6 +615,13 @@ PYBIND11_MODULE(_core, m)
 		.def("search", &PySegmentIndex::search, py::arg("text"), py::arg("k"))
 		.def("search_vector", &PySegmentIndex::search_vector, py::arg("vector"), py::arg("k"))
 		.def("search_hybrid", &PySegmentIndex::search_hybrid, py::arg("text"), py::arg("vector"), py::arg("k"))
+		.def("search_vector_approx", &PySegmentIndex::search_vector_approx, py::arg("vector"), py::arg("k"))
+		.def("search_vector_hnsw", &PySegmentIndex::search_vector_hnsw, py::arg("vector"), py::arg("k"))
+		.def("search_hybrid_approx", &PySegmentIndex::search_hybrid_approx, py::arg("text"), py::arg("vector"), py::arg("k"))
+		.def("search_hybrid_hnsw", &PySegmentIndex::search_hybrid_hnsw, py::arg("text"), py::arg("vector"), py::arg("k"))
+		.def("flush", &PySegmentIndex::flush)
+		.def("build_signatures", &PySegmentIndex::build_signatures)
+		.def("build_hnsw", &PySegmentIndex::build_hnsw)
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
 }
