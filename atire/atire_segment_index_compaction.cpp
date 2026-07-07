@@ -64,6 +64,7 @@ long ATIRE_segment_index::compact(long long *input_generations, long long input_
 {
 char output_name[4096], marker_name[4096], filename_buffer[4096];
 long long which, input, docid;
+const char *vext = (quantization_current == QUANTIZE_REPLACE) ? "qvec" : "vec";
 
 if (input_count < 1)
 	return 1;
@@ -156,9 +157,11 @@ if (vector_dimension_current != 0)
 			}
 		ANT_docid_renumberer *vec_renumberer = new ANT_docid_renumberer(stone_list, doc_counts, input_count);
 		char vec_name[4096];
-		segment_filename(vec_name, sizeof(vec_name), output_generation, "vec");
+		segment_filename(vec_name, sizeof(vec_name), output_generation, vext);
 		ANT_vector_store_writer vec_writer;
 		long vec_failed = vec_writer.create(vec_name, vector_dimension_current) != 0;
+		if (!vec_failed && quantization_current == QUANTIZE_REPLACE)
+			vec_writer.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
 		float *merge_buf = new float[vector_dimension_current];
 		for (input = 0; !vec_failed && input < input_count; input++)
 			for (docid = 0; !vec_failed && docid < doc_counts[input]; docid++)
@@ -232,7 +235,7 @@ for (docid = 0; docid < output_segment->engine->get_document_count(); docid++)
 if (signature_bits_current != 0 && query_signer != NULL)
 	{
 	char out_vec[4096], out_vsig[4096];
-	segment_filename(out_vec, sizeof(out_vec), output_generation, "vec");
+	segment_filename(out_vec, sizeof(out_vec), output_generation, vext);
 	segment_filename(out_vsig, sizeof(out_vsig), output_generation, "vsig");
 	long long out_docs = output_segment->engine->get_document_count();
 	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);
@@ -265,7 +268,7 @@ if (signature_bits_current != 0 && query_signer != NULL)
 if (hnsw_M_current != 0)
 	{
 	char out_vec[4096], out_hnsw[4096];
-	segment_filename(out_vec, sizeof(out_vec), output_generation, "vec");
+	segment_filename(out_vec, sizeof(out_vec), output_generation, vext);
 	segment_filename(out_hnsw, sizeof(out_hnsw), output_generation, "hnsw");
 	long long out_docs = output_segment->engine->get_document_count();
 	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);

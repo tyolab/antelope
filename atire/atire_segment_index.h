@@ -193,6 +193,7 @@ public:
 	void set_ef_search(long long ef);								// clamps >= 1; default 64
 	long hnsw_configured(void) { return hnsw_M_current != 0; }
 	long build_hnsw(void);											// Task 5
+	long build_quantized(void);						// idempotent backfill: rewrite each float .vec disk segment as int8 .qvec (replace mode); 0 on success
 	long long search_vector_hnsw(const float *query, long long top_k);						// Task 7
 	long long search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k);	// Task 8
 

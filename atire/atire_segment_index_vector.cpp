@@ -518,6 +518,64 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::BUILD_QUANTIZED()
+	----------------------------------------
+	Idempotent backfill: rewrites each float .vec disk segment as an int8
+	.qvec (replace mode), mirroring build_hnsw()'s per-segment loop.  Only
+	meaningful once quantization is configured in QUANTIZE_REPLACE mode;
+	segments already int8-backed are skipped.  On success the float sidecar
+	is removed and the in-memory segment reloads from the new .qvec.
+*/
+long ATIRE_segment_index::build_quantized(void)
+{
+long long which;
+char vec_name[4096], qvec_name[4096];
+
+if (quantization_current != QUANTIZE_REPLACE)
+	return 1;					/* only replace-mode backfill is defined here */
+
+for (which = 0; which < segment_count; which++)
+	{
+	long long generation = segments[which].generation;
+	long long docs = segments[which].engine->get_document_count();
+
+	if (segments[which].vectors != NULL && segments[which].vectors->is_quantized())
+		continue;				/* already int8: idempotent skip */
+
+	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
+	segment_filename(qvec_name, sizeof(qvec_name), generation, "qvec");
+
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() == docs && docs > 0 && !src->is_quantized())
+		{
+		ANT_vector_store_writer w;
+		long failed = w.create(qvec_name, vector_dimension_current) != 0;
+		if (!failed)
+			w.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+		float *buf = new float[vector_dimension_current];
+		for (long long docid = 0; !failed && docid < docs; docid++)
+			{
+			if (src->has(docid))
+				{ src->reconstruct(docid, buf); failed = w.append(buf) != 0; }
+			else
+				failed = w.append(NULL) != 0;
+			}
+		delete [] buf;
+		if (!failed)
+			failed = w.finish() != 0;
+		if (!failed)
+			{
+			remove(vec_name);				/* replace: drop the float sidecar */
+			delete segments[which].vectors;	/* reload the segment's store as int8 */
+			segments[which].vectors = ANT_vector_store::load(qvec_name, vector_dimension_current, docs);
+			}
+		}
+	delete src;
+	}
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::WRITER_VECTOR_APPEND()
 	-------------------------------------------
 	Keeps the vector buffer parallel to the writer's docids: called exactly

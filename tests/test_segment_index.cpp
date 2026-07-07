@@ -2603,6 +2603,76 @@ printf("test_compaction_rebuilds_hnsw OK\n");
 }
 
 /*
+	TEST_COMPACTION_WRITES_QVEC()
+	------------------------------
+	Quantization mode QUANTIZE_REPLACE: compact()'s merged vector sidecar
+	must be written as int8 seg_G.qvec, not float seg_G.vec, and search must
+	still work against the merged (quantized) segment.
+*/
+static void test_compaction_writes_qvec(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(index->open(dir) == 0);
+CHECK(index->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);
+float v[16]; long long i, d;
+for (i = 0; i < 40; i++)
+	{
+	char key[32]; sprintf(key, "d%lld", i);
+	for (d = 0; d < 16; d++) v[d] = (float)(i * 16 + d) / 100.0f;
+	char doc[64]; sprintf(doc, "<DOC>doc %lld</DOC>", i);
+	CHECK(index->add_document(key, doc, v) >= 0);
+	if (i == 19) CHECK(index->flush() == 0);		/* disk generation 1 */
+	}
+CHECK(index->flush() == 0);							/* disk generation 2 */
+long long inputs[2]; inputs[0] = 1; inputs[1] = 2;
+CHECK(index->compact(inputs, 2) == 0);				/* merge 1+2 -> new generation */
+/* the merged output is int8: a .qvec exists and NO float .vec remains anywhere */
+CHECK(dir_has_glob(dir, "seg_*.qvec"));
+CHECK(!dir_has_glob(dir, "seg_*.vec"));
+float q[16]; for (d = 0; d < 16; d++) q[d] = (float)(30 * 16 + d) / 100.0f;
+CHECK(index->search_vector(q, 5) >= 1);
+delete index;
+delete [] dir;
+printf("test_compaction_writes_qvec OK\n");
+}
+
+/*
+	TEST_BUILD_QUANTIZED_BACKFILL()
+	---------------------------------
+	build_quantized() converts existing float .vec disk segments to .qvec in
+	place (backfill), mirroring build_hnsw()'s per-segment loop.
+*/
+static void test_build_quantized_backfill(void)
+{
+char *dir = make_index_dir();
+ATIRE_segment_index *index = new ATIRE_segment_index();
+CHECK(index->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_L2) == 0);
+CHECK(index->open(dir) == 0);						/* quantization OFF: flush writes float .vec */
+float v[16]; long long i, d;
+for (i = 0; i < 20; i++)
+	{
+	char key[32]; sprintf(key, "d%lld", i);
+	for (d = 0; d < 16; d++) v[d] = (float)(i * 16 + d) / 100.0f;
+	char doc[64]; sprintf(doc, "<DOC>doc %lld</DOC>", i);
+	CHECK(index->add_document(key, doc, v) >= 0);
+	}
+CHECK(index->flush() == 0);							/* seg_1.vec (float) */
+CHECK(dir_has_glob(dir, "seg_*.vec"));				/* float sidecar present */
+CHECK(!dir_has_glob(dir, "seg_*.qvec"));
+CHECK(index->set_quantization(ATIRE_segment_index::QUANTIZE_REPLACE) == 0);	/* enable now */
+CHECK(index->build_quantized() == 0);				/* backfill: .vec -> .qvec */
+CHECK(dir_has_glob(dir, "seg_*.qvec"));
+CHECK(!dir_has_glob(dir, "seg_*.vec"));				/* float sidecar removed */
+float q[16]; for (d = 0; d < 16; d++) q[d] = (float)(10 * 16 + d) / 100.0f;
+CHECK(index->search_vector(q, 5) >= 1);				/* served from the int8 store */
+delete index;
+delete [] dir;
+printf("test_build_quantized_backfill OK\n");
+}
+
+/*
 	TEST_KEYMAP_LOG_COMPACTION()
 	----------------------------
 	Update churn bloats keymap.log; reopen compacts it; state intact.
@@ -3206,6 +3276,8 @@ test_hnsw_hybrid_smoke();
 test_hybrid_approx_smoke();
 test_compaction_preserves_signatures();
 test_compaction_rebuilds_hnsw();
+test_compaction_writes_qvec();
+test_build_quantized_backfill();
 test_keymap_log_compaction();
 test_global_stats_score_equality();
 test_wal_durability();
