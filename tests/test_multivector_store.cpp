@@ -98,11 +98,30 @@ delete bomb; unlink(p);
 printf("load_validation OK\n");
 }
 
+static void maxsim_edges(void)
+{
+/* n=0 query -> score 0; single normalized doc vec vs identical query vec -> exact dot 1.0 */
+long long dim = 8;
+char p[64]; strcpy(p, "/tmp/ant_mv1_XXXXXX"); { int fd=mkstemp(p); if(fd>=0) close(fd); }
+float v[8] = {1,0,0,0,0,0,0,0};
+ANT_multivector_store_writer w; CHECK(w.create(p, dim) == 0);
+CHECK(w.append(v, 1) == 0); CHECK(w.finish() == 0);
+ANT_multivector_store *s = ANT_multivector_store::load(p, dim, 1);
+CHECK(s != NULL && s->has(0));
+float q[8] = {1,0,0,0,0,0,0,0};
+CHECK(fabs(s->maxsim(0, q, 1) - 1.0) < 1e-6);		/* identical normalized -> 1 */
+CHECK(s->maxsim(0, q, 0) == 0.0);					/* no query vectors -> 0 */
+CHECK(s->maxsim(5, q, 1) == 0.0);					/* out-of-range docid -> 0 */
+delete s; unlink(p);
+printf("maxsim_edges OK\n");
+}
+
 int main(void)
 {
 roundtrip_and_maxsim(0);
 roundtrip_and_maxsim(1);
 load_validation();
+maxsim_edges();
 printf("PASSED\n");
 return 0;
 }
