@@ -14,6 +14,7 @@ class ANT_index_tombstones;
 
 #define ANT_HNSW_SEED 0x1234567890ABCDEFULL
 #define ANT_HNSW_MAX_DOCUMENTS 0x7FFFFFFFLL   /* INT_MAX: docids stored int32 in neighbours[], so cap node count */
+#define ANT_HNSW_DISTANCE_CACHE_MIN_DIM 192   /* below this, distance() is cheaper than a cache probe -- build() skips the memo */
 
 class ANT_hnsw
 {
@@ -42,7 +43,7 @@ public:
 
 	/* Build the graph over every present vector in `vectors` (docid order,
 	   deterministic).  Returns 0 on success, nonzero on allocation failure. */
-	long build(ANT_vector_store *vectors, long long M, long long ef_construction, long metric);
+	long build(ANT_vector_store *vectors, long long M, long long ef_construction, long metric, bool use_distance_cache = true);
 
 	/* Search for the top_k highest-kernel present, non-tombstoned docids for
 	   `query`.  Fills out_docids/out_scores (scores = kernel, descending),

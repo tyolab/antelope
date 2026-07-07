@@ -28,6 +28,13 @@ double ANT_hnsw::distance(long long a, const float *query, ANT_vector_store *vec
 return -ANT_vector_store::kernel(vectors->get(a), query, vectors->get_dimension(), metric);
 }
 
+#ifdef ANT_HNSW_PROFILE
+long long ant_hnsw_cache_hit = 0, ant_hnsw_cache_miss = 0;
+#define PROF(counter) (counter++)
+#else
+#define PROF(counter) ((void)0)
+#endif
+
 /*
 	Pairs used in the heaps: (distance, docid).  std::priority_queue is a
 	max-heap on the pair, so a "furthest-on-top" heap of found nodes is the
@@ -52,7 +59,7 @@ for (lc = 0; lc < layer; lc++)			/* skip lower layers: each is [count][count doc
 return p + 1;
 }
 
-long ANT_hnsw::build(ANT_vector_store *vectors, long long M_in, long long ef_construction_in, long metric)
+long ANT_hnsw::build(ANT_vector_store *vectors, long long M_in, long long ef_construction_in, long metric, bool use_distance_cache)
 {
 long long n = vectors->document_count(), i;
 ANT_mersenne_twister twister;
@@ -85,6 +92,56 @@ std::vector<std::vector<std::vector<long long> > > adj(n);
 std::vector<long long> visited_epoch(n > 0 ? n : 1, 0);
 long long current_epoch = 0;
 
+/* Pair-keyed distance memo.  EVERY build distance is between two graph nodes
+   a,b (distance(a,·) is symmetric: -kernel(get(a),get(b))), and docids are
+   < 2^31 (ANT_HNSW_MAX_DOCUMENTS) so (min,max) packs into a u64 key that is
+   always >= 1 (a != b), letting key 0 mark an empty slot.  The reverse-edge
+   prune heuristic re-runs on nearly every connection to a full node,
+   recomputing the same neighbour-pair distances -- caching them cuts the
+   dominant build cost.  A flat open-addressing table (linear probing, no
+   per-entry allocation) is used rather than std::unordered_map, whose node
+   allocation costs more than recomputing a low-dimension distance.
+   Deterministic: a hit returns exactly what distance() would, so the produced
+   graph is byte-identical to the uncached build.  The table is a bounded
+   power-of-two; at 75% load it is cleared and refilled, which only forces
+   later recomputation -- no behaviour change.  When enabled it is a TRANSIENT
+   working set of up to DCACHE_MAX_SLOTS * 16 bytes (~134MB, dkey+dval), freed
+   when build() returns; the in-tree callers build one graph at a time.
+   Gated on dimension: below ANT_HNSW_DISTANCE_CACHE_MIN_DIM a distance() is
+   cheaper than a cache probe, so the table is neither allocated nor consulted
+   (measured crossover ~dim 150; the caller may also force it off). */
+static const size_t DCACHE_SLOTS_PER_DOC = 4096;	/* size the table to ~this many pairs/doc, so most stay resident before a clear */
+static const size_t DCACHE_MAX_SLOTS = (size_t)1 << 23;	/* hard cap: 8.4M slots * 16 bytes ~= 134MB */
+bool use_cache = use_distance_cache && vectors->get_dimension() >= ANT_HNSW_DISTANCE_CACHE_MIN_DIM;
+size_t dcap = (size_t)1 << 16;
+while (dcap < (size_t)n * DCACHE_SLOTS_PER_DOC && dcap < DCACHE_MAX_SLOTS) dcap <<= 1;
+std::vector<unsigned long long> dkey(use_cache ? dcap : 0, 0ULL);
+std::vector<double> dval(use_cache ? dcap : 0);
+const size_t dmask = dcap - 1;
+const unsigned dshift = 64 - (unsigned)__builtin_ctzll(dcap);
+size_t dfill = 0;
+const size_t dlimit = dcap - (dcap >> 2);			/* clear-and-refill at 75% load */
+auto dist_ids = [&](long long a, long long b) -> double
+	{
+	if (!use_cache)
+		return distance(a, vectors->get(b), vectors, metric);
+	unsigned long long lo = (unsigned long long)(a < b ? a : b);
+	unsigned long long hi = (unsigned long long)(a < b ? b : a);
+	unsigned long long key = (lo << 32) | hi;
+	size_t i = (size_t)((key * 0x9E3779B97F4A7C15ULL) >> dshift);
+	while (dkey[i]) { if (dkey[i] == key) { PROF(ant_hnsw_cache_hit); return dval[i]; } i = (i + 1) & dmask; }
+	PROF(ant_hnsw_cache_miss);
+	double d = distance(a, vectors->get(b), vectors, metric);
+	if (dfill >= dlimit)						/* table full: wipe and re-find an empty slot */
+		{
+		std::fill(dkey.begin(), dkey.end(), 0ULL); dfill = 0;
+		i = (size_t)((key * 0x9E3779B97F4A7C15ULL) >> dshift);
+		while (dkey[i]) i = (i + 1) & dmask;
+		}
+	dkey[i] = key; dval[i] = d; dfill++;			/* i is the empty slot the probe stopped on */
+	return d;
+	};
+
 for (long long q = 0; q < n; q++)
 	{
 	if (!vectors->has(q))
@@ -109,12 +166,12 @@ for (long long q = 0; q < n; q++)
 		while (changed)
 			{
 			changed = 0;
-			double best_d = distance(ep, vectors->get(q), vectors, metric);
+			double best_d = dist_ids(ep, q);
 			if (lc < (long long)adj[ep].size())
 				for (size_t e = 0; e < adj[ep][lc].size(); e++)
 					{
 					long long cand = adj[ep][lc][e];
-					double d = distance(cand, vectors->get(q), vectors, metric);
+					double d = dist_ids(cand, q);
 					if (d < best_d) { best_d = d; ep = cand; changed = 1; }
 					}
 			}
@@ -128,7 +185,7 @@ for (long long q = 0; q < n; q++)
 		std::priority_queue<DN> W;						/* max-heap: furthest on top */
 		std::priority_queue<DN, std::vector<DN>, std::greater<DN> > C;	/* nearest on top */
 		current_epoch++;						/* fresh generation: O(1) instead of re-zeroing an n-sized array */
-		double dep = distance(ep, vectors->get(q), vectors, metric);
+		double dep = dist_ids(ep, q);
 		W.push(DN(dep, ep)); C.push(DN(dep, ep)); visited_epoch[ep] = current_epoch;
 		while (!C.empty())
 			{
@@ -141,7 +198,7 @@ for (long long q = 0; q < n; q++)
 					long long ecand = adj[cnode][lc][e];
 					if (visited_epoch[ecand] == current_epoch) continue;
 					visited_epoch[ecand] = current_epoch;
-					double de = distance(ecand, vectors->get(q), vectors, metric);
+					double de = dist_ids(ecand, q);
 					if (de < W.top().first || (long long)W.size() < ef_construction)
 						{ C.push(DN(de, ecand)); W.push(DN(de, ecand)); if ((long long)W.size() > ef_construction) W.pop(); }
 					}
@@ -161,8 +218,10 @@ for (long long q = 0; q < n; q++)
 			double e_to_q = cand[ci].first;
 			long good = 1;
 			for (size_t si = 0; si < selected.size(); si++)
-				if (distance(e, vectors->get(selected[si]), vectors, metric) < e_to_q)
+				{
+				if (dist_ids(e, selected[si]) < e_to_q)
 					{ good = 0; break; }
+				}
 			if (good) selected.push_back(e);
 			}
 
@@ -177,14 +236,18 @@ for (long long q = 0; q < n; q++)
 				/* prune nbr's neighbours by the same heuristic w.r.t. nbr */
 				std::vector<DN> nn;
 				for (size_t z = 0; z < adj[nbr][lc].size(); z++)
-					nn.push_back(DN(distance(adj[nbr][lc][z], vectors->get(nbr), vectors, metric), adj[nbr][lc][z]));
+					{
+					nn.push_back(DN(dist_ids(adj[nbr][lc][z], nbr), adj[nbr][lc][z]));
+					}
 				std::sort(nn.begin(), nn.end());
 				std::vector<long long> kept;
 				for (size_t z = 0; z < nn.size() && (long long)kept.size() < degree_cap; z++)
 					{
 					long long e = nn[z].second; double e_to_nbr = nn[z].first; long good = 1;
 					for (size_t si2 = 0; si2 < kept.size(); si2++)
-						if (distance(e, vectors->get(kept[si2]), vectors, metric) < e_to_nbr) { good = 0; break; }
+						{
+						if (dist_ids(e, kept[si2]) < e_to_nbr) { good = 0; break; }
+						}
 					if (good) kept.push_back(e);
 					}
 				adj[nbr][lc] = kept;

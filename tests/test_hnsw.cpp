@@ -267,9 +267,45 @@ delete loaded; unlink(gpath);
 printf("test_load_docs_over_int32_cap OK\n");
 }
 
+static void test_distance_cache_equivalence(void)
+{
+/* At dim >= ANT_HNSW_DISTANCE_CACHE_MIN_DIM build() memoises distances.  The
+   memo only avoids recomputation -- it never changes a value -- so building
+   the same data with the cache on vs. off must yield an identical graph.
+   Verify by comparing search results (hits AND exact scores) across many
+   queries; any structural difference would surface as a divergent result. */
+long long dim = 256, n = 800, k = 10, i, d, qi;
+CHECK(dim >= ANT_HNSW_DISTANCE_CACHE_MIN_DIM);			/* ensure the cache path is exercised */
+char path[64]; strcpy(path, "/tmp/ant_hnsw_eq_XXXXXX"); int fd = mkstemp(path); if (fd >= 0) close(fd);
+float *data = new float[n * dim];
+srand(7);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand() % 200 - 100);
+ANT_vector_store *store = make_store(path, dim, n, data);
+
+ANT_hnsw cached, plain;
+CHECK(cached.build(store, 16, 200, ANT_vector_store::METRIC_COSINE, /*use_distance_cache=*/true) == 0);
+CHECK(plain.build(store, 16, 200, ANT_vector_store::METRIC_COSINE, /*use_distance_cache=*/false) == 0);
+CHECK(cached.node_count() == plain.node_count());
+
+ANT_index_tombstones stones(n);
+float *query = new float[dim];
+for (qi = 0; qi < 50; qi++)
+	{
+	for (d = 0; d < dim; d++) query[d] = (float)(rand() % 200 - 100);
+	long long hc[10], hp[10]; double sc[10], sp[10];
+	long long cc = cached.search(query, ANT_vector_store::METRIC_COSINE, 64, k, store, &stones, hc, sc);
+	long long cp = plain.search(query, ANT_vector_store::METRIC_COSINE, 64, k, store, &stones, hp, sp);
+	CHECK(cc == cp);
+	for (i = 0; i < cc; i++) { CHECK(hc[i] == hp[i]); CHECK(sc[i] == sp[i]); }		/* byte-identical */
+	}
+delete [] query; delete store; delete [] data; unlink(path);
+printf("test_distance_cache_equivalence OK (cache-on == cache-off, dim=%lld)\n", dim);
+}
+
 int main(void)
 {
 test_recall_and_determinism();
+test_distance_cache_equivalence();
 test_ef_monotonic();
 test_tombstone_filter();
 test_tombstone_no_underfill();
