@@ -25,7 +25,7 @@ delete [] levels; delete [] offsets; delete [] neighbours;
 
 double ANT_hnsw::distance(long long a, const float *query, ANT_vector_store *vectors, long metric)
 {
-return -ANT_vector_store::kernel(vectors->get(a), query, vectors->get_dimension(), metric);
+return -vectors->score(a, query, metric);		// score() handles float and int8 backends (reconstructs a for int8)
 }
 
 #ifdef ANT_HNSW_PROFILE
@@ -121,17 +121,28 @@ const size_t dmask = dcap - 1;
 const unsigned dshift = 64 - (unsigned)__builtin_ctzll(dcap);
 size_t dfill = 0;
 const size_t dlimit = dcap - (dcap >> 2);			/* clear-and-refill at 75% load */
+/* distance between two STORED nodes.  For int8 the "query" node b is
+   reconstructed into bscratch (distance() reconstructs a internally via
+   score()); for float, get(b) is a zero-copy pointer -- bit-identical to the
+   pre-V4 -kernel(get(a),get(b)). */
+std::vector<float> bscratch(vectors->is_quantized() ? (size_t)vectors->get_dimension() : 0);
+auto dist_stored = [&](long long a, long long b) -> double
+	{
+	if (vectors->is_quantized())
+		{ vectors->reconstruct(b, bscratch.data()); return distance(a, bscratch.data(), vectors, metric); }
+	return distance(a, vectors->get(b), vectors, metric);
+	};
 auto dist_ids = [&](long long a, long long b) -> double
 	{
 	if (!use_cache)
-		return distance(a, vectors->get(b), vectors, metric);
+		return dist_stored(a, b);
 	unsigned long long lo = (unsigned long long)(a < b ? a : b);
 	unsigned long long hi = (unsigned long long)(a < b ? b : a);
 	unsigned long long key = (lo << 32) | hi;
 	size_t i = (size_t)((key * 0x9E3779B97F4A7C15ULL) >> dshift);
 	while (dkey[i]) { if (dkey[i] == key) { PROF(ant_hnsw_cache_hit); return dval[i]; } i = (i + 1) & dmask; }
 	PROF(ant_hnsw_cache_miss);
-	double d = distance(a, vectors->get(b), vectors, metric);
+	double d = dist_stored(a, b);
 	if (dfill >= dlimit)						/* table full: wipe and re-find an empty slot */
 		{
 		std::fill(dkey.begin(), dkey.end(), 0ULL); dfill = 0;

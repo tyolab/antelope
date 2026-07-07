@@ -302,10 +302,44 @@ delete [] query; delete store; delete [] data; unlink(path);
 printf("test_distance_cache_equivalence OK (cache-on == cache-off, dim=%lld)\n", dim);
 }
 
+static void test_hnsw_over_quantized_store(void)
+{
+/* build + search HNSW over an int8 store; recall vs exact float top-k, averaged */
+long long dim = 32, n = 600, k = 10, i, d, qi;
+char qp[64]; strcpy(qp, "/tmp/ant_hnsw_q_XXXXXX"); { int fd=mkstemp(qp); if(fd>=0) close(fd); }
+float *data = new float[n * dim];
+srand(21);
+for (i = 0; i < n * dim; i++) data[i] = (float)(rand()%2000-1000)/500.0f;
+ANT_vector_store_writer wq; wq.create(qp, dim); wq.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+for (i=0;i<n;i++) wq.append(data+i*dim); wq.finish();
+ANT_vector_store *sq = ANT_vector_store::load(qp, dim, n);
+CHECK(sq->is_quantized());
+
+ANT_hnsw g;
+CHECK(g.build(sq, 16, 200, ANT_vector_store::METRIC_L2) == 0);
+CHECK(g.node_count() == n);
+
+ANT_index_tombstones stones(n);
+long long overlap = 0, total = 0;
+for (qi = 0; qi < 25; qi++)
+	{
+	float query[32]; for (d=0; d<dim; d++) query[d] = (float)(rand()%2000-1000)/500.0f;
+	long long hg[10]; double sg[10];
+	long long cg = g.search(query, ANT_vector_store::METRIC_L2, 64, k, sq, &stones, hg, sg);
+	long long exact[10]; brute_force_topk(query, data, dim, n, ANT_vector_store::METRIC_L2, k, exact);
+	for (i=0;i<cg;i++) for (long long j=0;j<k;j++) if (hg[i]==exact[j]) { overlap++; break; }
+	total += k;
+	}
+CHECK((double)overlap/(double)total >= 0.70);
+delete sq; delete [] data; unlink(qp);
+printf("test_hnsw_over_quantized_store OK (recall %.2f)\n", (double)overlap/(double)total);
+}
+
 int main(void)
 {
 test_recall_and_determinism();
 test_distance_cache_equivalence();
+test_hnsw_over_quantized_store();
 test_ef_monotonic();
 test_tombstone_filter();
 test_tombstone_no_underfill();
