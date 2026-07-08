@@ -33,6 +33,7 @@ class ANT_signature_store;
 class ANT_hnsw;
 class ANT_filter;
 class ANT_token_index;
+class ANT_pq_store;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -64,6 +65,7 @@ public:
 	ANT_token_index *token_index;		// V6 token-level ANN over multivectors' flattened token pool; NULL unless built/loadable
 	ANT_attribute_store *attributes;	// filter columns; NULL unless attributes configured
 	ANT_payload_store *payload;			// opaque per-doc blob; NULL unless attributes configured
+	ANT_pq_store *pq_vectors;			// PQ-compressed dense store (seg_G.pq); NULL unless PQ configured AND a valid .pq loaded/built
 	} ;
 
 private:
@@ -347,6 +349,8 @@ public:
 	long build_token_index(void);					// per-segment: build/rewrite .tann for segments without one; 0 = success, 1 if rerank unconfigured
 	long set_token_index_policy(int eager);		// 1 = eager (build at flush), 0 = ondemand (default); returns 0
 	long disk_segment_has_token_index(long long which);	// test accessor: 1 if segment `which` has a non-empty token index
+	long build_pq(void);								// on-demand backfill: build .pq for PQ-configured segments lacking one; 0 = success, 1 if PQ unconfigured / no dense vectors
+	long disk_segment_has_pq(long long which);			// test accessor: 1 if segment `which` has a non-empty PQ store
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents

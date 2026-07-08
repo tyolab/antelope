@@ -33,6 +33,7 @@
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
 #include "../source/token_index.h"
+#include "../source/pq_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -140,6 +141,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].tombstones;
 	delete segments[which].vectors;
 	delete segments[which].exact_vectors;
+	delete segments[which].pq_vectors;
 	delete segments[which].signatures;
 	delete segments[which].hnsw_graph;
 	delete segments[which].multivectors;
@@ -1431,6 +1433,14 @@ if (wal != NULL)
 if (token_index_eager)
 	build_token_index();
 
+/*
+	Eager PQ policy: build .pq for the segment just flushed (append_segment()
+	already ran, so it is visible to build_pq()'s loop).  Idempotent, best-effort
+	like the other flush() sidecars.
+*/
+if (pq_eager)
+	build_pq();
+
 return 0;
 }
 
@@ -1526,6 +1536,19 @@ else
 	segments[segment_count].vectors = NULL;
 	segments[segment_count].exact_vectors = NULL;
 	}
+
+segments[segment_count].pq_vectors = NULL;
+if (vector_dimension_current != 0 && pq_configured())
+	{
+	char pq_filename[1024];
+	segment_filename(pq_filename, sizeof(pq_filename), generation, "pq");
+	ANT_pq_store *pq = ANT_pq_store::load(pq_filename, vector_dimension_current, engine->get_document_count(), vector_metric);
+	if (pq->document_count() == engine->get_document_count() && pq->document_count() > 0)
+		segments[segment_count].pq_vectors = pq;		/* valid .pq */
+	else
+		delete pq;										/* no/degraded .pq -> stays NULL -> fallback to float .vectors */
+	}
+
 segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;
 
 if (vector_dimension_current != 0 && hnsw_M_current != 0)

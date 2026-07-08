@@ -33,6 +33,7 @@
 #include "../source/hnsw.h"
 #include "../source/multivector_store.h"
 #include "../source/token_index.h"
+#include "../source/pq_store.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -955,6 +956,74 @@ for (which = 0; which < segment_count; which++)
 	delete src;
 	}
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::BUILD_PQ()
+	-------------------------------
+	On-demand backfill: for every open segment with a dense float .vec and no
+	valid .pq, train per-segment codebooks + encode + write the .pq sidecar,
+	then swap the in-memory PQ store.  The float .vec is KEPT (PQ replace still
+	retains the resident float as a fallback/rerank tier in Phase 1).  Per-segment
+	failures skip (segment stays float/int8-backed), never corrupt.  Idempotent.
+	Returns 0 on success, 1 if PQ is unconfigured or the index has no vectors.
+*/
+long ATIRE_segment_index::build_pq(void)
+{
+long long which;
+char vec_name[4096], pq_name[4096];
+
+if (!pq_configured() || vector_dimension_current == 0)
+	return 1;
+
+for (which = 0; which < segment_count; which++)
+	{
+	long long generation = segments[which].generation;
+	long long docs = segments[which].engine->get_document_count();
+
+	if (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0)
+		continue;				/* already has a valid .pq: idempotent skip */
+
+	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
+	segment_filename(pq_name, sizeof(pq_name), generation, "pq");
+
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() == docs && docs > 0 && !src->is_quantized())
+		{
+		ANT_pq_store_writer w;
+		long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric) != 0;
+		float *buf = new float[vector_dimension_current];
+		for (long long docid = 0; !failed && docid < docs; docid++)
+			{
+			if (src->has(docid))
+				{ src->reconstruct(docid, buf); failed = w.append(buf) != 0; }
+			else
+				failed = w.append(NULL) != 0;
+			}
+		delete [] buf;
+		if (!failed)
+			failed = w.finish() != 0;
+		if (failed)
+			w.abandon();
+		else
+			{
+			delete segments[which].pq_vectors;
+			segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+			}
+		}
+	delete src;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_HAS_PQ()
+	------------------------------------------
+	Test accessor: 1 if segment `which` has a non-empty PQ store.
+*/
+long ATIRE_segment_index::disk_segment_has_pq(long long which)
+{
+return (which >= 0 && which < segment_count && segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() > 0) ? 1 : 0;
 }
 
 /*
