@@ -32,6 +32,7 @@ class ANT_signature;
 class ANT_signature_store;
 class ANT_hnsw;
 class ANT_filter;
+class ANT_token_index;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -60,6 +61,7 @@ public:
 	ANT_signature_store *signatures;	// NULL when absent/degraded/approximate-off
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
 	ANT_multivector_store *multivectors;	// V5 late-interaction sidecar; NULL unless rerank configured
+	ANT_token_index *token_index;		// V6 token-level ANN over multivectors' flattened token pool; NULL unless built/loadable
 	ANT_attribute_store *attributes;	// filter columns; NULL unless attributes configured
 	ANT_payload_store *payload;			// opaque per-doc blob; NULL unless attributes configured
 	} ;
@@ -112,6 +114,10 @@ private:
 
 	long long rerank_dimension_current;		// 0 = rerank not configured
 	long rerank_quant_current;				// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+
+	long long token_index_M;					// V6 token-ANN graph fan-out (build_token_index, Task 9)
+	long long token_index_ef_construction;
+	long long token_top_p;						// per-query-token candidate shortlist width
 
 	ANT_attribute_schema attribute_schema_current;		// count()==0 => not configured
 
@@ -199,6 +205,8 @@ private:
 	unsigned char *evaluate_filter_for_segment(long long which, const ANT_filter *filter);	// per-disk-segment match bitset (caller frees); NULL if filter==NULL
 	unsigned char *evaluate_filter_for_live(const ANT_filter *filter);						// live-buffer match bitset (caller frees); NULL if filter==NULL
 	double maxsim_live(long long docid, const float *query_vecs, long long num_query_vecs);	// MaxSim over the writer's live multi-vector buffer for one docid
+	long long multivector_candidates(const float *qn, long long num_query_vecs, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter);	// token-ANN candidate-gen (falls back to brute-force MaxSim when no token index) -> exact MaxSim rescore
+	long long search_multivector_impl(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter);
 	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
 	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW };
 	// unified cores behind the public search_vector*/search_hybrid* wrappers; mode picks the gatherer, everything else (sort/fuse/publish) is identical
@@ -319,6 +327,8 @@ public:
 	long long search_hybrid_approx(char *query_text, const float *query_vector, long long top_k, const ANT_filter *filter);	// filtered hybrid, signature-prefiltered vector leg
 	long long search_hybrid_hnsw(char *query_text, const float *query_vector, long long top_k, const ANT_filter *filter);	// filtered hybrid, HNSW vector leg
 	long long search_rerank(char *query_text, const float *query_vector, const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k, const ANT_filter *filter);	// filtered stage 1 -> MaxSim rerank
+	long long search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k);	// first-class token-ANN candidate-gen -> exact MaxSim rescore; brute-force MaxSim fallback when no token index (Task 9 builds it)
+	long long search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter);	// filtered
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents

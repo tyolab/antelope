@@ -32,6 +32,7 @@
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
 #include "../source/multivector_store.h"
+#include "../source/token_index.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -1713,4 +1714,128 @@ delete [] ms;
 delete [] has_mv;
 delete [] qn;
 return results_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::MULTIVECTOR_CANDIDATES()
+	----------------------------------------------
+	Per-disk-segment candidate gatherer for search_multivector().  Each segment
+	with a built token-ANN graph is shortlisted via ANT_token_index::search_candidates()
+	(which already applies tombstones + the filter bitset at the doc level), then
+	each candidate is exact-MaxSim-rescored.  Segments with no token index (V6
+	build_token_index is Task 9, so this is every segment for now) fall back to
+	an exhaustive scan of every doc with multi-vectors, applying tombstones/filter
+	inline -- this brute-force path is what this task's ranking-equality test
+	locks against.  `qn` is the already-normalized query multi-vector.
+*/
+long long ATIRE_segment_index::multivector_candidates(const float *qn, long long num_query_vecs, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
+{
+long long which, best_count = 0, pool_size = top_k * candidate_multiplier;
+
+for (which = 0; which < segment_count; which++)
+	{
+	ANT_multivector_store *mv = segments[which].multivectors;
+	if (mv == NULL)
+		continue;
+
+	unsigned char *fbits = NULL;   /* Task 7: evaluate_filter_for_segment(which, filter) */
+
+	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
+		{
+		long long *cand = new long long[pool_size > 0 ? pool_size : 1];
+		long long n = segments[which].token_index->search_candidates(qn, num_query_vecs, token_top_p, pool_size, segments[which].tombstones, fbits, cand);
+
+		for (long long p = 0; p < n; p++)
+			{
+			long long did = cand[p];
+			if (!mv->has(did))
+				continue;   /* tombstone+filter already applied by search_candidates */
+			ANT_vector_candidate_insert(best, &best_count, top_k, mv->maxsim(did, qn, num_query_vecs), segments[which].generation, did);
+			}
+		delete [] cand;
+		}
+	else
+		{
+		long long docs = segments[which].engine->get_document_count();
+
+		for (long long did = 0; did < docs; did++)
+			{
+			if (!mv->has(did))
+				continue;
+			if (segments[which].tombstones != NULL && segments[which].tombstones->is_deleted(did))
+				continue;
+			if (fbits != NULL && !(fbits[did >> 3] & (1 << (did & 7))))
+				continue;
+			ANT_vector_candidate_insert(best, &best_count, top_k, mv->maxsim(did, qn, num_query_vecs), segments[which].generation, did);
+			}
+		}
+
+	/* Task 7: if (fbits) delete [] fbits; */
+	}
+
+/* Task 8: live-buffer merge via maxsim_live */
+return best_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SEARCH_MULTIVECTOR_IMPL()
+	------------------------------------------------
+	First-class late-interaction search: candidate-gen (token-ANN when built,
+	brute-force MaxSim scan otherwise) -> exact MaxSim rescore -> publish.
+	Mirrors search_vector_impl()'s sort/resolve/publish tail exactly.
+*/
+long long ATIRE_segment_index::search_multivector_impl(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter)
+{
+char filename_buffer[4096];
+long long which, count, i, dim = rerank_dimension_current;
+
+reset_results();
+
+if (!rerank_configured() || query_multivector == NULL || num_query_vecs < 1 || top_k < 1)
+	return 0;
+
+float *qn = new float[num_query_vecs * dim];
+memcpy(qn, query_multivector, (size_t)(num_query_vecs * dim) * sizeof(float));
+for (i = 0; i < num_query_vecs; i++)
+	ANT_vector_store::normalize(qn + i * dim, dim);
+
+ANT_vector_candidate *best = new ANT_vector_candidate[top_k];
+count = multivector_candidates(qn, num_query_vecs, top_k, best, filter);
+qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
+
+for (which = 0; which < count; which++)
+	{
+	char *filename = resolve_hit_filename(best[which].generation, best[which].docid, filename_buffer, sizeof(filename_buffer));
+
+	hit *slot = append_result();
+
+	slot->generation = best[which].generation;
+	slot->docid = best[which].docid;
+	populate_hit_payload(slot);
+	slot->score = best[which].score;
+	if (filename != NULL)
+		{
+		slot->filename = new char[strlen(filename) + 1];
+		strcpy(slot->filename, filename);
+		}
+	else
+		{
+		slot->filename = new char[1];
+		slot->filename[0] = '\0';
+		}
+	}
+
+delete [] best;
+delete [] qn;
+return results_count;
+}
+
+long long ATIRE_segment_index::search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k)
+{
+return search_multivector_impl(query_multivector, num_query_vecs, top_k, NULL);
+}
+
+long long ATIRE_segment_index::search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter)
+{
+return search_multivector_impl(query_multivector, num_query_vecs, top_k, filter);
 }

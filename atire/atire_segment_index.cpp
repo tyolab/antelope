@@ -32,6 +32,7 @@
 #include "../source/signature.h"
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
+#include "../source/token_index.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -86,6 +87,10 @@ quantization_current = 0;
 rerank_dimension_current = 0;
 rerank_quant_current = 0;
 
+token_index_M = 16;
+token_index_ef_construction = 200;
+token_top_p = 32;
+
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
 writer_vector_capacity = 0;
@@ -132,6 +137,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].signatures;
 	delete segments[which].hnsw_graph;
 	delete segments[which].multivectors;
+	delete segments[which].token_index;
 	delete segments[which].attributes;
 	delete segments[which].payload;
 	}
@@ -1518,9 +1524,16 @@ if (rerank_configured())
 	char mvec_filename[1024];
 	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
 	segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
+
+	char tann_filename[1024];
+	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
+	segments[segment_count].token_index = ANT_token_index::load(tann_filename, segments[segment_count].multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
 	}
 else
+	{
 	segments[segment_count].multivectors = NULL;
+	segments[segment_count].token_index = NULL;
+	}
 
 if (attributes_configured())
 	{

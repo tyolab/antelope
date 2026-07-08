@@ -492,6 +492,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].signatures;
 			delete segments[which].hnsw_graph;
 			delete segments[which].multivectors;
+			delete segments[which].token_index;
 			delete segments[which].attributes;
 			delete segments[which].payload;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
