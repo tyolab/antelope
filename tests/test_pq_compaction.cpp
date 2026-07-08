@@ -3,6 +3,11 @@
 	----------------------
 	compact() rebuilds the merged segment's .pq (retrain + renumber); PQ search
 	stays correct after merge, and falls back to resident float if the .pq is lost.
+
+	This test also exercises the compaction shuffle-teardown of PQ-built input
+	segments: run it under ASan with ASAN_OPTIONS=detect_leaks=1 to guard against
+	regressing the pq_vectors teardown free (a leak, not a crash -- invisible in a
+	plain functional run).
 */
 #include <stdio.h>
 #include <stdlib.h>

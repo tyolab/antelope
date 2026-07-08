@@ -567,6 +567,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].tombstones;
 			delete segments[which].vectors;
 			delete segments[which].exact_vectors;
+			delete segments[which].pq_vectors;
 			delete segments[which].signatures;
 			delete segments[which].hnsw_graph;
 			delete segments[which].multivectors;
