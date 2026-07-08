@@ -1738,12 +1738,14 @@ for (which = 0; which < segment_count; which++)
 	if (mv == NULL)
 		continue;
 
-	unsigned char *fbits = NULL;   /* Task 7: evaluate_filter_for_segment(which, filter) */
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);   /* NULL when filter==NULL */
 
 	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
 		{
-		long long *cand = new long long[pool_size > 0 ? pool_size : 1];
-		long long n = segments[which].token_index->search_candidates(qn, num_query_vecs, token_top_p, pool_size, segments[which].tombstones, fbits, cand);
+		long long eff_top_p = (fbits != NULL) ? token_top_p * candidate_multiplier : token_top_p;
+		long long eff_pool  = (fbits != NULL) ? pool_size * candidate_multiplier : pool_size;
+		long long *cand = new long long[eff_pool > 0 ? eff_pool : 1];
+		long long n = segments[which].token_index->search_candidates(qn, num_query_vecs, eff_top_p, eff_pool, segments[which].tombstones, fbits, cand);
 
 		for (long long p = 0; p < n; p++)
 			{
@@ -1770,7 +1772,7 @@ for (which = 0; which < segment_count; which++)
 			}
 		}
 
-	/* Task 7: if (fbits) delete [] fbits; */
+	delete [] fbits;
 	}
 
 /* Task 8: live-buffer merge via maxsim_live */
