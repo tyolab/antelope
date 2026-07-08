@@ -1775,7 +1775,20 @@ for (which = 0; which < segment_count; which++)
 	delete [] fbits;
 	}
 
-/* Task 8: live-buffer merge via maxsim_live */
+/* live-buffer merge: un-flushed docs with multi-vectors, scored by exact MaxSim */
+unsigned char *lbits = evaluate_filter_for_live(filter);
+for (long long did = 0; did < writer_documents; did++)
+	{
+	if (!(writer_multivector_counts != NULL && did < writer_multivector_counts_capacity && writer_multivector_counts[did] > 0))
+		continue;
+	if (writer_tombstones != NULL && writer_tombstones->is_deleted(did))
+		continue;
+	if (lbits != NULL && !(lbits[did >> 3] & (1 << (did & 7))))
+		continue;
+	ANT_vector_candidate_insert(best, &best_count, top_k, maxsim_live(did, qn, num_query_vecs), writer_generation, did);
+	}
+delete [] lbits;
+
 return best_count;
 }
 
