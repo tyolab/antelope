@@ -26,6 +26,7 @@
 #include "../source/signature.h"
 #include "../source/signature_store.h"
 #include "../source/hnsw.h"
+#include "../source/pq_store.h"
 #include "../source/wal.h"
 #include "../source/multivector_store.h"
 #include "../source/token_index.h"
@@ -430,6 +431,47 @@ if (hnsw_M_current != 0)
 	delete out_vectors;
 	delete output_segment->hnsw_graph;
 	output_segment->hnsw_graph = ANT_hnsw::load(out_hnsw, hnsw_M_current, hnsw_ef_construction_current, output_segment->engine->get_document_count());
+	}
+
+/*
+	PQ: rebuild the merged segment's .pq over the merged DENSE vectors (reload
+	the fresh output .vec) with a fresh per-segment codebook + renumbered codes.
+	Best-effort: a failure leaves the output PQ-less (PQ search falls back to
+	the resident exact float scan), never aborts a successful merge.  Refresh
+	the in-memory pq_vectors so THIS session's PQ search engages the compacted
+	codes.  Must run BEFORE Step 6's shuffle, which invalidates output_segment.
+	(Nothing borrows pq_vectors -- the search gatherers read it per-query, not
+	retained -- so the delete+reload refresh has no dependent-lifetime hazard,
+	unlike the .mvec/.tann pair above.)
+*/
+if (pq_configured())
+	{
+	char out_vec[4096], out_pq[4096];
+	segment_filename(out_vec, sizeof(out_vec), output_generation, vext);
+	segment_filename(out_pq, sizeof(out_pq), output_generation, "pq");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);
+	if (out_vectors->document_count() == out_docs && out_docs > 0 && !out_vectors->is_quantized())
+		{
+		ANT_pq_store_writer w;
+		long failed = w.create(out_pq, vector_dimension_current, pq_m_current, vector_metric) != 0;
+		float *buf = new float[vector_dimension_current];
+		for (long long d = 0; !failed && d < out_docs; d++)
+			{
+			if (out_vectors->has(d))
+				{ out_vectors->reconstruct(d, buf); failed = w.append(buf) != 0; }
+			else
+				failed = w.append(NULL) != 0;
+			}
+		delete [] buf;
+		if (!failed)
+			failed = w.finish() != 0;
+		if (failed)
+			w.abandon();
+		}
+	delete out_vectors;
+	delete output_segment->pq_vectors;
+	output_segment->pq_vectors = ANT_pq_store::load(out_pq, vector_dimension_current, output_segment->engine->get_document_count(), vector_metric);
 	}
 
 /*
