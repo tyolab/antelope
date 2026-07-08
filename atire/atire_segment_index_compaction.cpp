@@ -28,6 +28,7 @@
 #include "../source/hnsw.h"
 #include "../source/wal.h"
 #include "../source/multivector_store.h"
+#include "../source/token_index.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::COMPACT()
@@ -429,6 +430,28 @@ if (hnsw_M_current != 0)
 	delete out_vectors;
 	delete output_segment->hnsw_graph;
 	output_segment->hnsw_graph = ANT_hnsw::load(out_hnsw, hnsw_M_current, hnsw_ef_construction_current, output_segment->engine->get_document_count());
+	}
+
+/*
+	V6: rebuild the merged segment's token-ANN (.tann) over the merged
+	multi-vectors (already loaded into output_segment->multivectors by
+	append_segment). Best-effort: a failure leaves the output token-index-less
+	(search_multivector falls back to brute-force MaxSim), never aborts a
+	successful merge. Refresh the in-memory token_index so THIS session's
+	search_multivector engages the ANN path.
+*/
+if (rerank_configured() && output_segment->multivectors != NULL && output_segment->multivectors->document_count() > 0)
+	{
+	char out_tann[4096];
+	segment_filename(out_tann, sizeof(out_tann), output_generation, "tann");
+	ANT_token_index *tidx = ANT_token_index::build(output_segment->multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
+	if (tidx != NULL)
+		{
+		if (tidx->save(out_tann) == 0)
+			{ delete output_segment->token_index; output_segment->token_index = tidx; }
+		else
+			delete tidx;
+		}
 	}
 
 /*
