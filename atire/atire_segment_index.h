@@ -201,6 +201,7 @@ private:
 	long load_hnsw_config(void);
 	long save_hnsw_config(void);
 	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// Task 7
+	long long vector_candidates_pq(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// PQ ADC gatherer (replace posture); falls back to float scan for segments without a valid .pq
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	long writer_multivector_append(long long docid, const float *multivector, long long num_vectors);
 	void writer_attribute_capture(long long docid, const ANT_attribute_set *attributes);	// deep-clone into the per-docid attribute buffer (Task 6: capture only)
@@ -216,7 +217,7 @@ private:
 	long long multivector_candidates(const float *qn, long long num_query_vecs, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter);	// token-ANN candidate-gen (falls back to brute-force MaxSim when no token index) -> exact MaxSim rescore
 	long long search_multivector_impl(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter);
 	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
-	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW };
+	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW, VECTOR_MODE_PQ };
 	// unified cores behind the public search_vector*/search_hybrid* wrappers; mode picks the gatherer, everything else (sort/fuse/publish) is identical
 	long long search_vector_impl(const float *query, long long top_k, vector_search_mode mode, const ANT_filter *filter = NULL);
 	long long search_hybrid_impl(char *query_text, const float *query_vector, long long top_k, vector_search_mode mode, const ANT_filter *filter = NULL);

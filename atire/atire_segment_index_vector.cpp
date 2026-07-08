@@ -1309,6 +1309,7 @@ if (vector_dimension_current == 0 || query == NULL || top_k < 1)
 best = new ANT_vector_candidate[top_k];
 count = mode == VECTOR_MODE_APPROX ? vector_candidates_approx(query, top_k, best, filter)
 	: mode == VECTOR_MODE_HNSW ? vector_candidates_hnsw(query, top_k, best, filter)
+	: mode == VECTOR_MODE_PQ ? vector_candidates_pq(query, top_k, best, filter)
 	: vector_candidates(query, top_k, best, filter);
 qsort(best, (size_t)count, sizeof(*best), vector_candidate_compare);
 
@@ -1346,12 +1347,14 @@ return results_count;
 */
 long long ATIRE_segment_index::search_vector(const float *query, long long top_k)
 {
-return search_vector_impl(query, top_k, VECTOR_MODE_EXACT);
+vector_search_mode mode = (pq_configured() && pq_posture_current == PQ_POSTURE_REPLACE) ? VECTOR_MODE_PQ : VECTOR_MODE_EXACT;
+return search_vector_impl(query, top_k, mode);
 }
 
 long long ATIRE_segment_index::search_vector(const float *query, long long top_k, const ANT_filter *filter)
 {
-return search_vector_impl(query, top_k, VECTOR_MODE_EXACT, filter);
+vector_search_mode mode = (pq_configured() && pq_posture_current == PQ_POSTURE_REPLACE) ? VECTOR_MODE_PQ : VECTOR_MODE_EXACT;
+return search_vector_impl(query, top_k, mode, filter);
 }
 
 /*
@@ -1502,6 +1505,57 @@ delete [] lbits;
 delete [] normalized;
 delete [] cand_docids;
 delete [] cand_scores;
+return best_count;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES_PQ()
+	-------------------------------------------
+	Replace-posture PQ gatherer: rank on the ADC (asymmetric distance) score
+	directly.  Each disk segment WITH a valid .pq store is scanned via ADC; any
+	segment lacking one (not yet built, or degraded on load) falls back to an
+	exact float/int8 scan of its dense store, so results are always well-formed.
+	The live memory buffer is always scanned exactly (never PQ-encoded).  Cosine
+	is dot on normalized data, so the query is normalized here exactly as the
+	other gatherers do.  Returns the candidate count; caller supplies best[top_k].
+*/
+long long ATIRE_segment_index::vector_candidates_pq(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
+{
+long long which, best_count = 0;
+float *normalized = NULL;
+
+if (vector_dimension_current == 0 || query == NULL || top_k < 1)
+	return 0;
+
+if (vector_metric == VECTOR_METRIC_COSINE)
+	{
+	normalized = new float[vector_dimension_current];
+	memcpy(normalized, query, (size_t)(vector_dimension_current * sizeof(float)));
+	if (ANT_vector_store::normalize(normalized, vector_dimension_current) != 0)
+		{ delete [] normalized; return 0; }
+	query = normalized;
+	}
+
+for (which = 0; which < segment_count; which++)
+	{
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
+	if (segments[which].pq_vectors != NULL
+		&& segments[which].pq_vectors->document_count() == segments[which].engine->get_document_count()
+		&& segments[which].pq_vectors->document_count() > 0)
+		segments[which].pq_vectors->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+	else if (segments[which].vectors != NULL)
+		{
+		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+		}
+	delete [] fbits;
+	}
+
+unsigned char *lbits = evaluate_filter_for_live(filter);
+scan_live_buffer_exact(query, best, &best_count, top_k, lbits);
+delete [] lbits;
+
+delete [] normalized;
 return best_count;
 }
 
