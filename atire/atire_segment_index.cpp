@@ -84,6 +84,11 @@ hnsw_ef_search = 64;
 
 quantization_current = 0;
 
+pq_m_current = 0;
+pq_posture_current = 0;
+pq_rerank_quant_current = 0;
+pq_eager = 0;
+
 rerank_dimension_current = 0;
 rerank_quant_current = 0;
 
@@ -367,6 +372,7 @@ load_signature_config();
 rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
+load_pq_config();
 load_rerank_config();
 load_attributes_config();
 if (vector_config_pending)

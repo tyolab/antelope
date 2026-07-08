@@ -414,6 +414,8 @@ if (directory == NULL)
 	return 1;					// must be open (needs directory + dimension)
 if (vector_dimension_current == 0)
 	return 1;					// quantization requires vectors enabled
+if (pq_configured())
+	return 1;					// mutually exclusive with PQ (set_pq_config())
 if (mode != QUANTIZE_REPLACE && mode != QUANTIZE_EXACT)
 	return 1;					// only these are settable
 if (quantization_current != 0)
@@ -421,6 +423,130 @@ if (quantization_current != 0)
 quantization_current = mode;
 if (save_quantization_config() != 0)
 	{ quantization_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DEFAULT_PQ_M()
+	--------------------------------------
+	Chooses a subvector count when the caller passes m==0 to set_pq_config():
+	the largest divisor of dimension that is <= 16 (a conventional PQ
+	subvector-count ceiling).  Falls back to 1 if dimension itself is < 1.
+*/
+long long ATIRE_segment_index::default_pq_m(long long dimension)
+{
+long long cap, d;
+
+cap = dimension < 16 ? dimension : 16;
+for (d = cap; d >= 1; d--)
+	if (dimension % d == 0)
+		return d;
+return 1;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_PQ_CONFIG()
+	----------------------------------------
+	Reads <dir>/pq.config (magic/version/m/posture/rerank_quant).  Absent =>
+	leaves pq_m_current unchanged (off).  Garbage => treated as absent
+	(defensive parse, mirrors load_quantization_config).
+*/
+long ATIRE_segment_index::load_pq_config(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long m, posture, rerank_quant;
+const char *tag = "ANTPQCF1";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/pq.config", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;
+if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
+	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
+	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
+	{ fclose(fp); return 0; }
+fclose(fp);
+pq_m_current = m;
+pq_posture_current = (long)posture;
+pq_rerank_quant_current = (long)rerank_quant;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_PQ_CONFIG()
+	----------------------------------------
+	Atomic write (temp + rename) of the index-wide PQ config.
+*/
+long ATIRE_segment_index::save_pq_config(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long m = pq_m_current;
+long long posture = pq_posture_current;
+long long rerank_quant = pq_rerank_quant_current;
+const char *tag = "ANTPQCF1";
+
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/pq.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&m, sizeof(m), 1, fp) != 1
+	|| fwrite(&posture, sizeof(posture), 1, fp) != 1
+	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_CONFIG()
+	-----------------------------------------
+	Enable Product Quantization.  Requires the index open with vectors
+	enabled, and is mutually exclusive with V4 int8 quantization
+	(set_quantization()) -- an index uses one dense-vector compression
+	scheme or the other, never both.  m==0 requests the default subvector
+	count (default_pq_m()); m must otherwise divide the configured vector
+	dimension evenly.  Once set, the config is immutable: setting the SAME
+	(m, posture, rerank_quant) again is a no-op success (idempotent), but
+	any difference is rejected.  Mirrors set_quantization()'s "first enable
+	wins" contract.
+*/
+long ATIRE_segment_index::set_pq_config(long long m, long posture, long rerank_quant)
+{
+long long mm;
+
+if (directory == NULL)
+	return 1;					// must be open (needs directory + dimension)
+if (vector_dimension_current == 0)
+	return 1;					// PQ requires vectors enabled
+if (quantization_current != 0)
+	return 1;					// mutually exclusive with V4 int8 quantization
+if (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
+	return 1;
+if (rerank_quant != RERANK_QUANT_FLOAT && rerank_quant != RERANK_QUANT_INT8)
+	return 1;
+mm = (m == 0) ? default_pq_m(vector_dimension_current) : m;
+if (mm < 1 || vector_dimension_current % mm != 0)
+	return 1;
+if (pq_m_current != 0)		// idempotent same-config; reject different-config (immutable)
+	return (pq_m_current == mm && pq_posture_current == posture && pq_rerank_quant_current == rerank_quant) ? 0 : 1;
+pq_m_current = mm;
+pq_posture_current = posture;
+pq_rerank_quant_current = rerank_quant;
+if (save_pq_config() != 0)
+	{ pq_m_current = 0; pq_posture_current = 0; pq_rerank_quant_current = 0; return 1; }
 return 0;
 }
 

@@ -112,6 +112,11 @@ private:
 
 	long quantization_current;				// 0 = off (QUANTIZE_OFF)
 
+	long long pq_m_current;				// 0 = PQ off
+	long pq_posture_current;				// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
+	long pq_rerank_quant_current;			// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+	long pq_eager;							// 0 ondemand (default), 1 eager
+
 	long long rerank_dimension_current;		// 0 = rerank not configured
 	long rerank_quant_current;				// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
 
@@ -223,6 +228,7 @@ public:
 	enum { VECTOR_METRIC_DOT = 0, VECTOR_METRIC_COSINE = 1, VECTOR_METRIC_L2 = 2 };
 	enum { QUANTIZE_OFF = 0, QUANTIZE_REPLACE = 1, QUANTIZE_EXACT = 2 };
 	enum { RERANK_QUANT_FLOAT = 0, RERANK_QUANT_INT8 = 1 };
+	enum { PQ_POSTURE_REPLACE = 0, PQ_POSTURE_RERANK = 1 };
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
@@ -245,6 +251,14 @@ public:
 	long save_quantization_config(void);
 	long set_quantization(long mode);		// enable quantization; persists quantization.config. Idempotent for the same mode; returns nonzero if already set to a DIFFERENT mode (immutable), or if mode invalid / vectors not configured.
 	long quantization_mode(void) { return quantization_current; }
+
+	long load_pq_config(void);
+	long save_pq_config(void);
+	long long default_pq_m(long long dimension);	// largest divisor of dimension in [1, min(16, dimension)]
+	long set_pq_config(long long m, long posture, long rerank_quant);	// enable PQ (m==0 => default_pq_m()); persists pq.config. Idempotent for the same config; nonzero if already set to a DIFFERENT config (immutable), mode invalid, m does not divide the vector dimension, vectors not configured, or V4 int8 quantization already enabled (mutually exclusive).
+	long pq_configured(void) { return pq_m_current != 0; }
+	long long pq_m(void) { return pq_m_current; }
+	long set_pq_policy(long eager) { pq_eager = eager ? 1 : 0; return 0; }
 
 	long load_rerank_config(void);
 	long save_rerank_config(void);
