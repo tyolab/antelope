@@ -7,6 +7,8 @@
 #ifndef MULTIVECTOR_STORE_H_
 #define MULTIVECTOR_STORE_H_
 
+#include "vector_source.h"
+
 class ANT_multivector_store
 {
 private:
@@ -32,6 +34,41 @@ public:
 	double maxsim(long long docid, const float *query_vecs, long long num_query_vecs);
 	long long copy_vectors(long long docid, float *out);	// fills out[M_d*dim] with this doc's (reconstructed, normalized) vectors; returns M_d (0 if absent)
 	long long max_vector_count(void);						// largest M_d over all docs (for sizing a buffer)
+
+	/*
+		V6: token-level accessors over the flattened pool, so ANT_hnsw can index
+		individual tokens (node == token index 0..total_vectors-1).
+	*/
+	long long token_count(void) { return total_vectors; }
+	long tokens_quantized(void) { return quantized; }
+	long token_has(long long t) { return t >= 0 && t < total_vectors; }
+	const float *token_get(long long t);
+	void token_reconstruct(long long t, float *out);
+	double token_score(long long t, const float *query, long metric);
+	long long token_docid_of(long long t);
+} ;
+
+/*
+	ANT_MULTIVECTOR_SOURCE
+	----------------------
+	Adapts an ANT_multivector_store's flattened token pool to the
+	ANT_vector_source interface, so ANT_hnsw can build/search a graph over
+	individual tokens rather than whole documents.  Node index == token index.
+*/
+class ANT_multivector_source : public ANT_vector_source
+{
+private:
+	ANT_multivector_store *store;
+
+public:
+	ANT_multivector_source(ANT_multivector_store *s) : store(s) {}
+	long long document_count(void) override { return store->token_count(); }
+	long long get_dimension(void) override { return store->get_dimension(); }
+	long has(long long node) override { return store->token_has(node); }
+	const float *get(long long node) override { return store->token_get(node); }
+	long is_quantized(void) override { return store->tokens_quantized(); }
+	void reconstruct(long long node, float *out) override { store->token_reconstruct(node, out); }
+	double score(long long node, const float *query, long metric) override { return store->token_score(node, query, metric); }
 } ;
 
 class ANT_multivector_store_writer

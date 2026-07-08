@@ -280,6 +280,95 @@ return best;
 }
 
 /*
+	ANT_MULTIVECTOR_STORE::TOKEN_GET()
+	-----------------------------------
+	Raw float pool pointer for token t; NULL when the store is quantized (no
+	dense float pool to point into) or absent.
+*/
+const float *ANT_multivector_store::token_get(long long t)
+{
+if (quantized || pool_f == NULL || t < 0 || t >= total_vectors)
+	return NULL;
+return pool_f + t * dimension;
+}
+
+/*
+	ANT_MULTIVECTOR_STORE::TOKEN_RECONSTRUCT()
+	---------------------------------------------
+	Fills out[dimension] with token t's (normalized) vector, dequantizing if
+	necessary.
+*/
+void ANT_multivector_store::token_reconstruct(long long t, float *out)
+{
+if (t < 0 || t >= total_vectors)
+	return;
+if (quantized)
+	ANT_vector_quantize::reconstruct(pool_q + t * dimension, dimension, qmin, qmax, out);
+else
+	memcpy(out, pool_f + t * dimension, (size_t)dimension * sizeof(float));
+}
+
+/*
+	ANT_MULTIVECTOR_STORE::TOKEN_SCORE()
+	-----------------------------------------
+	Dot product of `query` against token t's (normalized) vector.  Vectors are
+	L2-normalized on write, so this dot product is the same similarity kernel
+	maxsim() uses.  `metric` is accepted for ANT_vector_source interface
+	symmetry but otherwise ignored (there is only one kernel here).
+*/
+double ANT_multivector_store::token_score(long long t, const float *query, long metric)
+{
+(void)metric;
+if (t < 0 || t >= total_vectors)
+	return 0.0;
+
+const float *v;
+float stack_tmp[512];
+float *heap_tmp = NULL;
+
+if (quantized)
+	{
+	float *tmp = (dimension > 512) ? (heap_tmp = new float[dimension]) : stack_tmp;
+	ANT_vector_quantize::reconstruct(pool_q + t * dimension, dimension, qmin, qmax, tmp);
+	v = tmp;
+	}
+else
+	v = pool_f + t * dimension;
+
+double dot = 0.0;
+for (long long d = 0; d < dimension; d++)
+	dot += (double)query[d] * (double)v[d];
+
+delete [] heap_tmp;
+return dot;
+}
+
+/*
+	ANT_MULTIVECTOR_STORE::TOKEN_DOCID_OF()
+	--------------------------------------------
+	Returns the docid owning token t (offsets[docid] <= t < offsets[docid+1]),
+	or -1 if t is out of range.  Binary search over offsets[0..documents]
+	(nondecreasing), O(log documents).
+*/
+long long ANT_multivector_store::token_docid_of(long long t)
+{
+if (t < 0 || t >= total_vectors)
+	return -1;
+
+/* upper_bound: smallest index i such that offsets[i] > t, then step back one */
+long long lo = 0, hi = documents;	// search over offsets[0..documents]
+while (lo < hi)
+	{
+	long long mid = lo + (hi - lo) / 2;
+	if (offsets[mid] > t)
+		hi = mid;
+	else
+		lo = mid + 1;
+	}
+return lo - 1;
+}
+
+/*
 	ANT_MULTIVECTOR_STORE_WRITER::ANT_MULTIVECTOR_STORE_WRITER()
 	---------------------------------------------------------------
 */
