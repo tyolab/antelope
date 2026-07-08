@@ -30,6 +30,8 @@
 #include "../source/wal.h"
 #include "../source/multivector_store.h"
 #include "../source/token_index.h"
+#include "../source/multivector_pq_store.h"
+#include "../source/pq_codec.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::COMPACT()
@@ -500,6 +502,43 @@ if (rerank_configured())
 	}
 
 /*
+	Token-PQ: rebuild the merged segment's .mvpq over the just-refreshed float
+	.mvec token pool (retrain per-segment codebook + renumbered ragged codes),
+	then refresh the in-memory multivector_pq.  Best-effort: a failure leaves the
+	merged segment on the .mvec fallback.  (No cross-store ordering constraint:
+	the .tann graph is built over multivectors, not multivector_pq, in Phase 2.)
+*/
+if (multivector_pq_configured() && output_segment->multivectors != NULL
+	&& !output_segment->multivectors->tokens_quantized() && output_segment->multivectors->token_count() > 0)
+	{
+	char out_mvpq[4096];
+	segment_filename(out_mvpq, sizeof(out_mvpq), output_generation, "mvpq");
+	long long docs = output_segment->engine->get_document_count();
+	ANT_multivector_store *mv = output_segment->multivectors;
+	ANT_multivector_pq_store_writer w;
+	long failed = w.create(out_mvpq, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT) != 0;
+	long long cap = mv->max_vector_count();
+	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
+	for (long long d = 0; !failed && d < docs; d++)
+		{
+		long long md = mv->copy_vectors(d, buf);
+		failed = w.append(md > 0 ? buf : NULL, md) != 0;
+		}
+	delete [] buf;
+	if (!failed)
+		failed = w.finish() != 0;
+	if (failed)
+		w.abandon();
+	delete output_segment->multivector_pq;
+	output_segment->multivector_pq = ANT_multivector_pq_store::load(out_mvpq, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+	}
+else
+	{
+	delete output_segment->multivector_pq;
+	output_segment->multivector_pq = NULL;
+	}
+
+/*
 	V6: rebuild the merged segment's token-ANN (.tann) over the merged
 	multi-vectors (just refreshed above from the final .mvec, so this is the
 	same object output_segment->multivectors will hold going forward -- the
@@ -572,6 +611,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].hnsw_graph;
 			delete segments[which].multivectors;
 			delete segments[which].token_index;
+			delete segments[which].multivector_pq;
 			delete segments[which].attributes;
 			delete segments[which].payload;
 			for (long long shuffle = which; shuffle < segment_count - 1; shuffle++)
