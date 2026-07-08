@@ -3990,8 +3990,10 @@ float dv[4] = {1,0,0,0}, mv[4] = {1,0,0,0};
 CHECK(ix->add_document("A", "<DOC>alpha</DOC>", dv, mv, 1) >= 0);
 CHECK(ix->flush() == 0);
 float qmv[4] = {0,0,1,0};
-/* neither text nor vector -> no first stage -> must return 0, NOT crash */
-CHECK(ix->search_rerank(NULL, NULL, qmv, 1, 10, 5) == 0);
+/* V6 Task 11: neither text nor vector -> stage 1 is now the token-ANN
+   candidate generator (search_multivector_impl()), not a return-0 guard --
+   must return the (only) doc via brute-force MaxSim, and must NOT crash. */
+CHECK(ix->search_rerank(NULL, NULL, qmv, 1, 10, 5) == 1);
 /* sanity: with a vector it still reranks normally */
 float qv[4] = {1,0,0,0};
 CHECK(ix->search_rerank(NULL, qv, qmv, 1, 10, 5) >= 1);

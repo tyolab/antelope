@@ -1602,7 +1602,11 @@ return total;
 	convention) before results_count is set.
 
 	If rerank is not configured, or no query multi-vector is supplied, this
-	is just the plain first-stage search (still a sensible result).
+	is just the plain first-stage search (still a sensible result).  If
+	neither query_text nor query_vector is given (but a query multi-vector
+	is, and rerank is configured), the first stage is instead the token-ANN
+	candidate generator (search_multivector_impl()): it already does
+	candidate-gen + exact MaxSim + publish, so this delegates straight to it.
 */
 long long ATIRE_segment_index::search_rerank(char *query_text, const float *query_vector,
 		const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k)
@@ -1637,13 +1641,16 @@ if (!rerank_configured() || query_multivector == NULL || num_query_vecs < 1)
 	return 0;
 	}
 
+/* V6: no lexical/dense first stage -> generate candidates via the token-ANN
+   path (search_multivector), which does candidate-gen + exact MaxSim + publish.
+   Was previously a return-0 guard. */
+if (query_text == NULL && query_vector == NULL)
+	return search_multivector_impl(query_multivector, num_query_vecs, top_k, filter);
+
 qn = new float[num_query_vecs * dim];
 memcpy(qn, query_multivector, (size_t)(num_query_vecs * dim) * sizeof(float));
 for (i = 0; i < num_query_vecs; i++)
 	ANT_vector_store::normalize(qn + i * dim, dim);
-
-if (query_text == NULL && query_vector == NULL)
-	{ delete [] qn; return 0; }		// no first stage possible -- nothing to rerank
 
 /* stage 1 -> results[] */
 if (query_text != NULL && query_vector != NULL)
