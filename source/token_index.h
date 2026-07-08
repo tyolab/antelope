@@ -8,6 +8,7 @@
 
 class ANT_hnsw;
 class ANT_multivector_store;
+class ANT_index_tombstones;
 
 class ANT_token_index
 {
@@ -39,5 +40,16 @@ public:
 	   index on ANY corruption or config/store mismatch.  Caller owns the
 	   returned pointer (delete); `store` is borrowed and retained (not owned). */
 	static ANT_token_index *load(const char *filename, ANT_multivector_store *store, long long expected_M, long long expected_ef_construction, long metric);
+
+	// For each of num_query_vecs query tokens (row-major query[num*dimension]), retrieve the
+	// token_top_p nearest doc-tokens, map to docids, accumulate provisional per-doc scores
+	// (sum over query tokens of each token's best kernel to the doc), and write up to
+	// max_candidates docids (by descending provisional score) to out_docids (caller-allocated,
+	// capacity >= max_candidates). tombstones (may be NULL) and filter_bits (may be NULL) admit
+	// at the DOC level. Returns the number of candidates written (0 if empty()).
+	long long search_candidates(const float *query, long long num_query_vecs,
+		long long token_top_p, long long max_candidates,
+		ANT_index_tombstones *tombstones, const unsigned char *filter_bits,
+		long long *out_docids);
 };
 #endif /* TOKEN_INDEX_H_ */

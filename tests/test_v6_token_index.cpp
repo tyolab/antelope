@@ -11,6 +11,7 @@
 #include "../source/token_index.h"
 #include "../source/multivector_store.h"
 #include "../source/vector_store.h"
+#include "../source/index_tombstones.h"
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
@@ -172,11 +173,196 @@ unlink(path2);
 printf("save_load_test OK\n");
 }
 
+/*
+	build_candidates_store()
+	-------------------------
+	dim=4, 4 docs.  Tokens are deliberately NOT tied on dot-product with the
+	query axes e0=(1,0,0,0)/e1=(0,1,0,0): doc0/doc3 carry an e0-leaning token
+	(dot(e0)=1, dot(e1)=0.1), doc1 carries an e1-leaning token (dot(e0)=0.1,
+	dot(e1)=1), and doc2's token is deliberately the worst match on BOTH axes
+	(dot(e0)=dot(e1)=0.01) so it ranks below the others with no score ties at
+	the top_p=3 cutoff used by the candidate tests below.  doc3 additionally
+	carries an irrelevant token (0,0,0,1) to prove multi-token docs dedupe to
+	their single best hit per query token.
+*/
+static ANT_multivector_store *build_candidates_store(const char *path)
+{
+long long dim = 4;
+float doc0[1*4] = { 1, 0.1f, 0, 0 };
+float doc1[1*4] = { 0.1f, 1, 0, 0 };
+float doc2[1*4] = { 0.01f, 0.01f, 1, 0 };
+float doc3[2*4] =
+	{
+	1, 0.1f, 0, 0,
+	0, 0, 0, 1
+	};
+
+ANT_multivector_store_writer w;
+CHECK(w.create(path, dim) == 0);
+CHECK(w.append(doc0, 1) == 0);
+CHECK(w.append(doc1, 1) == 0);
+CHECK(w.append(doc2, 1) == 0);
+CHECK(w.append(doc3, 2) == 0);
+CHECK(w.finish() == 0);
+
+return ANT_multivector_store::load(path, dim, 4);
+}
+
+static long contains(long long *arr, long long n, long long v)
+{
+long long i;
+for (i = 0; i < n; i++)
+	if (arr[i] == v)
+		return 1;
+return 0;
+}
+
+static void search_candidates_basic_test(void)
+{
+char path[64]; strcpy(path, "/tmp/ant_v6tokidx_cand_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_candidates_store(path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+CHECK(idx != NULL);
+
+float query[2*4] =
+	{
+	1, 0, 0, 0,   /* e0 */
+	0, 1, 0, 0    /* e1 */
+	};
+long long out[10];
+long long n = idx->search_candidates(query, 2, /*token_top_p=*/3, /*max_candidates=*/10, NULL, NULL, out);
+CHECK(n == 3);
+CHECK(contains(out, n, 0));   /* doc0 hit via e0 */
+CHECK(contains(out, n, 1));   /* doc1 hit via e1 */
+CHECK(contains(out, n, 3));   /* doc3 hit via e0 */
+CHECK(!contains(out, n, 2));  /* doc2 not near either query token */
+
+delete idx;
+delete store;
+unlink(path);
+printf("search_candidates_basic_test OK\n");
+}
+
+static void search_candidates_cap_test(void)
+{
+char path[64]; strcpy(path, "/tmp/ant_v6tokidx_cap_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_candidates_store(path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+CHECK(idx != NULL);
+
+float query[2*4] =
+	{
+	1, 0, 0, 0,   /* e0 */
+	0, 1, 0, 0    /* e1 */
+	};
+long long out[10];
+long long n = idx->search_candidates(query, 2, /*token_top_p=*/3, /*max_candidates=*/2, NULL, NULL, out);
+CHECK(n == 2);
+CHECK(contains(out, n, 0) || contains(out, n, 1) || contains(out, n, 3));
+{
+long long i;
+for (i = 0; i < n; i++)
+	CHECK(out[i] == 0 || out[i] == 1 || out[i] == 3);
+}
+
+delete idx;
+delete store;
+unlink(path);
+printf("search_candidates_cap_test OK\n");
+}
+
+static void search_candidates_filter_test(void)
+{
+char path[64]; strcpy(path, "/tmp/ant_v6tokidx_filt_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_candidates_store(path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+CHECK(idx != NULL);
+
+/* admit only doc1 (bit 1) and doc3 (bit 3) */
+unsigned char filter_bits = (1 << 1) | (1 << 3);
+
+float query[2*4] =
+	{
+	1, 0, 0, 0,   /* e0 */
+	0, 1, 0, 0    /* e1 */
+	};
+long long out[10];
+long long n = idx->search_candidates(query, 2, /*token_top_p=*/3, /*max_candidates=*/10, NULL, &filter_bits, out);
+CHECK(!contains(out, n, 0));   /* doc0 excluded by filter */
+CHECK(!contains(out, n, 2));   /* doc2 was never a match anyway */
+{
+long long i;
+for (i = 0; i < n; i++)
+	CHECK(out[i] == 1 || out[i] == 3);
+}
+
+delete idx;
+delete store;
+unlink(path);
+printf("search_candidates_filter_test OK\n");
+}
+
+static void search_candidates_tombstone_test(void)
+{
+char path[64]; strcpy(path, "/tmp/ant_v6tokidx_tomb_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_candidates_store(path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+CHECK(idx != NULL);
+
+ANT_index_tombstones stones(idx->get_documents());
+stones.set_deleted(0);
+
+float query[1*4] = { 1, 0, 0, 0 };   /* e0 */
+long long out[10];
+long long n = idx->search_candidates(query, 1, /*token_top_p=*/3, /*max_candidates=*/10, &stones, NULL, out);
+CHECK(!contains(out, n, 0));   /* doc0 deleted */
+CHECK(contains(out, n, 3));    /* doc3 also has e0, still present */
+
+delete idx;
+delete store;
+unlink(path);
+printf("search_candidates_tombstone_test OK\n");
+}
+
+static void search_candidates_empty_index_test(void)
+{
+char path[64]; strcpy(path, "/tmp/ant_v6tokidx_ce_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_candidates_store(path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::load("/tmp/ant_v6tokidx_does_not_exist", store, 16, 200, 0);
+CHECK(idx != NULL);
+CHECK(idx->empty());
+
+float query[1*4] = { 1, 0, 0, 0 };
+long long out[10];
+long long n = idx->search_candidates(query, 1, 8, 10, NULL, NULL, out);
+CHECK(n == 0);
+
+delete idx;
+delete store;
+unlink(path);
+printf("search_candidates_empty_index_test OK\n");
+}
+
 int main(void)
 {
 build_test();
 empty_store_test();
 save_load_test();
+search_candidates_basic_test();
+search_candidates_cap_test();
+search_candidates_filter_test();
+search_candidates_tombstone_test();
+search_candidates_empty_index_test();
 printf("PASSED\n");
 return 0;
 }

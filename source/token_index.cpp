@@ -1,9 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <vector>
+#include <algorithm>
 #include "token_index.h"
 #include "hnsw.h"
 #include "multivector_store.h"
+#include "index_tombstones.h"
 
 ANT_token_index::ANT_token_index()
 {
@@ -141,4 +144,57 @@ idx->documents = store->document_count();
 idx->dimension = store->get_dimension();
 
 return idx;
+}
+
+/*
+	SEARCH_CANDIDATES -- token-ANN candidate generation.  The token graph's
+	nodes are TOKENS, so it must be searched with tombstones=NULL and
+	filter_bits=NULL (those bitmaps are keyed by DOCID); doc-level tombstone
+	and filter admission happens here, after mapping token id -> docid.
+*/
+long long ANT_token_index::search_candidates(const float *query, long long num_query_vecs,
+	long long token_top_p, long long max_candidates,
+	ANT_index_tombstones *tombstones, const unsigned char *filter_bits, long long *out_docids)
+{
+if (empty() || query == NULL || num_query_vecs <= 0 || max_candidates <= 0 || token_top_p <= 0)
+	return 0;
+
+ANT_multivector_source source(store);
+std::vector<double> provisional((size_t)documents, 0.0);
+std::vector<char> in_touched((size_t)documents, 0);
+std::vector<long long> touched;
+std::vector<long long> seen_query((size_t)documents, -1);   // which query token last contributed to a doc
+
+std::vector<long long> tok_docids((size_t)token_top_p);
+std::vector<double> tok_scores((size_t)token_top_p);
+
+for (long long i = 0; i < num_query_vecs; i++)
+	{
+	const float *q = query + i * dimension;
+	// tombstones/filter passed as NULL: nodes are tokens, not docids -> admit at doc level below
+	long long got = graph->search(q, metric, /*ef_search=*/token_top_p, token_top_p,
+		&source, /*tombstones=*/NULL, tok_docids.data(), tok_scores.data(), /*filter_bits=*/NULL);
+	for (long long r = 0; r < got; r++)
+		{
+		long long t = tok_docids[r];               // token id
+		if (t < 0 || t >= token_count) continue;
+		long long d = token_docid[t];              // owning docid
+		if (d < 0 || d >= documents) continue;
+		if (tombstones != NULL && tombstones->is_deleted(d)) continue;
+		if (filter_bits != NULL && !(filter_bits[d >> 3] & (1 << (d & 7)))) continue;
+		// results are descending by kernel, so the FIRST hit for this (query token, doc) is its best
+		if (seen_query[d] == i) continue;          // already took this query token's best for d
+		seen_query[d] = i;
+		if (!in_touched[d]) { in_touched[d] = 1; touched.push_back(d); }
+		provisional[d] += tok_scores[r];
+		}
+	}
+
+long long out_n = (long long)touched.size();
+if (out_n > max_candidates) out_n = max_candidates;
+std::partial_sort(touched.begin(), touched.begin() + out_n, touched.end(),
+	[&](long long a, long long b){ return provisional[a] > provisional[b]; });
+for (long long j = 0; j < out_n; j++)
+	out_docids[j] = touched[j];
+return out_n;
 }
