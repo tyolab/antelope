@@ -90,6 +90,7 @@ rerank_quant_current = 0;
 token_index_M = 16;
 token_index_ef_construction = 200;
 token_top_p = 32;
+token_index_eager = 0;
 
 writer_vector_data = NULL;
 writer_vector_presence = NULL;
@@ -1413,6 +1414,17 @@ if (wal != NULL)
 		wal->truncate();
 	}
 
+/*
+	Eager token-index policy: build the V6 token graph for the segment just
+	registered above (append_segment() already loaded its multivectors, so
+	it is visible to build_token_index()'s loop).  Idempotent -- skips any
+	segment that already has a built index -- and best-effort like the
+	other flush() sidecars: a build failure just leaves that segment on the
+	brute-force MaxSim fallback until the next flush/backfill.
+*/
+if (token_index_eager)
+	build_token_index();
+
 return 0;
 }
 
@@ -1655,6 +1667,31 @@ return segments[which].signatures != NULL && segments[which].signatures->documen
 long ATIRE_segment_index::disk_segment_has_hnsw(long long which)
 {
 return segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty();
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_TOKEN_INDEX_POLICY()
+	------------------------------------------------
+	1 = eager (flush() builds the V6 token graph for the just-flushed segment
+	immediately); 0 = ondemand (default -- callers backfill via
+	build_token_index() whenever they choose).  Always succeeds.
+*/
+long ATIRE_segment_index::set_token_index_policy(int eager)
+{
+token_index_eager = eager ? 1 : 0;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_HAS_TOKEN_INDEX()
+	-------------------------------------------------------
+	Test-only accessor: whether the given disk segment has a cached,
+	non-empty V6 token index loaded (i.e. its .tann sidecar was present and
+	valid at open/append time, or build_token_index()/eager flush built one).
+*/
+long ATIRE_segment_index::disk_segment_has_token_index(long long which)
+{
+return (which >= 0 && which < segment_count && segments[which].token_index != NULL && !segments[which].token_index->empty()) ? 1 : 0;
 }
 
 ANT_memory_index *ATIRE_segment_index::writer_memory_index_for_test(void)

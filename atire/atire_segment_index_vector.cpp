@@ -735,6 +735,45 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::BUILD_TOKEN_INDEX()
+	--------------------------------------------
+	Idempotent backfill: for every disk segment with a multi-vector store but
+	no valid .tann, build a fresh V6 token-ANN graph sidecar (so a segment
+	that has been search_multivector()-served by brute-force MaxSim so far
+	can be upgraded to the graph path).  Mirrors build_hnsw()'s per-segment
+	loop.  Per-segment failures (empty store, over-cap token count, build/save
+	failure) are skipped -- that segment simply stays on the brute-force
+	MaxSim fallback.  Returns 0 on success (1 if rerank/multi-vectors are
+	unconfigured).
+*/
+long ATIRE_segment_index::build_token_index(void)
+{
+long long which;
+char tann_name[4096];
+
+if (!rerank_configured())
+	return 1;
+
+for (which = 0; which < segment_count; which++)
+	{
+	if (segments[which].multivectors == NULL || segments[which].multivectors->document_count() == 0)
+		continue;
+	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
+		continue;	/* already built */
+
+	segment_filename(tann_name, sizeof(tann_name), segments[which].generation, "tann");
+	ANT_token_index *idx = ANT_token_index::build(segments[which].multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
+	if (idx == NULL)
+		continue;	/* empty/over-cap/failed -> segment stays in brute-force fallback */
+	if (idx->save(tann_name) != 0)
+		{ delete idx; continue; }	/* save failed -> fallback */
+	delete segments[which].token_index;
+	segments[which].token_index = idx;	/* built index retains the segment's multivectors store; usable immediately */
+	}
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::BUILD_QUANTIZED()
 	----------------------------------------
 	Idempotent backfill: rewrites each float .vec disk segment as an int8

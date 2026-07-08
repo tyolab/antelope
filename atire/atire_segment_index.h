@@ -118,6 +118,7 @@ private:
 	long long token_index_M;					// V6 token-ANN graph fan-out (build_token_index, Task 9)
 	long long token_index_ef_construction;
 	long long token_top_p;						// per-query-token candidate shortlist width
+	long token_index_eager;						// 0 = ondemand (default, build_token_index() backfill), 1 = eager (built automatically at flush)
 
 	ANT_attribute_schema attribute_schema_current;		// count()==0 => not configured
 
@@ -329,6 +330,9 @@ public:
 	long long search_rerank(char *query_text, const float *query_vector, const float *query_multivector, long long num_query_vecs, long long first_stage_n, long long top_k, const ANT_filter *filter);	// filtered stage 1 -> MaxSim rerank
 	long long search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k);	// first-class token-ANN candidate-gen -> exact MaxSim rescore; brute-force MaxSim fallback when no token index (Task 9 builds it)
 	long long search_multivector(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter);	// filtered
+	long build_token_index(void);					// per-segment: build/rewrite .tann for segments without one; 0 = success, 1 if rerank unconfigured
+	long set_token_index_policy(int eager);		// 1 = eager (build at flush), 0 = ondemand (default); returns 0
+	long disk_segment_has_token_index(long long which);	// test accessor: 1 if segment `which` has a non-empty token index
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents
