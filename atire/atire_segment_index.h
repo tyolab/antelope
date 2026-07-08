@@ -119,6 +119,11 @@ private:
 	long pq_rerank_quant_current;			// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
 	long pq_eager;							// 0 ondemand (default), 1 eager
 
+	long long mvpq_m_current;			// 0 = token-PQ unconfigured
+	long mvpq_posture_current;			// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
+	long mvpq_rerank_quant_current;		// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+	long mvpq_eager;					// 0 ondemand (default), 1 eager
+
 	long long rerank_dimension_current;		// 0 = rerank not configured
 	long rerank_quant_current;				// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
 
@@ -263,6 +268,13 @@ public:
 	long pq_configured(void) { return pq_m_current != 0; }
 	long long pq_m(void) { return pq_m_current; }
 	long set_pq_policy(long eager) { pq_eager = eager ? 1 : 0; return 0; }
+
+	long load_multivector_pq_config(void);
+	long save_multivector_pq_config(void);
+	long set_multivector_pq_config(long long m, long posture, long rerank_quant);	// enable token-PQ (m==0 => default_pq_m over rerank_dimension); persists multivector_pq.config; idempotent same-config, nonzero if already set to a different config, mode invalid, m does not divide rerank_dimension, rerank not configured, or .mvec int8 already enabled.
+	long multivector_pq_configured(void) { return mvpq_m_current != 0; }
+	long long multivector_pq_m(void) { return mvpq_m_current; }
+	long set_multivector_pq_policy(long eager) { mvpq_eager = eager ? 1 : 0; return 0; }
 
 	long load_rerank_config(void);
 	long save_rerank_config(void);

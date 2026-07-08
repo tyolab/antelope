@@ -552,6 +552,97 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::LOAD_MULTIVECTOR_PQ_CONFIG() / SAVE_...()
+	-------------------------------------------------------------
+	Persist token-PQ config in <dir>/multivector_pq.config (magic "ANTMVPQC",
+	version 1, three i64: m, posture, rerank_quant).  Defensive parse.
+*/
+long ATIRE_segment_index::load_multivector_pq_config(void)
+{
+if (directory == NULL)
+	return 1;
+
+char name[4096];
+snprintf(name, sizeof(name), "%s/multivector_pq.config", directory);
+
+FILE *in = fopen(name, "rb");
+if (in == NULL)
+	return 1;
+
+char tag[8];
+unsigned int version;
+long long vals[3];
+long ok = fread(tag, 1, 8, in) == 8 && memcmp(tag, "ANTMVPQC", 8) == 0
+	&& fread(&version, 4, 1, in) == 1 && version == 1
+	&& fread(vals, 8, 3, in) == 3;
+fclose(in);
+if (!ok)
+	return 1;
+
+mvpq_m_current = vals[0];
+mvpq_posture_current = (long)vals[1];
+mvpq_rerank_quant_current = (long)vals[2];
+return 0;
+}
+
+long ATIRE_segment_index::save_multivector_pq_config(void)
+{
+if (directory == NULL)
+	return 1;
+
+char name[4096], temp[4200];
+snprintf(name, sizeof(name), "%s/multivector_pq.config", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", name) >= (int)sizeof(temp))
+	return 1;
+
+FILE *out = fopen(temp, "wb");
+if (out == NULL)
+	return 1;
+
+unsigned int version = 1;
+long long vals[3] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current };
+long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 3, out) == 3;
+if (fclose(out) != 0)
+	ok = 0;
+if (ok && rename(temp, name) != 0)
+	ok = 0;
+if (!ok)
+	remove(temp);
+return ok ? 0 : 1;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_MULTIVECTOR_PQ_CONFIG()
+	------------------------------------------------
+	Enable token-PQ.  Requires rerank(multivectors) configured; m must divide the
+	rerank dimension (m==0 => default_pq_m()); mutually exclusive with the .mvec
+	int8 mode.  Immutable once set.
+*/
+long ATIRE_segment_index::set_multivector_pq_config(long long m, long posture, long rerank_quant)
+{
+if (!rerank_configured())
+	return 1;
+if (rerank_quant_current == RERANK_QUANT_INT8)
+	return 1;					// mutually exclusive with the .mvec int8 token mode
+if (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
+	return 1;
+if (rerank_quant != RERANK_QUANT_FLOAT && rerank_quant != RERANK_QUANT_INT8)
+	return 1;
+if (m == 0)
+	m = default_pq_m(rerank_dimension_current);
+if (m < 1 || m > rerank_dimension_current || rerank_dimension_current % m != 0)
+	return 1;
+if (multivector_pq_configured())		// idempotent same-config; reject different-config (immutable)
+	return (mvpq_m_current == m && mvpq_posture_current == posture && mvpq_rerank_quant_current == rerank_quant) ? 0 : 1;
+mvpq_m_current = m;
+mvpq_posture_current = posture;
+mvpq_rerank_quant_current = rerank_quant;
+if (save_multivector_pq_config() != 0)
+	{ mvpq_m_current = 0; mvpq_posture_current = PQ_POSTURE_REPLACE; mvpq_rerank_quant_current = RERANK_QUANT_FLOAT; return 1; }
+return 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::LOAD_RERANK_CONFIG()
 	--------------------------------------------
 	Reads <dir>/rerank.config (magic/version/dimension/quant).  Absent =>
@@ -630,6 +721,8 @@ if (dimension < 1 || dimension > 65536)
 	return 1;
 if (quant != RERANK_QUANT_FLOAT && quant != RERANK_QUANT_INT8)
 	return 1;
+if (quant == RERANK_QUANT_INT8 && multivector_pq_configured())
+	return 1;					// mutually exclusive with token-PQ (set_multivector_pq_config())
 if (rerank_dimension_current != 0)			// already set: immutable
 	return (rerank_dimension_current == dimension && rerank_quant_current == quant) ? 0 : 1;
 rerank_dimension_current = dimension;

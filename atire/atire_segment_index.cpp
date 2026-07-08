@@ -90,6 +90,11 @@ pq_posture_current = 0;
 pq_rerank_quant_current = 0;
 pq_eager = 0;
 
+mvpq_m_current = 0;
+mvpq_posture_current = PQ_POSTURE_REPLACE;
+mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
+mvpq_eager = 0;
+
 rerank_dimension_current = 0;
 rerank_quant_current = 0;
 
@@ -375,6 +380,7 @@ rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
 load_pq_config();
+load_multivector_pq_config();
 load_rerank_config();
 load_attributes_config();
 if (vector_config_pending)
