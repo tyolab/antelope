@@ -433,12 +433,39 @@ if (hnsw_M_current != 0)
 	}
 
 /*
+	V5: refresh the merged segment's in-memory multi-vector cache from the
+	.mvec sidecar just written (or the absence of one), so THIS session's
+	search_rerank sees the compacted docids.  Must run before Step 6's
+	shuffle, which invalidates output_segment.  Must ALSO run BEFORE the V6
+	token-ANN rebuild immediately below: ANT_token_index retains (borrows,
+	does not own, per token_index.h) the ANT_multivector_store pointer it is
+	built over, and uses it again at search time.  If the V6 block below ran
+	first and built against the pre-refresh store, this refresh would then
+	delete that very object out from under the freshly-built token_index --
+	a use-after-free the next time search_multivector() reaches the ANN path
+	(caught by an ASan sweep: heap-use-after-free in
+	ANT_multivector_store::token_score() via ANT_hnsw::distance() via
+	ANT_token_index::search_candidates(), freed right here). Refreshing first
+	means the V6 block below always builds against the final, retained
+	pointer.
+*/
+if (rerank_configured())
+	{
+	char mvec_name[4096];
+	segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
+	delete output_segment->multivectors;
+	output_segment->multivectors = ANT_multivector_store::load(mvec_name, rerank_dimension_current, output_segment->engine->get_document_count());
+	}
+
+/*
 	V6: rebuild the merged segment's token-ANN (.tann) over the merged
-	multi-vectors (already loaded into output_segment->multivectors by
-	append_segment). Best-effort: a failure leaves the output token-index-less
-	(search_multivector falls back to brute-force MaxSim), never aborts a
-	successful merge. Refresh the in-memory token_index so THIS session's
-	search_multivector engages the ANN path.
+	multi-vectors (just refreshed above from the final .mvec, so this is the
+	same object output_segment->multivectors will hold going forward -- the
+	token_index's borrowed store pointer stays valid). Best-effort: a
+	failure leaves the output token-index-less (search_multivector falls
+	back to brute-force MaxSim), never aborts a successful merge. Refresh
+	the in-memory token_index so THIS session's search_multivector engages
+	the ANN path.
 */
 if (rerank_configured() && output_segment->multivectors != NULL && output_segment->multivectors->document_count() > 0)
 	{
@@ -452,20 +479,6 @@ if (rerank_configured() && output_segment->multivectors != NULL && output_segmen
 		else
 			delete tidx;
 		}
-	}
-
-/*
-	V5: refresh the merged segment's in-memory multi-vector cache from the
-	.mvec sidecar just written (or the absence of one), so THIS session's
-	search_rerank sees the compacted docids.  Must run before Step 6's
-	shuffle, which invalidates output_segment.
-*/
-if (rerank_configured())
-	{
-	char mvec_name[4096];
-	segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
-	delete output_segment->multivectors;
-	output_segment->multivectors = ANT_multivector_store::load(mvec_name, rerank_dimension_current, output_segment->engine->get_document_count());
 	}
 
 /*
