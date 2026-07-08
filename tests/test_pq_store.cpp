@@ -8,6 +8,8 @@
 #include <unistd.h>
 #include "../source/pq_store.h"
 #include "../source/pq_codec.h"
+#include "../source/vector_store.h"
+#include "../source/index_tombstones.h"
 
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #c); exit(1); } } while (0)
 
@@ -121,10 +123,95 @@ unlink(path);
 printf("forgiving_load OK\n");
 }
 
+static void scan_adc_test(void)
+{
+long long dim = 16, m = 4, n = 8, i;
+float docs[8][16];
+
+srand(101);
+for (i = 0; i < n; i++)
+	for (long long d = 0; d < dim; d++)
+		docs[i][d] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+char path[64]; strcpy(path, "/tmp/ant_pq_scan_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+
+ANT_pq_store_writer w;
+CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT) == 0);
+for (i = 0; i < n; i++)
+	CHECK(w.append(docs[i]) == 0);
+CHECK(w.finish() == 0);
+
+ANT_pq_store *s = ANT_pq_store::load(path, dim, n, ANT_pq_codec::METRIC_DOT);
+CHECK(s);
+CHECK(s->document_count() == n);
+
+float query[16];
+srand(202);
+for (long long d = 0; d < dim; d++) query[d] = (float)(rand() % 2000 - 1000) / 500.0f;
+
+/* independent brute-force ranking via score() -- authoritative expectation */
+double scores[8];
+for (i = 0; i < n; i++) scores[i] = s->score(i, query, ANT_pq_codec::METRIC_DOT);
+long long ranked[8];
+for (i = 0; i < n; i++) ranked[i] = i;
+for (i = 0; i < n; i++)
+	for (long long j = i + 1; j < n; j++)
+		if (scores[ranked[j]] > scores[ranked[i]])
+			{ long long t = ranked[i]; ranked[i] = ranked[j]; ranked[j] = t; }
+
+/* plain top-3 scan */
+{
+ANT_vector_candidate best[3]; long long count = 0;
+s->scan_adc(query, ANT_pq_codec::METRIC_DOT, NULL, 7 /*gen*/, best, &count, 3, NULL);
+CHECK(count == 3);
+for (i = 0; i < 3; i++)
+	{
+	CHECK(best[i].generation == 7);
+	long long found = 0, j;
+	for (j = 0; j < 3; j++) if (best[i].docid == ranked[j]) found = 1;
+	CHECK(found);
+	}
+}
+
+/* filter case: admit only two docids -> only those two come back */
+{
+unsigned char filter_bits[1] = { 0 };
+long long admit_a = ranked[1], admit_b = ranked[4];		// arbitrary pair, not the global top
+filter_bits[0] = (unsigned char)((1 << admit_a) | (1 << admit_b));
+ANT_vector_candidate best[3]; long long count = 0;
+s->scan_adc(query, ANT_pq_codec::METRIC_DOT, NULL, 7, best, &count, 3, filter_bits);
+CHECK(count == 2);
+CHECK(best[0].docid == admit_a || best[0].docid == admit_b);
+CHECK(best[1].docid == admit_a || best[1].docid == admit_b);
+CHECK(best[0].docid != best[1].docid);
+}
+
+/* tombstone case: delete the top-ranked doc -> it must not appear in top-3 */
+{
+ANT_index_tombstones stones(s->document_count());
+stones.set_deleted(ranked[0]);
+ANT_vector_candidate best[3]; long long count = 0;
+s->scan_adc(query, ANT_pq_codec::METRIC_DOT, &stones, 7, best, &count, 3, NULL);
+CHECK(count == 3);
+for (i = 0; i < 3; i++)
+	{
+	CHECK(best[i].docid != ranked[0]);
+	long long found = 0, j;
+	for (j = 1; j <= 3; j++) if (best[i].docid == ranked[j]) found = 1;
+	CHECK(found);
+	}
+}
+
+delete s;
+unlink(path);
+printf("scan_adc_test OK\n");
+}
+
 int main(void)
 {
 build_and_roundtrip();
 forgiving_load();
+scan_adc_test();
 printf("test_pq_store PASSED\n");
 return 0;
 }

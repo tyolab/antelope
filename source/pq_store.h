@@ -7,6 +7,9 @@
 #define PQ_STORE_H_
 #include "vector_source.h"
 
+class ANT_index_tombstones;
+struct ANT_vector_candidate;
+
 class ANT_pq_store : public ANT_vector_source
 {
 private:
@@ -29,6 +32,11 @@ public:
 	double score(long long docid, const float *query, long metric) override;
 	const unsigned char *codes_for(long long docid) { return has(docid) ? codes + docid*m : 0; }
 	const float *get_codebook(void) { return codebook; }
+
+	// top-k docids by ADC kernel (higher=better), honoring presence, tombstones, and an
+	// optional docid filter bitset. Builds the m*K ADC table once, then one pass over docs.
+	void scan_adc(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation,
+		ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits);
 };
 
 class ANT_pq_store_writer

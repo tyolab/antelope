@@ -23,6 +23,8 @@
 #include <string.h>
 #include "pq_store.h"
 #include "pq_codec.h"
+#include "index_tombstones.h"
+#include "vector_store.h"
 
 static const char ANT_PQ_STORE_MAGIC[8] = { 'A', 'N', 'T', 'P', 'Q', '0', '0', '1' };
 static const unsigned int ANT_PQ_STORE_VERSION = 1;
@@ -187,6 +189,37 @@ if (table != stack_table)
 	delete [] table;
 
 return result;
+}
+
+/*
+	ANT_PQ_STORE::SCAN_ADC()
+	----------------------------
+	Builds the m*K ADC table once for `query`, then does a single pass over all
+	documents inserting into the fixed-capacity top-k candidate set. Mirrors
+	ANT_vector_store::scan()'s presence/tombstone/filter-bit gating.
+*/
+void ANT_pq_store::scan_adc(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation,
+	ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits)
+{
+if (documents == 0 || codebook == 0)
+	return;
+
+long long K = ANT_pq_codec::K;
+double *table = new double[m * K];
+ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+
+for (long long d = 0; d < documents; d++)
+	{
+	if (!has(d))
+		continue;
+	if (tombstones != 0 && tombstones->is_deleted(d))
+		continue;
+	if (filter_bits != 0 && !(filter_bits[d >> 3] & (1 << (d & 7))))
+		continue;
+	ANT_vector_candidate_insert(best, best_count, top_k, ANT_pq_codec::adc_score(codes + d*m, m, table), generation, d);
+	}
+
+delete [] table;
 }
 
 /*
