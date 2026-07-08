@@ -1766,12 +1766,19 @@ return results_count;
 	ATIRE_SEGMENT_INDEX::MULTIVECTOR_CANDIDATES()
 	----------------------------------------------
 	Per-disk-segment candidate gatherer for search_multivector().  Each segment
-	with a built token-ANN graph is shortlisted via ANT_token_index::search_candidates()
-	(which already applies tombstones + the filter bitset at the doc level), then
-	each candidate is exact-MaxSim-rescored.  Segments with no token index (V6
-	build_token_index is Task 9, so this is every segment for now) fall back to
-	an exhaustive scan of every doc with multi-vectors, applying tombstones/filter
-	inline -- this brute-force path is what this task's ranking-equality test
+	with a built token-ANN graph is shortlisted via ANT_token_index::search_candidates(),
+	which applies tombstones + the filter bitset at the doc level but only AFTER
+	mapping token id -> docid (the token graph's nodes are tokens, not docids, so
+	unlike the dense/HNSW path it cannot admit in-traversal); each surviving
+	candidate is then exact-MaxSim-rescored.  When `filter` is non-NULL we widen
+	the per-query-vector token pool (`eff_top_p`/`eff_pool`, below) to compensate
+	for the doc-level admission being applied post-hoc -- this is BEST-EFFORT,
+	not a no-under-fill guarantee: under a highly selective filter, docs whose
+	tokens aren't among the nearest widened pool can still be silently missed.
+	Segments with no token index (V6 build_token_index is Task 9, so this is
+	every segment for now) fall back to an exhaustive scan of every doc with
+	multi-vectors, applying tombstones/filter inline -- this brute-force path
+	IS exact (no under-fill) and is what this task's ranking-equality test
 	locks against.  `qn` is the already-normalized query multi-vector.
 */
 long long ATIRE_segment_index::multivector_candidates(const float *qn, long long num_query_vecs, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
@@ -1788,6 +1795,11 @@ for (which = 0; which < segment_count; which++)
 
 	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
 		{
+		/* filtered queries widen the token-ANN pool to compensate for doc-level
+		   filter admission happening post-hoc (see search_candidates' comment);
+		   this is best-effort, NOT a no-under-fill guarantee -- under a highly
+		   selective filter, matching docs whose tokens aren't among the widened
+		   nearest set can still be missed from this token-ANN path. */
 		long long eff_top_p = (fbits != NULL) ? token_top_p * candidate_multiplier : token_top_p;
 		long long eff_pool  = (fbits != NULL) ? pool_size * candidate_multiplier : pool_size;
 		long long *cand = new long long[eff_pool > 0 ? eff_pool : 1];
@@ -1843,7 +1855,10 @@ return best_count;
 	------------------------------------------------
 	First-class late-interaction search: candidate-gen (token-ANN when built,
 	brute-force MaxSim scan otherwise) -> exact MaxSim rescore -> publish.
-	Mirrors search_vector_impl()'s sort/resolve/publish tail exactly.
+	Mirrors search_vector_impl()'s sort/resolve/publish tail exactly.  Filtering
+	is exact on the brute-force path; on the token-ANN path it is best-effort
+	over-gather (see multivector_candidates(), above) and can under-fill for
+	highly selective filters -- it is not a no-under-fill guarantee.
 */
 long long ATIRE_segment_index::search_multivector_impl(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter)
 {

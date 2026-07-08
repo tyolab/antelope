@@ -93,7 +93,7 @@ if (fwrite(&magic,sizeof(magic),1,fp)!=1 || fwrite(&version,sizeof(version),1,fp
 fclose(fp);
 if (rename(temp, filename) != 0) { remove(temp); return 1; }
 
-if (graph->save(gfilename) != 0) { remove(filename); return 1; }
+if (graph->save(gfilename) != 0) { remove(filename); remove(gfilename); return 1; }	/* best-effort: also drop any stale/partial .g so a failed save doesn't leave one behind */
 return 0;
 }
 
@@ -150,7 +150,13 @@ return idx;
 	SEARCH_CANDIDATES -- token-ANN candidate generation.  The token graph's
 	nodes are TOKENS, so it must be searched with tombstones=NULL and
 	filter_bits=NULL (those bitmaps are keyed by DOCID); doc-level tombstone
-	and filter admission happens here, after mapping token id -> docid.
+	and filter admission happens here, AFTER mapping token id -> docid --
+	i.e. admission is post-hoc on whatever tokens the ANN traversal happened
+	to surface, not in-traversal the way the dense/HNSW doc-level path can
+	admit.  This is best-effort under a selective filter: docs whose tokens
+	aren't among the nearest `token_top_p` per query vector can be missed
+	entirely, however large max_candidates/token_top_p are set (over-gather
+	reduces this risk, it does not eliminate it).  No guarantee of no-under-fill.
 */
 long long ANT_token_index::search_candidates(const float *query, long long num_query_vecs,
 	long long token_top_p, long long max_candidates,
