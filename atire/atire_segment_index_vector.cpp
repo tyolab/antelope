@@ -2270,6 +2270,12 @@ for (which = 0; which < segment_count; which++)
 	if (mv == NULL)
 		continue;
 
+	long use_pq = (multivector_pq_configured() && mvpq_posture_current == PQ_POSTURE_REPLACE
+		&& segments[which].multivector_pq != NULL
+		&& segments[which].multivector_pq->token_count() > 0
+		&& segments[which].multivector_pq->document_count() == segments[which].engine->get_document_count());
+	ANT_multivector_pq_store *pqs = segments[which].multivector_pq;
+
 	unsigned char *fbits = evaluate_filter_for_segment(which, filter);   /* NULL when filter==NULL */
 
 	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
@@ -2289,7 +2295,7 @@ for (which = 0; which < segment_count; which++)
 			long long did = cand[p];
 			if (!mv->has(did))
 				continue;   /* tombstone+filter already applied by search_candidates */
-			ANT_vector_candidate_insert(best, &best_count, top_k, mv->maxsim(did, qn, num_query_vecs), segments[which].generation, did);
+			ANT_vector_candidate_insert(best, &best_count, top_k, (use_pq ? pqs->maxsim(did, qn, num_query_vecs) : mv->maxsim(did, qn, num_query_vecs)), segments[which].generation, did);
 			}
 		delete [] cand;
 		}
@@ -2305,7 +2311,7 @@ for (which = 0; which < segment_count; which++)
 				continue;
 			if (fbits != NULL && !(fbits[did >> 3] & (1 << (did & 7))))
 				continue;
-			ANT_vector_candidate_insert(best, &best_count, top_k, mv->maxsim(did, qn, num_query_vecs), segments[which].generation, did);
+			ANT_vector_candidate_insert(best, &best_count, top_k, (use_pq ? pqs->maxsim(did, qn, num_query_vecs) : mv->maxsim(did, qn, num_query_vecs)), segments[which].generation, did);
 			}
 		}
 
