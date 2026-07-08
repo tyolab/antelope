@@ -34,6 +34,8 @@
 #include "../source/multivector_store.h"
 #include "../source/token_index.h"
 #include "../source/pq_store.h"
+#include "../source/multivector_pq_store.h"
+#include "../source/pq_codec.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::RESET_WRITER_VECTORS()
@@ -1117,6 +1119,67 @@ return 0;
 long ATIRE_segment_index::disk_segment_has_pq(long long which)
 {
 return (which >= 0 && which < segment_count && segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() > 0) ? 1 : 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::BUILD_MULTIVECTOR_PQ()
+	-------------------------------------------
+	On-demand backfill: for every segment with a float .mvec token pool and no
+	valid .mvpq, train a per-segment codebook over the token pool + encode +
+	write the sidecar, then swap the in-memory store.  The .mvec is KEPT resident.
+	Per-segment failures skip; idempotent.  Returns 0, or 1 if token-PQ is
+	unconfigured / no multivectors.
+*/
+long ATIRE_segment_index::build_multivector_pq(void)
+{
+long long which;
+char mvpq_name[4096];
+
+if (!multivector_pq_configured() || rerank_dimension_current == 0)
+	return 1;
+
+for (which = 0; which < segment_count; which++)
+	{
+	ANT_multivector_store *mv = segments[which].multivectors;
+	if (mv == NULL || mv->tokens_quantized())
+		continue;
+	long long docs = segments[which].engine->get_document_count();
+	if (segments[which].multivector_pq != NULL
+		&& segments[which].multivector_pq->document_count() == docs
+		&& segments[which].multivector_pq->token_count() > 0)
+		continue;
+
+	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
+	ANT_multivector_pq_store_writer w;
+	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT) != 0;
+	long long cap = mv->max_vector_count();
+	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
+	for (long long d = 0; !failed && d < docs; d++)
+		{
+		long long md = mv->copy_vectors(d, buf);
+		failed = w.append(md > 0 ? buf : NULL, md) != 0;
+		}
+	delete [] buf;
+	if (!failed)
+		failed = w.finish() != 0;
+	if (failed)
+		w.abandon();
+	else
+		{
+		delete segments[which].multivector_pq;
+		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+		}
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_HAS_MULTIVECTOR_PQ()
+	-----------------------------------------------------
+*/
+long ATIRE_segment_index::disk_segment_has_multivector_pq(long long which)
+{
+return (which >= 0 && which < segment_count && segments[which].multivector_pq != NULL && segments[which].multivector_pq->token_count() > 0) ? 1 : 0;
 }
 
 /*

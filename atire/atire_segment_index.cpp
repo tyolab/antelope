@@ -34,6 +34,8 @@
 #include "../source/hnsw.h"
 #include "../source/token_index.h"
 #include "../source/pq_store.h"
+#include "../source/multivector_pq_store.h"
+#include "../source/pq_codec.h"
 
 /*
 	ATIRE_SEGMENT_INDEX::ATIRE_SEGMENT_INDEX()
@@ -151,6 +153,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].hnsw_graph;
 	delete segments[which].multivectors;
 	delete segments[which].token_index;
+	delete segments[which].multivector_pq;
 	delete segments[which].attributes;
 	delete segments[which].payload;
 	}
@@ -1447,6 +1450,15 @@ if (token_index_eager)
 if (pq_eager)
 	build_pq();
 
+/*
+	Eager token-PQ policy: build .mvpq for the segment just flushed
+	(append_segment() already ran, so it is visible to
+	build_multivector_pq()'s loop).  Idempotent, best-effort like the other
+	flush() sidecars.
+*/
+if (mvpq_eager)
+	build_multivector_pq();
+
 return 0;
 }
 
@@ -1575,11 +1587,24 @@ if (rerank_configured())
 	char tann_filename[1024];
 	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
 	segments[segment_count].token_index = ANT_token_index::load(tann_filename, segments[segment_count].multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
+
+	segments[segment_count].multivector_pq = NULL;
+	if (multivector_pq_configured())
+		{
+		char mvpq_filename[1024];
+		segment_filename(mvpq_filename, sizeof(mvpq_filename), generation, "mvpq");
+		ANT_multivector_pq_store *p = ANT_multivector_pq_store::load(mvpq_filename, rerank_dimension_current, engine->get_document_count(), ANT_pq_codec::METRIC_DOT);
+		if (p->document_count() == engine->get_document_count() && p->token_count() > 0)
+			segments[segment_count].multivector_pq = p;
+		else
+			delete p;			/* no/degraded .mvpq -> NULL -> .mvec fallback */
+		}
 	}
 else
 	{
 	segments[segment_count].multivectors = NULL;
 	segments[segment_count].token_index = NULL;
+	segments[segment_count].multivector_pq = NULL;
 	}
 
 if (attributes_configured())

@@ -34,6 +34,7 @@ class ANT_hnsw;
 class ANT_filter;
 class ANT_token_index;
 class ANT_pq_store;
+class ANT_multivector_pq_store;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -63,6 +64,7 @@ public:
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
 	ANT_multivector_store *multivectors;	// V5 late-interaction sidecar; NULL unless rerank configured
 	ANT_token_index *token_index;		// V6 token-level ANN over multivectors' flattened token pool; NULL unless built/loadable
+	ANT_multivector_pq_store *multivector_pq;	// PQ-compressed token pool (seg_G.mvpq); NULL unless token-PQ configured AND a valid .mvpq loaded/built
 	ANT_attribute_store *attributes;	// filter columns; NULL unless attributes configured
 	ANT_payload_store *payload;			// opaque per-doc blob; NULL unless attributes configured
 	ANT_pq_store *pq_vectors;			// PQ-compressed dense store (seg_G.pq); NULL unless PQ configured AND a valid .pq loaded/built
@@ -365,6 +367,8 @@ public:
 	long disk_segment_has_token_index(long long which);	// test accessor: 1 if segment `which` has a non-empty token index
 	long build_pq(void);								// on-demand backfill: build .pq for PQ-configured segments lacking one; 0 = success, 1 if PQ unconfigured / no dense vectors
 	long disk_segment_has_pq(long long which);			// test accessor: 1 if segment `which` has a non-empty PQ store
+	long build_multivector_pq(void);					// on-demand backfill; 0 success, 1 if unconfigured / no multivectors
+	long disk_segment_has_multivector_pq(long long which);	// test accessor
 	hit *get_hit(long long which) { return &results[which]; }
 
 	long long get_document_count(void);						// live (non-tombstoned) documents
