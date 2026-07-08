@@ -8,6 +8,7 @@
 #include <vector>
 #include <queue>
 #include "hnsw.h"
+#include "vector_source.h"
 #include "vector_store.h"
 #include "index_tombstones.h"
 #include "mersenne_twister.h"
@@ -23,7 +24,7 @@ ANT_hnsw::~ANT_hnsw()
 delete [] levels; delete [] offsets; delete [] neighbours;
 }
 
-double ANT_hnsw::distance(long long a, const float *query, ANT_vector_store *vectors, long metric)
+double ANT_hnsw::distance(long long a, const float *query, ANT_vector_source *vectors, long metric)
 {
 return -vectors->score(a, query, metric);		// score() handles float and int8 backends (reconstructs a for int8)
 }
@@ -59,7 +60,7 @@ for (lc = 0; lc < layer; lc++)			/* skip lower layers: each is [count][count doc
 return p + 1;
 }
 
-long ANT_hnsw::build(ANT_vector_store *vectors, long long M_in, long long ef_construction_in, long metric, bool use_distance_cache)
+long ANT_hnsw::build(ANT_vector_source *vectors, long long M_in, long long ef_construction_in, long metric, bool use_distance_cache)
 {
 long long n = vectors->document_count(), i;
 ANT_mersenne_twister twister;
@@ -297,7 +298,7 @@ return 0;
 }
 
 long long ANT_hnsw::search(const float *query, long metric, long long ef_search, long long top_k,
-	ANT_vector_store *vectors, ANT_index_tombstones *tombstones,
+	ANT_vector_source *vectors, ANT_index_tombstones *tombstones,
 	long long *out_docids, double *out_scores, const unsigned char *filter_bits)
 {
 if (entry_point < 0 || documents == 0)

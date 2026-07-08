@@ -9,7 +9,7 @@
 #ifndef HNSW_H_
 #define HNSW_H_
 
-class ANT_vector_store;
+class ANT_vector_source;
 class ANT_index_tombstones;
 
 #define ANT_HNSW_SEED 0x1234567890ABCDEFULL
@@ -30,7 +30,7 @@ private:
 	int *neighbours;				// CSR stream: per node, per layer 0..level: [count][docid...]
 
 	/* build helpers (defined in the .cpp) */
-	double distance(long long a, const float *query, ANT_vector_store *vectors, long metric);
+	double distance(long long a, const float *query, ANT_vector_source *vectors, long metric);
 
 public:
 	ANT_hnsw();
@@ -43,13 +43,13 @@ public:
 
 	/* Build the graph over every present vector in `vectors` (docid order,
 	   deterministic).  Returns 0 on success, nonzero on allocation failure. */
-	long build(ANT_vector_store *vectors, long long M, long long ef_construction, long metric, bool use_distance_cache = true);
+	long build(ANT_vector_source *vectors, long long M, long long ef_construction, long metric, bool use_distance_cache = true);
 
 	/* Search for the top_k highest-kernel present, non-tombstoned docids for
 	   `query`.  Fills out_docids/out_scores (scores = kernel, descending),
 	   returns the count (<= top_k).  ef_search is clamped to >= top_k. */
 	long long search(const float *query, long metric, long long ef_search, long long top_k,
-		ANT_vector_store *vectors, ANT_index_tombstones *tombstones,
+		ANT_vector_source *vectors, ANT_index_tombstones *tombstones,
 		long long *out_docids, double *out_scores, const unsigned char *filter_bits = NULL);
 
 	/* Persist the CSR to a seg_G.hnsw sidecar; 0 on success. */

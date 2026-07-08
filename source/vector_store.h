@@ -22,6 +22,8 @@
 #ifndef VECTOR_STORE_H_
 #define VECTOR_STORE_H_
 
+#include "vector_source.h"
+
 class ANT_index_tombstones;
 
 /*
@@ -42,7 +44,7 @@ long long docid;
 */
 void ANT_vector_candidate_insert(ANT_vector_candidate *best, long long *best_count, long long top_k, double score, long long generation, long long docid);
 
-class ANT_vector_store
+class ANT_vector_store : public ANT_vector_source
 {
 public:
 	enum { METRIC_DOT = 0, METRIC_COSINE = 1, METRIC_L2 = 2 };
@@ -65,14 +67,14 @@ public:
 
 	static ANT_vector_store *load(const char *filename, long long expected_dimension, long long expected_documents);
 
-	long long document_count(void) { return documents; }
-	long long get_dimension(void) { return dimension; }
-	long has(long long docid) { return presence != NULL && (presence[docid / 8] & (1 << (docid % 8))) != 0; }
-	const float *get(long long docid) { return vectors + docid * dimension; }
+	virtual long long document_count(void) override { return documents; }
+	virtual long long get_dimension(void) override { return dimension; }
+	virtual long has(long long docid) override { return presence != NULL && (presence[docid / 8] & (1 << (docid % 8))) != 0; }
+	virtual const float *get(long long docid) override { return vectors + docid * dimension; }
 
-	long is_quantized(void) { return quantized; }
-	void reconstruct(long long docid, float *out);
-	double score(long long docid, const float *query, long metric);
+	virtual long is_quantized(void) override { return quantized; }
+	virtual void reconstruct(long long docid, float *out) override;
+	virtual double score(long long docid, const float *query, long metric) override;
 
 	void scan(const float *query, long metric, ANT_index_tombstones *tombstones, long long generation, ANT_vector_candidate *best, long long *best_count, long long top_k, const unsigned char *filter_bits = NULL);
 
