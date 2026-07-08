@@ -20,6 +20,7 @@ private:
 	long metric;
 	long long M;
 	long long ef_construction;
+	ANT_multivector_store *store;   // borrowed (not owned) -- do NOT delete in dtor
 	ANT_token_index();
 public:
 	~ANT_token_index();
@@ -30,5 +31,13 @@ public:
 	long long get_documents(void) { return documents; }
 	long empty(void);                        // no graph / empty graph
 	long token_docid_at(long long t);        // test/debug accessor: token_docid[t], or -1 out of range
+
+	/* Persist the token->docid map + header to `filename`, and the graph
+	   topology to `filename.g` (via ANT_hnsw::save).  0 on success. */
+	long save(const char *filename);
+	/* Forgiving factory: read the sidecar pair back, degrading to an empty
+	   index on ANY corruption or config/store mismatch.  Caller owns the
+	   returned pointer (delete); `store` is borrowed and retained (not owned). */
+	static ANT_token_index *load(const char *filename, ANT_multivector_store *store, long long expected_M, long long expected_ef_construction, long metric);
 };
 #endif /* TOKEN_INDEX_H_ */

@@ -96,10 +96,87 @@ unlink(path);
 printf("empty_store_test OK\n");
 }
 
+static void save_load_test(void)
+{
+char store_path[64]; strcpy(store_path, "/tmp/ant_v6tokidx_sl_XXXXXX"); { int fd = mkstemp(store_path); if (fd >= 0) close(fd); }
+ANT_multivector_store *store = build_store(store_path);
+CHECK(store != NULL);
+
+ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+CHECK(idx != NULL);
+
+char path[64]; strcpy(path, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
+CHECK(idx->save(path) == 0);
+
+ANT_token_index *r = ANT_token_index::load(path, store, 16, 200, 0);
+CHECK(r != NULL);
+CHECK(!r->empty());
+CHECK(r->get_token_count() == 6);
+CHECK(r->token_docid_at(2) == 1 && r->token_docid_at(5) == 2);
+delete r;
+
+/* nonexistent path -> empty, no crash */
+ANT_token_index *m = ANT_token_index::load("/tmp/does_not_exist_v6tann", store, 16, 200, 0);
+CHECK(m != NULL && m->empty());
+delete m;
+
+/* corruption: truncate the container file -> empty, no crash */
+{
+FILE *f = fopen(path, "r+");
+CHECK(f != NULL);
+CHECK(ftruncate(fileno(f), 10) == 0);
+fclose(f);
+}
+ANT_token_index *c = ANT_token_index::load(path, store, 16, 200, 0);
+CHECK(c != NULL && c->empty());
+delete c;
+
+/* config mismatch (wrong M) -> empty; re-save fresh since `path` was truncated above */
+char path2[64]; strcpy(path2, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path2); if (fd >= 0) close(fd); }
+CHECK(idx->save(path2) == 0);
+ANT_token_index *w = ANT_token_index::load(path2, store, 32 /* wrong M */, 200, 0);
+CHECK(w != NULL && w->empty());
+delete w;
+
+/* stale token_count: a different store with a different token_count */
+char store2_path[64]; strcpy(store2_path, "/tmp/ant_v6tokidx_sl2_XXXXXX"); { int fd = mkstemp(store2_path); if (fd >= 0) close(fd); }
+long long dim = 4;
+float doc0[1*4] = { 1, 0, 0, 0 };
+ANT_multivector_store_writer w2;
+CHECK(w2.create(store2_path, dim) == 0);
+CHECK(w2.append(doc0, 1) == 0);
+CHECK(w2.finish() == 0);
+ANT_multivector_store *store2 = ANT_multivector_store::load(store2_path, dim, 1);
+CHECK(store2 != NULL);
+ANT_token_index *idx2 = ANT_token_index::build(store2, 16, 200, 0);
+CHECK(idx2 != NULL);
+char path3[64]; strcpy(path3, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path3); if (fd >= 0) close(fd); }
+CHECK(idx2->save(path3) == 0);
+
+ANT_token_index *stale = ANT_token_index::load(path3, store /* wrong token_count */, 16, 200, 0);
+CHECK(stale != NULL && stale->empty());
+delete stale;
+
+delete idx2;
+delete store2;
+unlink(store2_path);
+unlink(path3);
+
+delete idx;
+delete store;
+unlink(store_path);
+unlink(path);
+unlink(path2);
+{ char g[80]; snprintf(g, sizeof(g), "%s.g", path); unlink(g); }
+{ char g[80]; snprintf(g, sizeof(g), "%s.g", path2); unlink(g); }
+printf("save_load_test OK\n");
+}
+
 int main(void)
 {
 build_test();
 empty_store_test();
+save_load_test();
 printf("PASSED\n");
 return 0;
 }
