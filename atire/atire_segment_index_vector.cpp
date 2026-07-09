@@ -1816,18 +1816,17 @@ return best_count;
 	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES_PQ_RERANK()
 	--------------------------------------------------
 	Rerank-posture PQ gatherer: per segment, take a PQ ADC shortlist of
-	top_k*candidate_multiplier candidates, then RESCORE each with the exact
-	resident float store (segments[].vectors is float in PQ mode) to restore
-	precision, keeping only the exact top_k.  Segments without a valid .pq fall
-	back to an exact float scan; the live buffer is always exact.  Mirrors
-	vector_candidates_approx (signature shortlist -> exact rescore).
-
-	Note: pq_rerank_quant_current (FLOAT vs INT8) does not change behavior in
-	Phase 1 -- the resident float store is the exact tier for both.  A distinct
-	int8 rescore tier would need a separate persistent sidecar (excluded from PQ
-	mode) and would be strictly less precise than the resident float anyway; it
-	becomes meaningful only once the resident float is dropped (a Phase-2 memory
-	optimization).
+	top_k*candidate_multiplier candidates, then RESCORE each to restore
+	precision, keeping only the exact top_k.  The rescore source is whatever
+	the #19 resident tier populated in segments[].vectors -- float under
+	PQ_TIER_FLOAT, or the int8 .pqr sidecar under PQ_TIER_INT8.  When no
+	resident store is present for a shortlisted docid (PQ_TIER_INT8 with a
+	missing .pqr, or PQ_TIER_NONE), the candidate is reconstructed from the
+	.pq codes instead and scored with the exact metric kernel over that
+	approximation.  Segments without a valid .pq and without a resident store
+	are skipped; segments without .pq but WITH a resident store fall back to
+	an exact scan of that store.  The live buffer is always exact.  Mirrors
+	vector_candidates_approx (signature shortlist -> exact/approx rescore).
 */
 long long ATIRE_segment_index::vector_candidates_pq_rerank(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
 {
@@ -1849,26 +1848,36 @@ if (vector_metric == VECTOR_METRIC_COSINE)
 
 for (which = 0; which < segment_count; which++)
 	{
-	if (segments[which].vectors == NULL)
-		continue;
-	ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+	ANT_pq_store *pq = segments[which].pq_vectors;
+	long long docs = segments[which].engine->get_document_count();
+	int pq_ok = (pq != NULL && pq->document_count() == docs && docs > 0);
+	if (!pq_ok && segments[which].vectors == NULL)
+		continue;								/* no PQ codes and no resident store: nothing to scan */
 	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
-	if (segments[which].pq_vectors != NULL
-		&& segments[which].pq_vectors->document_count() == segments[which].engine->get_document_count()
-		&& segments[which].pq_vectors->document_count() > 0)
+	if (pq_ok)
 		{
+		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
 		long long count = 0;
-		segments[which].pq_vectors->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, shortlist, &count, pool_size, fbits);
+		pq->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, shortlist, &count, pool_size, fbits);
+		float *recon = NULL;
 		for (p = 0; p < count; p++)
 			{
 			long long docid = shortlist[p].docid;
-			if (!src->has(docid))
-				continue;			/* shortlist already tombstone/filter-clean; presence belt-and-suspenders */
-			ANT_vector_candidate_insert(best, &best_count, top_k, src->score(docid, query, vector_metric), segments[which].generation, docid);
+			double score;
+			if (src != NULL && src->has(docid))
+				score = src->score(docid, query, vector_metric);		/* resident float or int8 rescore */
+			else
+				{
+				if (recon == NULL) recon = new float[vector_dimension_current];
+				pq->reconstruct(docid, recon);							/* .pqr absent -> ADC-precision reconstruct */
+				score = ANT_vector_store::kernel(recon, query, vector_dimension_current, vector_metric);
+				}
+			ANT_vector_candidate_insert(best, &best_count, top_k, score, segments[which].generation, docid);
 			}
+		delete [] recon;
 		}
 	else
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
 	delete [] fbits;
 	}
 

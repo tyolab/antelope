@@ -134,6 +134,59 @@ static void test_persist_and_backcompat(void)
 	delete idx2;
 }
 
+/* Returns recall@10 of idx->search_vector(q,10) against the planted-nearest set `planted` (size np). */
+static double recall_at_10(ATIRE_segment_index *idx, const float *q, const long *planted, int np)
+{
+	long long n = idx->search_vector(q, 10);   // search_vector returns the result count
+	int hit = 0;
+	for (int i = 0; i < np; i++)
+		{
+		char want[64]; snprintf(want, sizeof(want), "doc%ld", planted[i]);
+		for (long long h = 0; h < n && h < 10; h++)
+			if (strcmp(idx->get_hit(h)->filename, want) == 0) { hit++; break; }
+		}
+	return (double)hit / np;
+}
+
+static void test_rerank_through_int8_tier(void)
+{
+	long long gen_int8, gen_float;
+	long planted[1] = {10};
+	float q[16];
+	for (int j = 0; j < 16; j++) q[j] = (float)((10*7 + j*3) % 11) / 10.0f;
+
+	/* INT8-tier rerank index (build_indexed wipes DIR, so do the whole int8 lifecycle -- including
+	   the .pqr-absent reopen below -- before switching DIR over to the FLOAT reference build). */
+	ATIRE_segment_index *idx8 = build_indexed(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_INT8, &gen_int8);
+	delete idx8;
+	idx8 = new ATIRE_segment_index();
+	CHECK(idx8->open(DIR) == 0);
+	CHECK(idx8->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_INT8);
+	double recall_int8 = recall_at_10(idx8, q, planted, 1);
+	delete idx8;
+
+	/* .pqr-absent path: delete the int8 rerank sidecar, reopen, rerank still returns a sane top-k */
+	char pqr_path[2048]; snprintf(pqr_path, sizeof(pqr_path), "%s/seg_%06lld.pqr", DIR, (long long)gen_int8);
+	CHECK(remove(pqr_path) == 0);
+
+	ATIRE_segment_index *idx8b = new ATIRE_segment_index();
+	CHECK(idx8b->open(DIR) == 0);
+	CHECK(idx8b->pq_resident_tier() == ATIRE_segment_index::PQ_TIER_INT8);   // configured tier unchanged; loaded store just absent
+	long long n = idx8b->search_vector(q, 10);
+	CHECK(n >= 1);
+	CHECK(idx8b->get_hit(0)->filename[0] == 'd');   // top hit is a real doc, no crash
+	delete idx8b;
+
+	/* FLOAT-tier rerank reference index, same synthetic docs (rebuilds DIR from scratch) */
+	ATIRE_segment_index *idxf = build_indexed(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_FLOAT, &gen_float);
+	double recall_float = recall_at_10(idxf, q, planted, 1);
+	delete idxf;
+
+	printf("recall_at_10: int8=%.3f float=%.3f\n", recall_int8, recall_float);
+	CHECK(recall_int8 <= recall_float + 1e-9);   // float is the precision ceiling
+	CHECK(recall_int8 >= 0.5);                    // sane floor for this tiny synthetic set
+}
+
 static void test_resident_tier_after_reopen(long tier, long posture)
 {
 	long long gen;
@@ -158,6 +211,7 @@ int main(void)
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_FLOAT, ATIRE_segment_index::PQ_POSTURE_REPLACE);
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_INT8,  ATIRE_segment_index::PQ_POSTURE_RERANK);
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_NONE,  ATIRE_segment_index::PQ_POSTURE_REPLACE);
+	test_rerank_through_int8_tier();
 	printf("test_pq_resident_tier PASSED\n");
 	return 0;
 }
