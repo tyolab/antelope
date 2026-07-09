@@ -147,10 +147,38 @@ if (merge_result != 0)
 */
 if (vector_dimension_current != 0)
 	{
+	/*
+		Merge source of record: under PQ (#19) the resident inputs[]->vectors may
+		be an int8 .pqr store or NULL (NONE / missing-.pqr tiers), so it is NOT
+		the ground-truth float.  The float .vec always stays on disk, so under PQ
+		load each input's float .vec from disk and merge from THAT -- decoupled
+		from the resident tier, and lossless regardless of it.  Non-PQ modes merge
+		from the resident store (float .vec, or int8 .qvec under QUANTIZE_REPLACE)
+		exactly as before.
+	*/
+	ANT_vector_store **pq_float_src = NULL;
+	if (pq_configured())
+		{
+		pq_float_src = new ANT_vector_store *[input_count];
+		for (input = 0; input < input_count; input++)
+			{
+			char in_vec[4096];
+			segment_filename(in_vec, sizeof(in_vec), inputs[input]->generation, "vec");
+			ANT_vector_store *fv = ANT_vector_store::load(in_vec, vector_dimension_current, inputs[input]->engine->get_document_count());
+			if (fv->document_count() > 0 && !fv->is_quantized())
+				pq_float_src[input] = fv;
+			else
+				{ delete fv; pq_float_src[input] = NULL; }
+			}
+		}
+
 	long any_vectors = false;
 	for (input = 0; input < input_count; input++)
-		if (inputs[input]->vectors != NULL && inputs[input]->vectors->document_count() > 0)
+		{
+		ANT_vector_store *chk = pq_float_src != NULL ? pq_float_src[input] : inputs[input]->vectors;
+		if (chk != NULL && chk->document_count() > 0)
 			any_vectors = true;
+		}
 	if (any_vectors)
 		{
 		ANT_index_tombstones **stone_list = new ANT_index_tombstones *[input_count];
@@ -174,8 +202,9 @@ if (vector_dimension_current != 0)
 				if (vec_renumberer->renumber(input, docid) < 0)
 					continue;		/* tombstoned: dropped, exactly like its postings */
 				float *row;
-				ANT_vector_store *vsrc = inputs[input]->exact_vectors != NULL
-										 ? inputs[input]->exact_vectors : inputs[input]->vectors;
+				ANT_vector_store *vsrc = pq_float_src != NULL ? pq_float_src[input]
+										 : (inputs[input]->exact_vectors != NULL
+											? inputs[input]->exact_vectors : inputs[input]->vectors);
 				if (vsrc != NULL && vsrc->has(docid))
 					{ vsrc->reconstruct(docid, merge_buf); row = merge_buf; }
 				else
@@ -196,11 +225,15 @@ if (vector_dimension_current != 0)
 		delete [] doc_counts;
 		if (vec_failed)
 			{
+			if (pq_float_src != NULL)
+				{ for (input = 0; input < input_count; input++) delete pq_float_src[input]; delete [] pq_float_src; }
 			remove(output_name);
 			delete [] inputs;
 			return 1;
 			}
 		}
+	if (pq_float_src != NULL)
+		{ for (input = 0; input < input_count; input++) delete pq_float_src[input]; delete [] pq_float_src; }
 	}
 
 /*
@@ -474,6 +507,62 @@ if (pq_configured())
 	delete out_vectors;
 	delete output_segment->pq_vectors;
 	output_segment->pq_vectors = ANT_pq_store::load(out_pq, vector_dimension_current, output_segment->engine->get_document_count(), vector_metric);
+	}
+
+/*
+	Resident-tier (#19): realize the merged segment's resident tier IN-SESSION.
+	append_segment (Step 4, above) ran BEFORE the output .pq existed, so it took
+	the degraded-.pq path and loaded the float .vec into output_segment->vectors
+	regardless of tier.  Correct that here so the compacted segment matches its
+	configured tier without waiting for a reopen:
+	  INT8  -> rebuild the int8 .pqr over the merged float .vec and make it the
+	           resident rerank store (drop the float);
+	  NONE  -> drop the resident float (pure ADC, codes only);
+	  FLOAT -> keep the float .vec resident (nothing to do).
+	The float .vec is never removed.  Best-effort: a failed .pqr leaves ->vectors
+	NULL (rerank reconstructs from the rebuilt .pq).
+*/
+if (pq_configured() && pq_resident_tier_current == PQ_TIER_INT8
+	&& output_segment->pq_vectors != NULL && output_segment->pq_vectors->document_count() > 0)
+	{
+	char out_vec2[4096], out_pqr[4096];
+	segment_filename(out_vec2, sizeof(out_vec2), output_generation, vext);
+	segment_filename(out_pqr, sizeof(out_pqr), output_generation, "pqr");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_store *fv = ANT_vector_store::load(out_vec2, vector_dimension_current, out_docs);
+	if (fv->document_count() == out_docs && out_docs > 0 && !fv->is_quantized())
+		{
+		ANT_vector_store_writer qw;
+		long qfailed = qw.create(out_pqr, vector_dimension_current) != 0;
+		if (!qfailed)
+			qw.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+		float *qbuf = new float[vector_dimension_current];
+		for (long long d = 0; !qfailed && d < out_docs; d++)
+			{
+			if (fv->has(d))
+				{ fv->reconstruct(d, qbuf); qfailed = qw.append(qbuf) != 0; }
+			else
+				qfailed = qw.append(NULL) != 0;
+			}
+		delete [] qbuf;
+		if (!qfailed)
+			qfailed = qw.finish() != 0;
+		if (qfailed)
+			qw.abandon();
+		}
+	delete fv;
+	delete output_segment->vectors;
+	ANT_vector_store *iv = ANT_vector_store::load(out_pqr, vector_dimension_current, out_docs);
+	if (iv->document_count() == out_docs && out_docs > 0 && iv->is_quantized())
+		output_segment->vectors = iv;			/* refreshed resident int8 tier */
+	else
+		{ delete iv; output_segment->vectors = NULL; }	/* .pqr failed -> reconstruct-from-PQ at rerank */
+	}
+else if (pq_configured() && pq_resident_tier_current == PQ_TIER_NONE
+	&& output_segment->pq_vectors != NULL && output_segment->pq_vectors->document_count() > 0)
+	{
+	delete output_segment->vectors;
+	output_segment->vectors = NULL;				/* NONE: drop the float append_segment loaded pre-.pq (pure ADC) */
 	}
 
 /*

@@ -460,7 +460,7 @@ char filename[4096];
 FILE *fp;
 unsigned long long magic, want;
 unsigned int version;
-long long m, posture, rerank_quant;
+long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT;
 const char *tag = "ANTPQCF1";
 
 memcpy(&want, tag, 8);
@@ -468,15 +468,21 @@ snprintf(filename, sizeof(filename), "%s/pq.config", directory);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return 0;
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
-	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u)
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
 	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
 	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
 	{ fclose(fp); return 0; }
+if (version == 2u)
+	{
+	if (fread(&tier, sizeof(tier), 1, fp) != 1 || tier < 0 || tier > 2)
+		{ fclose(fp); return 0; }
+	}
 fclose(fp);
 pq_m_current = m;
 pq_posture_current = (long)posture;
 pq_rerank_quant_current = (long)rerank_quant;
+pq_resident_tier_current = (long)tier;
 return 0;
 }
 
@@ -490,10 +496,11 @@ long ATIRE_segment_index::save_pq_config(void)
 char filename[4096], temp[4200];
 FILE *fp;
 unsigned long long magic;
-unsigned int version = 1u;
+unsigned int version = 2u;
 long long m = pq_m_current;
 long long posture = pq_posture_current;
 long long rerank_quant = pq_rerank_quant_current;
+long long tier = pq_resident_tier_current;
 const char *tag = "ANTPQCF1";
 
 memcpy(&magic, tag, 8);
@@ -505,7 +512,8 @@ if ((fp = fopen(temp, "wb")) == NULL)
 if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
 	|| fwrite(&m, sizeof(m), 1, fp) != 1
 	|| fwrite(&posture, sizeof(posture), 1, fp) != 1
-	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1)
+	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1
+	|| fwrite(&tier, sizeof(tier), 1, fp) != 1)
 	{ fclose(fp); remove(temp); return 1; }
 fclose(fp);
 if (rename(temp, filename) != 0)
@@ -550,6 +558,39 @@ pq_posture_current = posture;
 pq_rerank_quant_current = rerank_quant;
 if (save_pq_config() != 0)
 	{ pq_m_current = 0; pq_posture_current = 0; pq_rerank_quant_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_RESIDENT_TIER()
+	--------------------------------------------
+	Selects what stays resident in RAM alongside the PQ codes: the full
+	float vectors (FLOAT, default -- Phase 1 behaviour, no RAM win), an
+	int8-quantized copy (INT8), or nothing (NONE -- PQ codes only, the
+	maximal RAM win).  NONE is incompatible with rerank posture (there
+	would be nothing to exact-rescore against).  Like set_pq_config(),
+	once moved off the FLOAT default the tier is immutable: setting the
+	SAME tier again is a no-op success, but any further change is
+	rejected.
+*/
+long ATIRE_segment_index::set_pq_resident_tier(long tier)
+{
+if (directory == NULL || vector_dimension_current == 0)
+	return 1;                       // must be open with vectors
+if (!pq_configured())
+	return 1;                       // PQ must be configured first
+if (tier != PQ_TIER_FLOAT && tier != PQ_TIER_INT8 && tier != PQ_TIER_NONE)
+	return 1;
+if (tier == PQ_TIER_NONE && pq_posture_current == PQ_POSTURE_RERANK)
+	return 1;                       // NONE is replace-only (no resident store to rescore)
+if (pq_resident_tier_current != tier && pq_resident_tier_current != PQ_TIER_FLOAT)
+	return 1;                       // immutable once moved off the default
+if (pq_resident_tier_current == tier)
+	return 0;                       // idempotent
+long previous = pq_resident_tier_current;
+pq_resident_tier_current = tier;
+if (save_pq_config() != 0)
+	{ pq_resident_tier_current = previous; return 1; }
 return 0;
 }
 
@@ -1066,7 +1107,7 @@ return 0;
 long ATIRE_segment_index::build_pq(void)
 {
 long long which;
-char vec_name[4096], pq_name[4096];
+char vec_name[4096], pq_name[4096], pqr_name[4096];
 
 if (!pq_configured() || vector_dimension_current == 0)
 	return 1;
@@ -1076,37 +1117,103 @@ for (which = 0; which < segment_count; which++)
 	long long generation = segments[which].generation;
 	long long docs = segments[which].engine->get_document_count();
 
-	if (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0)
-		continue;				/* already has a valid .pq: idempotent skip */
-
 	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
 	segment_filename(pq_name, sizeof(pq_name), generation, "pq");
 
-	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
-	if (src->document_count() == docs && docs > 0 && !src->is_quantized())
+	/*
+		1. Build the .pq codes if this segment lacks a valid one (idempotent:
+		   a segment that already has a valid .pq skips the retrain but STILL
+		   falls through to the resident-tier realization below -- so a tier
+		   set AFTER the .pq was built is honoured, not silently dropped).
+	*/
+	int have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
+	if (!have_pq)
 		{
-		ANT_pq_store_writer w;
-		long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric) != 0;
-		float *buf = new float[vector_dimension_current];
-		for (long long docid = 0; !failed && docid < docs; docid++)
+		ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+		if (src->document_count() == docs && docs > 0 && !src->is_quantized())
 			{
-			if (src->has(docid))
-				{ src->reconstruct(docid, buf); failed = w.append(buf) != 0; }
+			ANT_pq_store_writer w;
+			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric) != 0;
+			float *buf = new float[vector_dimension_current];
+			for (long long docid = 0; !failed && docid < docs; docid++)
+				{
+				if (src->has(docid))
+					{ src->reconstruct(docid, buf); failed = w.append(buf) != 0; }
+				else
+					failed = w.append(NULL) != 0;
+				}
+			delete [] buf;
+			if (!failed)
+				failed = w.finish() != 0;
+			if (failed)
+				w.abandon();
 			else
-				failed = w.append(NULL) != 0;
+				{
+				delete segments[which].pq_vectors;
+				segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+				have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
+				}
 			}
-		delete [] buf;
-		if (!failed)
-			failed = w.finish() != 0;
-		if (failed)
-			w.abandon();
-		else
-			{
-			delete segments[which].pq_vectors;
-			segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
-			}
+		delete src;
 		}
-	delete src;
+
+	if (!have_pq)
+		continue;				/* no PQ codes (empty/degraded .vec): leave this segment float-backed */
+
+	/*
+		2. Realize the resident tier for this segment IN-SESSION so the RAM /
+		   precision win takes effect without waiting for a reopen:
+		     INT8  -> ensure the int8 .pqr sidecar exists (write it from the
+		              float .vec if missing/degraded), then make it the resident
+		              rerank store and drop the float;
+		     NONE  -> drop the resident float (pure ADC, codes only);
+		     FLOAT -> keep the float resident (nothing to do).
+		   The float .vec is NEVER removed from disk (build/compaction retrain
+		   read it, and a degraded .pqr falls back to reconstruct-from-PQ).
+	*/
+	if (pq_resident_tier_current == PQ_TIER_INT8)
+		{
+		segment_filename(pqr_name, sizeof(pqr_name), generation, "pqr");
+		ANT_vector_store *iv = ANT_vector_store::load(pqr_name, vector_dimension_current, docs);
+		if (!(iv->document_count() == docs && docs > 0 && iv->is_quantized()))
+			{	/* missing/degraded .pqr -> (re)write from the float .vec (best-effort), then reload */
+			delete iv;
+			ANT_vector_store *fsrc = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+			if (fsrc->document_count() == docs && docs > 0 && !fsrc->is_quantized())
+				{
+				ANT_vector_store_writer qw;
+				long qfailed = qw.create(pqr_name, vector_dimension_current) != 0;
+				if (!qfailed)
+					qw.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+				float *qbuf = new float[vector_dimension_current];
+				for (long long docid = 0; !qfailed && docid < docs; docid++)
+					{
+					if (fsrc->has(docid))
+						{ fsrc->reconstruct(docid, qbuf); qfailed = qw.append(qbuf) != 0; }
+					else
+						qfailed = qw.append(NULL) != 0;
+					}
+				delete [] qbuf;
+				if (!qfailed)
+					qfailed = qw.finish() != 0;	/* writes int8 store to .pqr; float .vec is NOT removed */
+				if (qfailed)
+					qw.abandon();
+				}
+			delete fsrc;
+			iv = ANT_vector_store::load(pqr_name, vector_dimension_current, docs);
+			}
+		delete segments[which].vectors;
+		if (iv->document_count() == docs && docs > 0 && iv->is_quantized())
+			segments[which].vectors = iv;		/* resident int8 rerank tier (float dropped) */
+		else
+			{ delete iv; segments[which].vectors = NULL; }	/* .pqr still degraded -> reconstruct-from-PQ at rerank */
+		}
+	else if (pq_resident_tier_current == PQ_TIER_NONE)
+		{
+		delete segments[which].vectors;
+		segments[which].vectors = NULL;			/* pure ADC: nothing resident beside the codes */
+		}
+	/* FLOAT: leave segments[which].vectors (the float .vec) resident. */
 	}
 return 0;
 }
@@ -1119,6 +1226,26 @@ return 0;
 long ATIRE_segment_index::disk_segment_has_pq(long long which)
 {
 return (which >= 0 && which < segment_count && segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() > 0) ? 1 : 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_RESIDENT_TIER()
+	--------------------------------------------------
+	Test accessor: which resident tier segment `which`'s loaded vector store
+	actually is (int8 store -> PQ_TIER_INT8, float store -> PQ_TIER_FLOAT,
+	NULL -> PQ_TIER_NONE), or -1 if `which` is out of range.  This reflects the
+	store CURRENTLY resident, which matches the configured tier once the segment
+	has been through build_pq()/compaction (both realize the tier in-session) or
+	a reopen.  Between an ondemand flush() and the next build_pq(), a PQ segment
+	is still float-backed and reads as FLOAT regardless of the configured tier.
+*/
+long ATIRE_segment_index::disk_segment_resident_tier(long long which)
+{
+if (which < 0 || which >= segment_count)
+	return -1;
+if (segments[which].vectors == NULL)
+	return PQ_TIER_NONE;
+return segments[which].vectors->is_quantized() ? PQ_TIER_INT8 : PQ_TIER_FLOAT;
 }
 
 /*
@@ -1724,18 +1851,17 @@ return best_count;
 	ATIRE_SEGMENT_INDEX::VECTOR_CANDIDATES_PQ_RERANK()
 	--------------------------------------------------
 	Rerank-posture PQ gatherer: per segment, take a PQ ADC shortlist of
-	top_k*candidate_multiplier candidates, then RESCORE each with the exact
-	resident float store (segments[].vectors is float in PQ mode) to restore
-	precision, keeping only the exact top_k.  Segments without a valid .pq fall
-	back to an exact float scan; the live buffer is always exact.  Mirrors
-	vector_candidates_approx (signature shortlist -> exact rescore).
-
-	Note: pq_rerank_quant_current (FLOAT vs INT8) does not change behavior in
-	Phase 1 -- the resident float store is the exact tier for both.  A distinct
-	int8 rescore tier would need a separate persistent sidecar (excluded from PQ
-	mode) and would be strictly less precise than the resident float anyway; it
-	becomes meaningful only once the resident float is dropped (a Phase-2 memory
-	optimization).
+	top_k*candidate_multiplier candidates, then RESCORE each to restore
+	precision, keeping only the exact top_k.  The rescore source is whatever
+	the #19 resident tier populated in segments[].vectors -- float under
+	PQ_TIER_FLOAT, or the int8 .pqr sidecar under PQ_TIER_INT8.  When no
+	resident store is present for a shortlisted docid (PQ_TIER_INT8 with a
+	missing .pqr, or PQ_TIER_NONE), the candidate is reconstructed from the
+	.pq codes instead and scored with the exact metric kernel over that
+	approximation.  Segments without a valid .pq and without a resident store
+	are skipped; segments without .pq but WITH a resident store fall back to
+	an exact scan of that store.  The live buffer is always exact.  Mirrors
+	vector_candidates_approx (signature shortlist -> exact/approx rescore).
 */
 long long ATIRE_segment_index::vector_candidates_pq_rerank(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter)
 {
@@ -1757,26 +1883,36 @@ if (vector_metric == VECTOR_METRIC_COSINE)
 
 for (which = 0; which < segment_count; which++)
 	{
-	if (segments[which].vectors == NULL)
-		continue;
-	ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+	ANT_pq_store *pq = segments[which].pq_vectors;
+	long long docs = segments[which].engine->get_document_count();
+	int pq_ok = (pq != NULL && pq->document_count() == docs && docs > 0);
+	if (!pq_ok && segments[which].vectors == NULL)
+		continue;								/* no PQ codes and no resident store: nothing to scan */
 	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
-	if (segments[which].pq_vectors != NULL
-		&& segments[which].pq_vectors->document_count() == segments[which].engine->get_document_count()
-		&& segments[which].pq_vectors->document_count() > 0)
+	if (pq_ok)
 		{
+		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
 		long long count = 0;
-		segments[which].pq_vectors->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, shortlist, &count, pool_size, fbits);
+		pq->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, shortlist, &count, pool_size, fbits);
+		float *recon = NULL;
 		for (p = 0; p < count; p++)
 			{
 			long long docid = shortlist[p].docid;
-			if (!src->has(docid))
-				continue;			/* shortlist already tombstone/filter-clean; presence belt-and-suspenders */
-			ANT_vector_candidate_insert(best, &best_count, top_k, src->score(docid, query, vector_metric), segments[which].generation, docid);
+			double score;
+			if (src != NULL && src->has(docid))
+				score = src->score(docid, query, vector_metric);		/* resident float or int8 rescore */
+			else
+				{
+				if (recon == NULL) recon = new float[vector_dimension_current];
+				pq->reconstruct(docid, recon);							/* .pqr absent -> ADC-precision reconstruct */
+				score = ANT_vector_store::kernel(recon, query, vector_dimension_current, vector_metric);
+				}
+			ANT_vector_candidate_insert(best, &best_count, top_k, score, segments[which].generation, docid);
 			}
+		delete [] recon;
 		}
 	else
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+		segments[which].vectors->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
 	delete [] fbits;
 	}
 
