@@ -1107,7 +1107,7 @@ return 0;
 long ATIRE_segment_index::build_pq(void)
 {
 long long which;
-char vec_name[4096], pq_name[4096];
+char vec_name[4096], pq_name[4096], pqr_name[4096];
 
 if (!pq_configured() || vector_dimension_current == 0)
 	return 1;
@@ -1145,6 +1145,40 @@ for (which = 0; which < segment_count; which++)
 			{
 			delete segments[which].pq_vectors;
 			segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+			}
+
+		if (!failed && pq_resident_tier_current == PQ_TIER_INT8)
+			{
+			/*
+				Resident-tier INT8: also write a per-segment int8 rerank sidecar
+				(.pqr) from the same float source, mirroring build_quantized()'s
+				replace-mode encode.  Best-effort: a failed .pqr leaves that
+				segment's INT8 rerank to reconstruct-from-PQ in a later task.
+				The float .vec is NEVER removed here.
+			*/
+			segment_filename(pqr_name, sizeof(pqr_name), generation, "pqr");
+			ANT_vector_store *fsrc = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+			if (fsrc->document_count() == docs && docs > 0 && !fsrc->is_quantized())
+				{
+				ANT_vector_store_writer qw;
+				long qfailed = qw.create(pqr_name, vector_dimension_current) != 0;
+				if (!qfailed)
+					qw.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+				float *qbuf = new float[vector_dimension_current];
+				for (long long docid = 0; !qfailed && docid < docs; docid++)
+					{
+					if (fsrc->has(docid))
+						{ fsrc->reconstruct(docid, qbuf); qfailed = qw.append(qbuf) != 0; }
+					else
+						qfailed = qw.append(NULL) != 0;
+					}
+				delete [] qbuf;
+				if (!qfailed)
+					qfailed = qw.finish() != 0;	/* writes int8 store to .pqr; float .vec is NOT removed */
+				if (qfailed)
+					qw.abandon();
+				}
+			delete fsrc;
 			}
 		}
 	delete src;
