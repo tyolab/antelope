@@ -119,6 +119,7 @@ private:
 	long long pq_m_current;				// 0 = PQ off
 	long pq_posture_current;				// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
 	long pq_rerank_quant_current;			// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+	long pq_resident_tier_current;			// PQ_TIER_FLOAT (default) / PQ_TIER_INT8 / PQ_TIER_NONE
 	long pq_eager;							// 0 ondemand (default), 1 eager
 
 	long long mvpq_m_current;			// 0 = token-PQ unconfigured
@@ -240,6 +241,7 @@ public:
 	enum { QUANTIZE_OFF = 0, QUANTIZE_REPLACE = 1, QUANTIZE_EXACT = 2 };
 	enum { RERANK_QUANT_FLOAT = 0, RERANK_QUANT_INT8 = 1 };
 	enum { PQ_POSTURE_REPLACE = 0, PQ_POSTURE_RERANK = 1 };
+	enum { PQ_TIER_FLOAT = 0, PQ_TIER_INT8 = 1, PQ_TIER_NONE = 2 };
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
@@ -270,6 +272,8 @@ public:
 	long pq_configured(void) { return pq_m_current != 0; }
 	long long pq_m(void) { return pq_m_current; }
 	long set_pq_policy(long eager) { pq_eager = eager ? 1 : 0; return 0; }
+	long set_pq_resident_tier(long tier);   // 0 ok; nonzero: not open / PQ or vectors unconfigured / invalid tier / NONE+RERANK / already set to a DIFFERENT tier (immutable)
+	long pq_resident_tier(void) { return pq_resident_tier_current; }
 
 	long load_multivector_pq_config(void);
 	long save_multivector_pq_config(void);
@@ -367,6 +371,7 @@ public:
 	long disk_segment_has_token_index(long long which);	// test accessor: 1 if segment `which` has a non-empty token index
 	long build_pq(void);								// on-demand backfill: build .pq for PQ-configured segments lacking one; 0 = success, 1 if PQ unconfigured / no dense vectors
 	long disk_segment_has_pq(long long which);			// test accessor: 1 if segment `which` has a non-empty PQ store
+	long disk_segment_resident_tier(long long which);	// test accessor: PQ_TIER_FLOAT/INT8/NONE from the loaded segments[which].vectors; -1 if which out of range
 	long build_multivector_pq(void);					// on-demand backfill; 0 success, 1 if unconfigured / no multivectors
 	long disk_segment_has_multivector_pq(long long which);	// test accessor
 	hit *get_hit(long long which) { return &results[which]; }

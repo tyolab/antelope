@@ -460,7 +460,7 @@ char filename[4096];
 FILE *fp;
 unsigned long long magic, want;
 unsigned int version;
-long long m, posture, rerank_quant;
+long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT;
 const char *tag = "ANTPQCF1";
 
 memcpy(&want, tag, 8);
@@ -468,15 +468,21 @@ snprintf(filename, sizeof(filename), "%s/pq.config", directory);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return 0;
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
-	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u)
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
 	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
 	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
 	{ fclose(fp); return 0; }
+if (version == 2u)
+	{
+	if (fread(&tier, sizeof(tier), 1, fp) != 1 || tier < 0 || tier > 2)
+		{ fclose(fp); return 0; }
+	}
 fclose(fp);
 pq_m_current = m;
 pq_posture_current = (long)posture;
 pq_rerank_quant_current = (long)rerank_quant;
+pq_resident_tier_current = (long)tier;
 return 0;
 }
 
@@ -490,10 +496,11 @@ long ATIRE_segment_index::save_pq_config(void)
 char filename[4096], temp[4200];
 FILE *fp;
 unsigned long long magic;
-unsigned int version = 1u;
+unsigned int version = 2u;
 long long m = pq_m_current;
 long long posture = pq_posture_current;
 long long rerank_quant = pq_rerank_quant_current;
+long long tier = pq_resident_tier_current;
 const char *tag = "ANTPQCF1";
 
 memcpy(&magic, tag, 8);
@@ -505,7 +512,8 @@ if ((fp = fopen(temp, "wb")) == NULL)
 if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
 	|| fwrite(&m, sizeof(m), 1, fp) != 1
 	|| fwrite(&posture, sizeof(posture), 1, fp) != 1
-	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1)
+	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1
+	|| fwrite(&tier, sizeof(tier), 1, fp) != 1)
 	{ fclose(fp); remove(temp); return 1; }
 fclose(fp);
 if (rename(temp, filename) != 0)
@@ -550,6 +558,39 @@ pq_posture_current = posture;
 pq_rerank_quant_current = rerank_quant;
 if (save_pq_config() != 0)
 	{ pq_m_current = 0; pq_posture_current = 0; pq_rerank_quant_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_RESIDENT_TIER()
+	--------------------------------------------
+	Selects what stays resident in RAM alongside the PQ codes: the full
+	float vectors (FLOAT, default -- Phase 1 behaviour, no RAM win), an
+	int8-quantized copy (INT8), or nothing (NONE -- PQ codes only, the
+	maximal RAM win).  NONE is incompatible with rerank posture (there
+	would be nothing to exact-rescore against).  Like set_pq_config(),
+	once moved off the FLOAT default the tier is immutable: setting the
+	SAME tier again is a no-op success, but any further change is
+	rejected.
+*/
+long ATIRE_segment_index::set_pq_resident_tier(long tier)
+{
+if (directory == NULL || vector_dimension_current == 0)
+	return 1;                       // must be open with vectors
+if (!pq_configured())
+	return 1;                       // PQ must be configured first
+if (tier != PQ_TIER_FLOAT && tier != PQ_TIER_INT8 && tier != PQ_TIER_NONE)
+	return 1;
+if (tier == PQ_TIER_NONE && pq_posture_current == PQ_POSTURE_RERANK)
+	return 1;                       // NONE is replace-only (no resident store to rescore)
+if (pq_resident_tier_current != tier && pq_resident_tier_current != PQ_TIER_FLOAT)
+	return 1;                       // immutable once moved off the default
+if (pq_resident_tier_current == tier)
+	return 0;                       // idempotent
+long previous = pq_resident_tier_current;
+pq_resident_tier_current = tier;
+if (save_pq_config() != 0)
+	{ pq_resident_tier_current = previous; return 1; }
 return 0;
 }
 
@@ -1119,6 +1160,23 @@ return 0;
 long ATIRE_segment_index::disk_segment_has_pq(long long which)
 {
 return (which >= 0 && which < segment_count && segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() > 0) ? 1 : 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_RESIDENT_TIER()
+	--------------------------------------------------
+	Test accessor: which resident tier segment `which`'s loaded vector store
+	actually is (PQ_TIER_FLOAT/INT8/NONE), or -1 if `which` is out of range.
+	NONE isn't yet distinguishable from a missing store at this stage (Task 1
+	is config-only, no .pqr sidecar), so a NULL vectors store reads as NONE.
+*/
+long ATIRE_segment_index::disk_segment_resident_tier(long long which)
+{
+if (which < 0 || which >= segment_count)
+	return -1;
+if (segments[which].vectors == NULL)
+	return PQ_TIER_NONE;
+return segments[which].vectors->is_quantized() ? PQ_TIER_INT8 : PQ_TIER_FLOAT;
 }
 
 /*
