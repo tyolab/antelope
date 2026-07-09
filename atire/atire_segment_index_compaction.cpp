@@ -147,10 +147,38 @@ if (merge_result != 0)
 */
 if (vector_dimension_current != 0)
 	{
+	/*
+		Merge source of record: under PQ (#19) the resident inputs[]->vectors may
+		be an int8 .pqr store or NULL (NONE / missing-.pqr tiers), so it is NOT
+		the ground-truth float.  The float .vec always stays on disk, so under PQ
+		load each input's float .vec from disk and merge from THAT -- decoupled
+		from the resident tier, and lossless regardless of it.  Non-PQ modes merge
+		from the resident store (float .vec, or int8 .qvec under QUANTIZE_REPLACE)
+		exactly as before.
+	*/
+	ANT_vector_store **pq_float_src = NULL;
+	if (pq_configured())
+		{
+		pq_float_src = new ANT_vector_store *[input_count];
+		for (input = 0; input < input_count; input++)
+			{
+			char in_vec[4096];
+			segment_filename(in_vec, sizeof(in_vec), inputs[input]->generation, "vec");
+			ANT_vector_store *fv = ANT_vector_store::load(in_vec, vector_dimension_current, inputs[input]->engine->get_document_count());
+			if (fv->document_count() > 0 && !fv->is_quantized())
+				pq_float_src[input] = fv;
+			else
+				{ delete fv; pq_float_src[input] = NULL; }
+			}
+		}
+
 	long any_vectors = false;
 	for (input = 0; input < input_count; input++)
-		if (inputs[input]->vectors != NULL && inputs[input]->vectors->document_count() > 0)
+		{
+		ANT_vector_store *chk = pq_float_src != NULL ? pq_float_src[input] : inputs[input]->vectors;
+		if (chk != NULL && chk->document_count() > 0)
 			any_vectors = true;
+		}
 	if (any_vectors)
 		{
 		ANT_index_tombstones **stone_list = new ANT_index_tombstones *[input_count];
@@ -174,8 +202,9 @@ if (vector_dimension_current != 0)
 				if (vec_renumberer->renumber(input, docid) < 0)
 					continue;		/* tombstoned: dropped, exactly like its postings */
 				float *row;
-				ANT_vector_store *vsrc = inputs[input]->exact_vectors != NULL
-										 ? inputs[input]->exact_vectors : inputs[input]->vectors;
+				ANT_vector_store *vsrc = pq_float_src != NULL ? pq_float_src[input]
+										 : (inputs[input]->exact_vectors != NULL
+											? inputs[input]->exact_vectors : inputs[input]->vectors);
 				if (vsrc != NULL && vsrc->has(docid))
 					{ vsrc->reconstruct(docid, merge_buf); row = merge_buf; }
 				else
@@ -196,11 +225,15 @@ if (vector_dimension_current != 0)
 		delete [] doc_counts;
 		if (vec_failed)
 			{
+			if (pq_float_src != NULL)
+				{ for (input = 0; input < input_count; input++) delete pq_float_src[input]; delete [] pq_float_src; }
 			remove(output_name);
 			delete [] inputs;
 			return 1;
 			}
 		}
+	if (pq_float_src != NULL)
+		{ for (input = 0; input < input_count; input++) delete pq_float_src[input]; delete [] pq_float_src; }
 	}
 
 /*
@@ -477,12 +510,17 @@ if (pq_configured())
 	}
 
 /*
-	Resident-tier (#19): under INT8, rebuild the merged .pqr int8 sidecar over
-	the merged float .vec and refresh output_segment->vectors so THIS session's
-	rerank rescores through the compacted int8 tier.  Under FLOAT the merged
-	.vec was already loaded into ->vectors by append_segment; under NONE ->vectors
-	is NULL.  The float .vec is never removed.  Best-effort: a failed .pqr leaves
-	->vectors NULL (rerank reconstructs from the rebuilt .pq).
+	Resident-tier (#19): realize the merged segment's resident tier IN-SESSION.
+	append_segment (Step 4, above) ran BEFORE the output .pq existed, so it took
+	the degraded-.pq path and loaded the float .vec into output_segment->vectors
+	regardless of tier.  Correct that here so the compacted segment matches its
+	configured tier without waiting for a reopen:
+	  INT8  -> rebuild the int8 .pqr over the merged float .vec and make it the
+	           resident rerank store (drop the float);
+	  NONE  -> drop the resident float (pure ADC, codes only);
+	  FLOAT -> keep the float .vec resident (nothing to do).
+	The float .vec is never removed.  Best-effort: a failed .pqr leaves ->vectors
+	NULL (rerank reconstructs from the rebuilt .pq).
 */
 if (pq_configured() && pq_resident_tier_current == PQ_TIER_INT8
 	&& output_segment->pq_vectors != NULL && output_segment->pq_vectors->document_count() > 0)
@@ -519,6 +557,12 @@ if (pq_configured() && pq_resident_tier_current == PQ_TIER_INT8
 		output_segment->vectors = iv;			/* refreshed resident int8 tier */
 	else
 		{ delete iv; output_segment->vectors = NULL; }	/* .pqr failed -> reconstruct-from-PQ at rerank */
+	}
+else if (pq_configured() && pq_resident_tier_current == PQ_TIER_NONE
+	&& output_segment->pq_vectors != NULL && output_segment->pq_vectors->document_count() > 0)
+	{
+	delete output_segment->vectors;
+	output_segment->vectors = NULL;				/* NONE: drop the float append_segment loaded pre-.pq (pure ADC) */
 	}
 
 /*

@@ -378,6 +378,90 @@ static void test_float_default_byte_identical(void)
 	printf("byte-identical lock: %lld/%lld hits match exactly (FLOAT explicit vs default)\n", nA, nA);
 }
 
+/*
+	Holistic-review Important 1: set_pq_resident_tier(INT8) AFTER the .pq was
+	already built must still get a .pqr on the next build_pq() (the valid-.pq
+	idempotent skip previously swallowed .pqr creation), and the int8 tier must
+	be realized -- both in-session and after reopen.
+*/
+static void test_int8_tier_set_after_build(void)
+{
+	char cmd[2048]; snprintf(cmd, sizeof(cmd), "rm -rf %s && mkdir -p %s", DIR, DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	/* tier is the FLOAT default here */
+	float v[16];
+	for (int d = 0; d < 24; d++)
+		{ char name[64]; snprintf(name,sizeof(name),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%11)/10.0f; CHECK(idx->add_document(name,"body words here",v)>=0); }
+	CHECK(idx->flush() == 0);
+	long long gen = idx->disk_segment_generation(0);
+	CHECK(idx->build_pq() == 0);						/* .pq built under FLOAT: no .pqr */
+	CHECK(!file_exists(DIR, gen, "pqr"));
+
+	CHECK(idx->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_INT8) == 0);	/* move off FLOAT after the .pq exists */
+	CHECK(idx->build_pq() == 0);						/* must backfill the .pqr despite the valid .pq */
+	CHECK(file_exists(DIR, gen, "pqr"));
+	CHECK(idx->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_INT8);	/* realized in-session (float dropped) */
+	delete idx;
+
+	ATIRE_segment_index *re = new ATIRE_segment_index();
+	CHECK(re->open(DIR) == 0);
+	CHECK(re->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_INT8);	/* and after reopen */
+	delete re;
+}
+
+/*
+	Holistic-review Important 2 (build path): build_pq() must realize the resident
+	tier in-session -- INT8 drops the float for the int8 .pqr, NONE drops it for
+	pure ADC, FLOAT keeps it -- not just after a reopen.
+*/
+static void test_build_pq_realizes_tier_in_session(void)
+{
+	long long gen;
+	ATIRE_segment_index *i8 = build_indexed(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_INT8, &gen);
+	CHECK(i8->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_INT8);	/* no reopen */
+	delete i8;
+	ATIRE_segment_index *in = build_indexed(ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::PQ_TIER_NONE, &gen);
+	CHECK(in->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_NONE);	/* float dropped in-session */
+	delete in;
+	ATIRE_segment_index *ifl = build_indexed(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_FLOAT, &gen);
+	CHECK(ifl->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_FLOAT);	/* float kept */
+	delete ifl;
+}
+
+/*
+	Holistic-review Important 2 (compaction path): under NONE, compaction must
+	drop the float that append_segment loaded pre-.pq, so the merged segment is
+	codes-only in-session (was left FLOAT-resident before the fix).  Results stay
+	correct via the replace ADC gatherer.
+*/
+static void test_compaction_none_drops_float_in_session(void)
+{
+	char cmd[2048]; snprintf(cmd, sizeof(cmd), "rm -rf %s && mkdir -p %s", DIR, DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_NONE) == 0);
+	float v[16];
+	for (int d = 0; d < 12; d++)
+		{ char name[64]; snprintf(name,sizeof(name),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%11)/10.0f; CHECK(idx->add_document(name,"body words here",v)>=0); }
+	CHECK(idx->flush() == 0);
+	for (int d = 12; d < 24; d++)
+		{ char name[64]; snprintf(name,sizeof(name),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%11)/10.0f; CHECK(idx->add_document(name,"body words here",v)>=0); }
+	CHECK(idx->flush() == 0);
+	CHECK(idx->build_pq() == 0);
+	long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+	CHECK(idx->compact(gens, 2) == 0);
+	CHECK(idx->disk_segment_has_pq(0) == 1);
+	CHECK(idx->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_NONE);	/* float dropped in-session */
+	float q[16]; for(int j=0;j<16;j++) q[j]=(float)((10*7+j*3)%11)/10.0f;
+	CHECK(idx->search_vector(q, 10) >= 1);				/* replace ADC still answers */
+	delete idx;
+}
+
 int main(void)
 {
 	test_default_is_float();
@@ -394,6 +478,9 @@ int main(void)
 	test_compaction_rebuilds_pqr();
 	test_recall_sanity_and_ceiling();
 	test_float_default_byte_identical();
+	test_int8_tier_set_after_build();
+	test_build_pq_realizes_tier_in_session();
+	test_compaction_none_drops_float_in_session();
 	printf("test_pq_resident_tier PASSED\n");
 	return 0;
 }
