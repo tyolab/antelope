@@ -1531,41 +1531,60 @@ if (segment_count >= segments_allocated)
 segments[segment_count].generation = generation;
 segments[segment_count].engine = engine;
 segments[segment_count].tombstones = ANT_index_tombstones::load(del_filename, engine->get_document_count());
+segments[segment_count].vectors = NULL;
+segments[segment_count].exact_vectors = NULL;
+segments[segment_count].pq_vectors = NULL;
+
 if (vector_dimension_current != 0)
 	{
-	char qvec_filename[1024];
-	segment_filename(qvec_filename, sizeof(qvec_filename), generation, "qvec");
-	ANT_vector_store *v = ANT_vector_store::load(qvec_filename, vector_dimension_current, engine->get_document_count());
-	if (v->document_count() == 0)		/* no/degraded .qvec -> float .vec */
-		{ delete v; v = ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count()); }
-	segments[segment_count].vectors = v;
+	long long docs = engine->get_document_count();
 
-	segments[segment_count].exact_vectors = NULL;
-	if (quantization_current == QUANTIZE_EXACT)
+	/* PQ codes first: they decide what the resident rerank/fallback tier is. */
+	int pq_valid = 0;
+	if (pq_configured())
 		{
-		ANT_vector_store *ev = ANT_vector_store::load(vec_filename, vector_dimension_current, engine->get_document_count());	// float .vec
-		if (ev->document_count() == engine->get_document_count() && ev->document_count() > 0 && !ev->is_quantized())
-			segments[segment_count].exact_vectors = ev;
+		char pq_filename[1024];
+		segment_filename(pq_filename, sizeof(pq_filename), generation, "pq");
+		ANT_pq_store *pq = ANT_pq_store::load(pq_filename, vector_dimension_current, docs, vector_metric);
+		if (pq->document_count() == docs && docs > 0)
+			{ segments[segment_count].pq_vectors = pq; pq_valid = 1; }
 		else
-			delete ev;		// no/degraded/quantized .vec -> fall back to scanning .vectors
+			delete pq;								/* degraded/absent .pq -> float fallback below */
 		}
-	}
-else
-	{
-	segments[segment_count].vectors = NULL;
-	segments[segment_count].exact_vectors = NULL;
-	}
 
-segments[segment_count].pq_vectors = NULL;
-if (vector_dimension_current != 0 && pq_configured())
-	{
-	char pq_filename[1024];
-	segment_filename(pq_filename, sizeof(pq_filename), generation, "pq");
-	ANT_pq_store *pq = ANT_pq_store::load(pq_filename, vector_dimension_current, engine->get_document_count(), vector_metric);
-	if (pq->document_count() == engine->get_document_count() && pq->document_count() > 0)
-		segments[segment_count].pq_vectors = pq;		/* valid .pq */
+	if (pq_valid && pq_resident_tier_current == PQ_TIER_NONE)
+		{
+		segments[segment_count].vectors = NULL;		/* pure ADC: nothing resident beside codes */
+		}
+	else if (pq_valid && pq_resident_tier_current == PQ_TIER_INT8)
+		{
+		char pqr_filename[1024];
+		segment_filename(pqr_filename, sizeof(pqr_filename), generation, "pqr");
+		ANT_vector_store *iv = ANT_vector_store::load(pqr_filename, vector_dimension_current, docs);
+		if (iv->document_count() == docs && docs > 0 && iv->is_quantized())
+			segments[segment_count].vectors = iv;	/* resident int8 rerank tier */
+		else
+			{ delete iv; segments[segment_count].vectors = NULL; }	/* missing .pqr -> reconstruct-from-PQ at rerank (Task 4); do NOT load float */
+		}
 	else
-		delete pq;										/* no/degraded .pq -> stays NULL -> fallback to float .vectors */
+		{
+		/* FLOAT tier, or degraded/absent .pq (any tier) -> resident float .vec (with .qvec int8 as today). */
+		char qvec_filename[1024];
+		segment_filename(qvec_filename, sizeof(qvec_filename), generation, "qvec");
+		ANT_vector_store *v = ANT_vector_store::load(qvec_filename, vector_dimension_current, docs);
+		if (v->document_count() == 0)				/* no/degraded .qvec -> float .vec */
+			{ delete v; v = ANT_vector_store::load(vec_filename, vector_dimension_current, docs); }
+		segments[segment_count].vectors = v;
+
+		if (quantization_current == QUANTIZE_EXACT)
+			{
+			ANT_vector_store *ev = ANT_vector_store::load(vec_filename, vector_dimension_current, docs);
+			if (ev->document_count() == docs && ev->document_count() > 0 && !ev->is_quantized())
+				segments[segment_count].exact_vectors = ev;
+			else
+				delete ev;
+			}
+		}
 	}
 
 segments[segment_count].signatures = (vector_dimension_current != 0 && signature_bits_current != 0) ? ANT_signature_store::load(vsig_filename, signature_bits_current, engine->get_document_count()) : NULL;

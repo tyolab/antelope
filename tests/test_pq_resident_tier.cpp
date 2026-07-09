@@ -134,6 +134,18 @@ static void test_persist_and_backcompat(void)
 	delete idx2;
 }
 
+static void test_resident_tier_after_reopen(long tier, long posture)
+{
+	long long gen;
+	{ ATIRE_segment_index *idx = build_indexed(posture, tier, &gen); delete idx; }   // close
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->pq_resident_tier() == tier);
+	CHECK(idx->disk_segment_has_pq(0) == 1);
+	CHECK(idx->disk_segment_resident_tier(0) == tier);   // FLOAT->float store, INT8->int8 .pqr, NONE->NULL
+	delete idx;
+}
+
 int main(void)
 {
 	test_default_is_float();
@@ -143,6 +155,9 @@ int main(void)
 	test_persist_and_backcompat();
 	test_pqr_built_under_int8();
 	test_pqr_absent_under_float();
+	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_FLOAT, ATIRE_segment_index::PQ_POSTURE_REPLACE);
+	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_INT8,  ATIRE_segment_index::PQ_POSTURE_RERANK);
+	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_NONE,  ATIRE_segment_index::PQ_POSTURE_REPLACE);
 	printf("test_pq_resident_tier PASSED\n");
 	return 0;
 }
