@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <sys/stat.h>
 #include "../atire/atire_segment_index.h"
 #define CHECK(c) do { if (!(c)) { printf("FAIL %s:%d: %s\n",__FILE__,__LINE__,#c); exit(1);} } while(0)
@@ -233,6 +234,150 @@ static void test_compaction_rebuilds_pqr(void)
 	delete idx;
 }
 
+/*
+	Recall sanity + FLOAT-default byte-identical lock (Task 6).
+	Second scratch dir (dim 32, DEFAULT m via set_pq_config(0,...)) so this doesn't collide
+	with the dim-16 fixtures above, which reuse DIR across many tests.
+*/
+#define RTDIM 32
+#define RTNDOCS 200
+static const char *RTDIR = "/tmp/test_pq_resident_tier_recall_idx";
+
+static unsigned long long rt_rng;
+static double rt_nextf(void) { rt_rng = rt_rng * 6364136223846793005ULL + 1442695040888963407ULL; return (double)((rt_rng >> 33) & 0x7fffffff) / (double)0x7fffffff; }
+
+static void rt_unit_vec(long long seed, float *v)
+{
+	rt_rng = (unsigned long long)(seed + 1) * 2654435761ULL;
+	double norm = 0.0;
+	for (int d = 0; d < RTDIM; d++) { v[d] = (float)(rt_nextf() * 2.0 - 1.0); norm += (double)v[d]*v[d]; }
+	norm = sqrt(norm) + 1e-9;
+	for (int d = 0; d < RTDIM; d++) v[d] = (float)(v[d]/norm);
+}
+
+/* fixed query direction */
+static void rt_query_vec(float *v)
+{
+	for (int d = 0; d < RTDIM; d++) v[d] = 0.0f;
+	v[0] = v[1] = v[2] = 0.577f;
+}
+
+/* planted doc: q + tiny noise, re-normalized -- large margin over random docs so a correct
+   implementation reliably gets recall 1.0 float / >=0.9 int8 */
+static void rt_planted_vec(long long k, float *v)
+{
+	rt_query_vec(v);
+	rt_rng = (unsigned long long)(90000 + k) * 2654435761ULL;
+	double norm = 0.0;
+	for (int d = 0; d < RTDIM; d++) { v[d] += (float)((rt_nextf()*2.0-1.0) * 0.001); norm += (double)v[d]*v[d]; }
+	norm = sqrt(norm) + 1e-9;
+	for (int d = 0; d < RTDIM; d++) v[d] = (float)(v[d]/norm);
+}
+
+static void rt_fill(ATIRE_segment_index *idx)
+{
+	float v[RTDIM]; char key[32], body[64];
+	for (long long i = 0; i < RTNDOCS; i++)
+		{ rt_unit_vec(i, v); snprintf(key, sizeof(key), "doc-%lld", i); snprintf(body, sizeof(body), "<DOC>term%lld body</DOC>", i); CHECK(idx->add_document(key, body, v) >= 0); }
+	for (long long k = 0; k < 3; k++)
+		{ rt_planted_vec(k, v); snprintf(key, sizeof(key), "planted-%lld", k); snprintf(body, sizeof(body), "<DOC>plantterm%lld here</DOC>", k); CHECK(idx->add_document(key, body, v) >= 0); }
+	CHECK(idx->flush() == 0);
+}
+
+static ATIRE_segment_index *rt_build(long posture, long tier, int explicit_tier)
+{
+	char cmd[2048]; snprintf(cmd, sizeof(cmd), "rm -rf %s && mkdir -p %s", RTDIR, RTDIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(RTDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(idx->open(RTDIR) == 0);
+	CHECK(idx->set_pq_config(0, posture, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);   /* DEFAULT m */
+	if (explicit_tier) CHECK(idx->set_pq_resident_tier(tier) == 0);
+	rt_fill(idx);
+	CHECK(idx->build_pq() == 0);
+	return idx;
+}
+
+static double rt_recall_planted(ATIRE_segment_index *idx, const float *q)
+{
+	long long n = idx->search_vector(q, 10);
+	int hit = 0;
+	for (int k = 0; k < 3; k++)
+		{
+		char want[32]; snprintf(want, sizeof(want), "planted-%d", k);
+		for (long long h = 0; h < n && h < 10; h++)
+			if (strcmp(idx->get_hit(h)->filename, want) == 0) { hit++; break; }
+		}
+	return (double)hit / 3.0;
+}
+
+static void test_recall_sanity_and_ceiling(void)
+{
+	float q[RTDIM]; rt_query_vec(q);
+
+	ATIRE_segment_index *idxf = rt_build(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_FLOAT, 1);
+	double recall_float = rt_recall_planted(idxf, q);
+	delete idxf;
+
+	ATIRE_segment_index *idx8 = rt_build(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_INT8, 1);
+	double recall_int8 = rt_recall_planted(idx8, q);
+	delete idx8;
+
+	ATIRE_segment_index *idxn = rt_build(ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::PQ_TIER_NONE, 1);
+	double recall_replace = rt_recall_planted(idxn, q);
+	delete idxn;
+
+	printf("recall_at_10 (planted=3, dim=32, m=default): float_rerank=%.3f int8_rerank=%.3f replace_adc=%.3f\n",
+		recall_float, recall_int8, recall_replace);
+
+	CHECK(recall_int8 >= recall_replace - 1e-9);   /* int8 rescore at least as good as raw ADC */
+	CHECK(recall_int8 <= recall_float + 1e-9);      /* float is the precision ceiling */
+	CHECK(recall_int8 >= 0.9);
+	CHECK(recall_float == 1.0);                     /* all 3 planted docs recalled under FLOAT-tier rerank */
+}
+
+struct rt_hit_rec { char filename[64]; long long docid; double score; };
+
+static void rt_capture_top10(ATIRE_segment_index *idx, const float *q, rt_hit_rec *out, long long *n)
+{
+	long long c = idx->search_vector(q, 10);
+	*n = c;
+	for (long long i = 0; i < c; i++)
+		{
+		ATIRE_segment_index::hit *h = idx->get_hit(i);
+		strncpy(out[i].filename, h->filename, sizeof(out[i].filename) - 1);
+		out[i].filename[sizeof(out[i].filename) - 1] = 0;
+		out[i].docid = h->docid;
+		out[i].score = h->score;
+		}
+}
+
+/* Index A: explicit set_pq_resident_tier(PQ_TIER_FLOAT). Index B: never calls set_pq_resident_tier
+   (relies on the FLOAT default). Both PQ_POSTURE_RERANK over identical data + query. Results must
+   be bit-identical -- FLOAT is the unchanged pre-feature (Phase-1) path. */
+static void test_float_default_byte_identical(void)
+{
+	float q[RTDIM]; rt_query_vec(q);
+
+	rt_hit_rec resA[10], resB[10]; long long nA = 0, nB = 0;
+
+	ATIRE_segment_index *idxA = rt_build(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_FLOAT, 1);
+	rt_capture_top10(idxA, q, resA, &nA);
+	delete idxA;
+
+	ATIRE_segment_index *idxB = rt_build(ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::PQ_TIER_FLOAT, 0);   /* never calls set_pq_resident_tier */
+	rt_capture_top10(idxB, q, resB, &nB);
+	delete idxB;
+
+	CHECK(nA == nB);
+	for (long long i = 0; i < nA; i++)
+		{
+		CHECK(strcmp(resA[i].filename, resB[i].filename) == 0);
+		CHECK(resA[i].docid == resB[i].docid);
+		CHECK(resA[i].score == resB[i].score);   /* exact == : FLOAT is bit-identical to the pre-feature path */
+		}
+	printf("byte-identical lock: %lld/%lld hits match exactly (FLOAT explicit vs default)\n", nA, nA);
+}
+
 int main(void)
 {
 	test_default_is_float();
@@ -247,6 +392,8 @@ int main(void)
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_NONE,  ATIRE_segment_index::PQ_POSTURE_REPLACE);
 	test_rerank_through_int8_tier();
 	test_compaction_rebuilds_pqr();
+	test_recall_sanity_and_ceiling();
+	test_float_default_byte_identical();
 	printf("test_pq_resident_tier PASSED\n");
 	return 0;
 }
