@@ -199,6 +199,40 @@ static void test_resident_tier_after_reopen(long tier, long posture)
 	delete idx;
 }
 
+static void test_compaction_rebuilds_pqr(void)
+{
+	char cmd[2048]; snprintf(cmd, sizeof(cmd), "rm -rf %s && mkdir -p %s", DIR, DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_INT8) == 0);
+	float v[16];
+	for (int d = 0; d < 12; d++)
+		{ char name[64]; snprintf(name,sizeof(name),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%11)/10.0f; CHECK(idx->add_document(name,"body words here",v)>=0); }
+	CHECK(idx->flush() == 0);
+	for (int d = 12; d < 24; d++)
+		{ char name[64]; snprintf(name,sizeof(name),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%11)/10.0f; CHECK(idx->add_document(name,"body words here",v)>=0); }
+	CHECK(idx->flush() == 0);
+	CHECK(idx->build_pq() == 0);
+
+	float q[16]; for(int j=0;j<16;j++) q[j]=(float)((10*7+j*3)%11)/10.0f;   // query near doc10
+	CHECK(idx->search_vector(q, 10) >= 1);
+
+	long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+	CHECK(idx->compact(gens, 2) == 0);
+
+	CHECK(idx->disk_segment_has_pq(0) == 1);
+	CHECK(idx->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_INT8);   // merged .pqr rebuilt + resident
+	long long n = idx->search_vector(q, 10);
+	CHECK(n >= 1);
+	int found10 = 0;
+	for (long long h = 0; h < n && h < 10; h++)
+		if (strcmp(idx->get_hit(h)->filename, "doc10") == 0) found10 = 1;
+	CHECK(found10);   // planted doc still found after merge (renumbered codes + int8 tier correct)
+	delete idx;
+}
+
 int main(void)
 {
 	test_default_is_float();
@@ -212,6 +246,7 @@ int main(void)
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_INT8,  ATIRE_segment_index::PQ_POSTURE_RERANK);
 	test_resident_tier_after_reopen(ATIRE_segment_index::PQ_TIER_NONE,  ATIRE_segment_index::PQ_POSTURE_REPLACE);
 	test_rerank_through_int8_tier();
+	test_compaction_rebuilds_pqr();
 	printf("test_pq_resident_tier PASSED\n");
 	return 0;
 }

@@ -477,6 +477,51 @@ if (pq_configured())
 	}
 
 /*
+	Resident-tier (#19): under INT8, rebuild the merged .pqr int8 sidecar over
+	the merged float .vec and refresh output_segment->vectors so THIS session's
+	rerank rescores through the compacted int8 tier.  Under FLOAT the merged
+	.vec was already loaded into ->vectors by append_segment; under NONE ->vectors
+	is NULL.  The float .vec is never removed.  Best-effort: a failed .pqr leaves
+	->vectors NULL (rerank reconstructs from the rebuilt .pq).
+*/
+if (pq_configured() && pq_resident_tier_current == PQ_TIER_INT8
+	&& output_segment->pq_vectors != NULL && output_segment->pq_vectors->document_count() > 0)
+	{
+	char out_vec2[4096], out_pqr[4096];
+	segment_filename(out_vec2, sizeof(out_vec2), output_generation, vext);
+	segment_filename(out_pqr, sizeof(out_pqr), output_generation, "pqr");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_store *fv = ANT_vector_store::load(out_vec2, vector_dimension_current, out_docs);
+	if (fv->document_count() == out_docs && out_docs > 0 && !fv->is_quantized())
+		{
+		ANT_vector_store_writer qw;
+		long qfailed = qw.create(out_pqr, vector_dimension_current) != 0;
+		if (!qfailed)
+			qw.set_quantization(ANT_vector_store_writer::QUANT_REPLACE);
+		float *qbuf = new float[vector_dimension_current];
+		for (long long d = 0; !qfailed && d < out_docs; d++)
+			{
+			if (fv->has(d))
+				{ fv->reconstruct(d, qbuf); qfailed = qw.append(qbuf) != 0; }
+			else
+				qfailed = qw.append(NULL) != 0;
+			}
+		delete [] qbuf;
+		if (!qfailed)
+			qfailed = qw.finish() != 0;
+		if (qfailed)
+			qw.abandon();
+		}
+	delete fv;
+	delete output_segment->vectors;
+	ANT_vector_store *iv = ANT_vector_store::load(out_pqr, vector_dimension_current, out_docs);
+	if (iv->document_count() == out_docs && out_docs > 0 && iv->is_quantized())
+		output_segment->vectors = iv;			/* refreshed resident int8 tier */
+	else
+		{ delete iv; output_segment->vectors = NULL; }	/* .pqr failed -> reconstruct-from-PQ at rerank */
+	}
+
+/*
 	V5: refresh the merged segment's in-memory multi-vector cache from the
 	.mvec sidecar just written (or the absence of one), so THIS session's
 	search_rerank sees the compacted docids.  Must run before Step 6's
