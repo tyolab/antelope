@@ -75,10 +75,63 @@ static void test_build_hnsw_over_tier_source(void)
 	delete f;
 }
 
+static double recall10(ATIRE_segment_index *idx, const float *q, const long *planted, int np)
+{
+	long long n = idx->search_vector_hnsw(q, 10);
+	int hit = 0;
+	for (int i = 0; i < np; i++)
+		{ char want[64]; snprintf(want,sizeof(want),"doc%ld",planted[i]);
+		  for (long long h=0; h<n && h<10; h++) if (strcmp(idx->get_hit(h)->filename, want)==0){hit++;break;} }
+	return (double)hit/np;
+}
+
+static void test_none_tier_hnsw_search(void)
+{
+	long long gen;
+	ATIRE_segment_index *idx = build_tier_hnsw(ATIRE_segment_index::PQ_TIER_NONE, ATIRE_segment_index::PQ_POSTURE_REPLACE, &gen);
+	CHECK(idx->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_NONE);
+	CHECK(idx->disk_segment_has_hnsw(0) == 1);
+	float q[16]; for (int j=0;j<16;j++) q[j]=(float)((7*7+j*3)%13-6)/6.0f;	/* near doc7 */
+	long planted[1] = {7};
+	long long n = idx->search_vector_hnsw(q, 10);
+	CHECK(n >= 1);						/* graph engaged under NONE (no NULL-skip) */
+	CHECK(recall10(idx, q, planted, 1) >= 1.0 - 1e-9);	/* planted nearest recalled via ADC graph */
+	delete idx;
+}
+
+static void test_float_tier_hnsw_byte_identical(void)
+{
+	/* Non-PQ float HNSW reference vs PQ+FLOAT+HNSW over identical data -> identical top-k. */
+	const char *DA = "/tmp/test_pqhnsw_float_a", *DB = "/tmp/test_pqhnsw_float_b";
+	char cmd[4096]; snprintf(cmd,sizeof(cmd),"rm -rf %s %s && mkdir -p %s %s",DA,DB,DA,DB); system(cmd);
+	ATIRE_segment_index *a = new ATIRE_segment_index();
+	CHECK(a->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_COSINE)==0);
+	CHECK(a->open(DA)==0); CHECK(a->set_hnsw_config(16,100)==0);
+	ATIRE_segment_index *b = new ATIRE_segment_index();
+	CHECK(b->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_COSINE)==0);
+	CHECK(b->open(DB)==0); CHECK(b->set_hnsw_config(16,100)==0);
+	CHECK(b->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::RERANK_QUANT_FLOAT)==0);
+	CHECK(b->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_FLOAT)==0);
+	float v[16];
+	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%13-6)/6.0f;
+		CHECK(a->add_document(nm,"body words here",v)>=0); CHECK(b->add_document(nm,"body words here",v)>=0); }
+	CHECK(a->flush()==0); CHECK(a->build_hnsw()==0);
+	CHECK(b->flush()==0); CHECK(b->build_pq()==0); CHECK(b->build_hnsw()==0);
+	float q[16]; for (int j=0;j<16;j++) q[j]=(float)((5*7+j*3)%13-6)/6.0f;
+	long long na = a->search_vector_hnsw(q,10), nb = b->search_vector_hnsw(q,10);
+	CHECK(na == nb);
+	for (long long i=0;i<na;i++)
+		{ ATIRE_segment_index::hit *ha=a->get_hit(i), *hb=b->get_hit(i);
+		  CHECK(strcmp(ha->filename, hb->filename)==0); CHECK(ha->docid==hb->docid); CHECK(ha->score==hb->score); }
+	delete a; delete b;
+}
+
 int main(void)
 {
 	test_score_stack_cap();
 	test_build_hnsw_over_tier_source();
+	test_none_tier_hnsw_search();
+	test_float_tier_hnsw_byte_identical();
 	printf("test_pq_hnsw_tiered PASSED\n");
 	return 0;
 }

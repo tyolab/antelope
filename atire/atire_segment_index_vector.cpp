@@ -1766,30 +1766,33 @@ if (vector_metric == VECTOR_METRIC_COSINE)
 
 for (which = 0; which < segment_count; which++)
 	{
-	if (segments[which].vectors == NULL)
-		continue;
+	ANT_vector_source *src = segments[which].vectors != NULL
+		? (ANT_vector_source *)segments[which].vectors
+		: (ANT_vector_source *)segments[which].pq_vectors;
+	if (src == NULL)
+		continue;							/* NONE with no pq_vectors: nothing resident to score */
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 	if (segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty()
 		&& segments[which].hnsw_graph->node_count() == segments[which].engine->get_document_count())
 		{
-		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 		long long c = segments[which].hnsw_graph->search(query, vector_metric, ef, ef,
-			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores, fbits);
+			src, segments[which].tombstones, cand_docids, cand_scores, fbits);
 		for (long long p = 0; p < c; p++)
 			{
 			double sc = segments[which].exact_vectors != NULL
 				? segments[which].exact_vectors->score(cand_docids[p], query, vector_metric)
-				: cand_scores[p];
+				: cand_scores[p];			/* PQ tiers: exact_vectors is NULL -> graph nav score (ADC/int8/float) */
 			ANT_vector_candidate_insert(best, &best_count, top_k, sc, segments[which].generation, cand_docids[p]);
 			}
-		delete [] fbits;
 		}
-	else
+	else if (segments[which].vectors != NULL)		/* no graph: exact/int8 linear scan */
 		{
-		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
-		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
-		delete [] fbits;
+		ANT_vector_store *s = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+		s->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
 		}
+	else if (segments[which].pq_vectors != NULL)	/* NONE, no graph: linear ADC scan */
+		segments[which].pq_vectors->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+	delete [] fbits;
 	}
 
 unsigned char *lbits = evaluate_filter_for_live(filter);
