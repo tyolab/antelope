@@ -591,6 +591,30 @@ long previous = pq_resident_tier_current;
 pq_resident_tier_current = tier;
 if (save_pq_config() != 0)
 	{ pq_resident_tier_current = previous; return 1; }
+
+/*
+	#20: reaching here is a real tier change away from the FLOAT default
+	(idempotent same-tier and off-FLOAT-immutable both returned above).  The
+	resident graph source therefore changes (float -> int8 .pqr / pq_vectors),
+	so any already-built .hnsw was built over the OLD (float) geometry -- its
+	edges no longer match how vector_candidates_hnsw will now score nodes.
+	Invalidate every per-segment graph (drop the sidecar + the in-memory graph)
+	so the next build_hnsw()/compaction rebuilds it over the new tier source,
+	keeping build-source == search-source.  Segments are exact/ADC-scanned in
+	the meantime (best-effort, like any un-built graph).
+*/
+if (hnsw_M_current != 0)
+	{
+	char hnsw_name[4096];
+	long long which;
+	for (which = 0; which < segment_count; which++)
+		{
+		segment_filename(hnsw_name, sizeof(hnsw_name), segments[which].generation, "hnsw");
+		remove(hnsw_name);
+		delete segments[which].hnsw_graph;
+		segments[which].hnsw_graph = NULL;
+		}
+	}
 return 0;
 }
 
@@ -967,7 +991,7 @@ return 0;
 long ATIRE_segment_index::build_hnsw(void)
 {
 long long which;
-char vec_name[4096], hnsw_name[4096];
+char hnsw_name[4096];
 
 if (hnsw_M_current == 0)
 	return 1;
@@ -984,15 +1008,21 @@ for (which = 0; which < segment_count; which++)
 	if (already)
 		continue;
 
-	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
-	ANT_vector_store *vectors = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
-	if (vectors->document_count() == docs && docs > 0)
+	/* Build over the resident tier source (float / int8 .pqr / pq_vectors under NONE). */
+	ANT_vector_source *src = segments[which].vectors != NULL
+		? (ANT_vector_source *)segments[which].vectors
+		: (ANT_vector_source *)segments[which].pq_vectors;
+	if (src != NULL && src->document_count() == docs && docs > 0)
 		{
 		ANT_hnsw graph;
-		if (graph.build(vectors, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
-			graph.save(hnsw_name);
+		if (graph.build(src, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0 && graph.save(hnsw_name) == 0)
+			{
+			/* Refresh the in-memory graph too, mirroring build_pq()/build_token_index()'s
+			   convention -- so a same-session backfill is usable immediately, not just on reopen. */
+			delete segments[which].hnsw_graph;
+			segments[which].hnsw_graph = ANT_hnsw::load(hnsw_name, hnsw_M_current, hnsw_ef_construction_current, docs);
+			}
 		}
-	delete vectors;
 	}
 return 0;
 }
@@ -1760,30 +1790,33 @@ if (vector_metric == VECTOR_METRIC_COSINE)
 
 for (which = 0; which < segment_count; which++)
 	{
-	if (segments[which].vectors == NULL)
-		continue;
+	ANT_vector_source *src = segments[which].vectors != NULL
+		? (ANT_vector_source *)segments[which].vectors
+		: (ANT_vector_source *)segments[which].pq_vectors;
+	if (src == NULL)
+		continue;							/* NONE with no pq_vectors: nothing resident to score */
+	unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 	if (segments[which].hnsw_graph != NULL && !segments[which].hnsw_graph->empty()
 		&& segments[which].hnsw_graph->node_count() == segments[which].engine->get_document_count())
 		{
-		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
 		long long c = segments[which].hnsw_graph->search(query, vector_metric, ef, ef,
-			segments[which].vectors, segments[which].tombstones, cand_docids, cand_scores, fbits);
+			src, segments[which].tombstones, cand_docids, cand_scores, fbits);
 		for (long long p = 0; p < c; p++)
 			{
 			double sc = segments[which].exact_vectors != NULL
 				? segments[which].exact_vectors->score(cand_docids[p], query, vector_metric)
-				: cand_scores[p];
+				: cand_scores[p];			/* PQ tiers: exact_vectors is NULL -> graph nav score (ADC/int8/float) */
 			ANT_vector_candidate_insert(best, &best_count, top_k, sc, segments[which].generation, cand_docids[p]);
 			}
-		delete [] fbits;
 		}
-	else
+	else if (segments[which].vectors != NULL)		/* no graph: exact/int8 linear scan */
 		{
-		ANT_vector_store *src = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
-		unsigned char *fbits = evaluate_filter_for_segment(which, filter);
-		src->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
-		delete [] fbits;
+		ANT_vector_store *s = segments[which].exact_vectors != NULL ? segments[which].exact_vectors : segments[which].vectors;
+		s->scan(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
 		}
+	else if (segments[which].pq_vectors != NULL)	/* NONE, no graph: linear ADC scan */
+		segments[which].pq_vectors->scan_adc(query, vector_metric, segments[which].tombstones, segments[which].generation, best, &best_count, top_k, fbits);
+	delete [] fbits;
 	}
 
 unsigned char *lbits = evaluate_filter_for_live(filter);
