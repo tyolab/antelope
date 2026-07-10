@@ -176,11 +176,11 @@ double ANT_pq_store::score(long long docid, const float *query, long metric)
 if (!has(docid))
 	return 0.0;
 
-double stack_table[64 * 256];
+double stack_table[PQ_SCORE_STACK_CAP];			/* 16 KB, safe on worker stacks */
 double *table = stack_table;
 long long table_size = m * (long long)ANT_pq_codec::K;
-if (table_size > (long long)(sizeof(stack_table) / sizeof(stack_table[0])))
-	table = new double[table_size];
+if (table_size > (long long)PQ_SCORE_STACK_CAP)
+	table = new double[table_size];				/* larger m: heap the ADC table */
 
 ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
 double result = ANT_pq_codec::adc_score(codes + docid * m, m, table);

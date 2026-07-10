@@ -10,6 +10,8 @@
 class ANT_index_tombstones;
 struct ANT_vector_candidate;
 
+enum { PQ_SCORE_STACK_CAP = 8 * 256 };		// 2048 doubles (16 KB) inline in score(); heap above this
+
 class ANT_pq_store : public ANT_vector_source
 {
 private:
