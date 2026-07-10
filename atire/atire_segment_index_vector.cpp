@@ -591,6 +591,30 @@ long previous = pq_resident_tier_current;
 pq_resident_tier_current = tier;
 if (save_pq_config() != 0)
 	{ pq_resident_tier_current = previous; return 1; }
+
+/*
+	#20: reaching here is a real tier change away from the FLOAT default
+	(idempotent same-tier and off-FLOAT-immutable both returned above).  The
+	resident graph source therefore changes (float -> int8 .pqr / pq_vectors),
+	so any already-built .hnsw was built over the OLD (float) geometry -- its
+	edges no longer match how vector_candidates_hnsw will now score nodes.
+	Invalidate every per-segment graph (drop the sidecar + the in-memory graph)
+	so the next build_hnsw()/compaction rebuilds it over the new tier source,
+	keeping build-source == search-source.  Segments are exact/ADC-scanned in
+	the meantime (best-effort, like any un-built graph).
+*/
+if (hnsw_M_current != 0)
+	{
+	char hnsw_name[4096];
+	long long which;
+	for (which = 0; which < segment_count; which++)
+		{
+		segment_filename(hnsw_name, sizeof(hnsw_name), segments[which].generation, "hnsw");
+		remove(hnsw_name);
+		delete segments[which].hnsw_graph;
+		segments[which].hnsw_graph = NULL;
+		}
+	}
 return 0;
 }
 

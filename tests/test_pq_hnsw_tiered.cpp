@@ -195,6 +195,36 @@ static void test_cross_tier_recall(void)
 	CHECK(ri <= rf + 1e-9);
 }
 
+/*
+	Holistic-review Important: a FLOAT->NONE tier tightening after the graph was
+	built over float must invalidate the stale float-geometry .hnsw, so the next
+	build_hnsw() rebuilds it over pq_vectors (build-source == search-source).
+*/
+static void test_tier_change_invalidates_stale_graph(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_COSINE)==0);
+	CHECK(idx->open(DIR)==0); CHECK(idx->set_hnsw_config(16,100)==0);
+	CHECK(idx->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT)==0);
+	/* tier defaults FLOAT */
+	float v[16];
+	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%13-6)/6.0f; CHECK(idx->add_document(nm,"body words here",v)>=0);}
+	CHECK(idx->flush()==0); CHECK(idx->build_pq()==0); CHECK(idx->build_hnsw()==0);
+	CHECK(idx->disk_segment_has_hnsw(0)==1);				/* FLOAT-built graph present */
+
+	CHECK(idx->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_NONE)==0);	/* tighten FLOAT->NONE */
+	CHECK(idx->disk_segment_has_hnsw(0)==0);				/* stale float graph invalidated */
+
+	CHECK(idx->build_pq()==0); CHECK(idx->build_hnsw()==0);	/* rebuild over pq_vectors */
+	CHECK(idx->disk_segment_resident_tier(0)==ATIRE_segment_index::PQ_TIER_NONE);
+	CHECK(idx->disk_segment_has_hnsw(0)==1);				/* rebuilt over the NONE tier source */
+	float q[16]; for (int j=0;j<16;j++) q[j]=(float)((7*7+j*3)%13-6)/6.0f;
+	long planted[1] = {7};
+	CHECK(recall10(idx, q, planted, 1) >= 1.0 - 1e-9);		/* correct after rebuild */
+	delete idx;
+}
+
 int main(void)
 {
 	test_score_stack_cap();
@@ -203,6 +233,7 @@ int main(void)
 	test_float_tier_hnsw_byte_identical();
 	test_compaction_hnsw_over_tier();
 	test_cross_tier_recall();
+	test_tier_change_invalidates_stale_graph();
 	printf("test_pq_hnsw_tiered PASSED\n");
 	return 0;
 }
