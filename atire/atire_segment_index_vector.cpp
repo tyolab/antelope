@@ -967,7 +967,7 @@ return 0;
 long ATIRE_segment_index::build_hnsw(void)
 {
 long long which;
-char vec_name[4096], hnsw_name[4096];
+char hnsw_name[4096];
 
 if (hnsw_M_current == 0)
 	return 1;
@@ -984,15 +984,21 @@ for (which = 0; which < segment_count; which++)
 	if (already)
 		continue;
 
-	segment_filename(vec_name, sizeof(vec_name), generation, "vec");
-	ANT_vector_store *vectors = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
-	if (vectors->document_count() == docs && docs > 0)
+	/* Build over the resident tier source (float / int8 .pqr / pq_vectors under NONE). */
+	ANT_vector_source *src = segments[which].vectors != NULL
+		? (ANT_vector_source *)segments[which].vectors
+		: (ANT_vector_source *)segments[which].pq_vectors;
+	if (src != NULL && src->document_count() == docs && docs > 0)
 		{
 		ANT_hnsw graph;
-		if (graph.build(vectors, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
-			graph.save(hnsw_name);
+		if (graph.build(src, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0 && graph.save(hnsw_name) == 0)
+			{
+			/* Refresh the in-memory graph too, mirroring build_pq()/build_token_index()'s
+			   convention -- so a same-session backfill is usable immediately, not just on reopen. */
+			delete segments[which].hnsw_graph;
+			segments[which].hnsw_graph = ANT_hnsw::load(hnsw_name, hnsw_M_current, hnsw_ef_construction_current, docs);
+			}
 		}
-	delete vectors;
 	}
 return 0;
 }

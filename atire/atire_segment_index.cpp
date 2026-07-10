@@ -1237,9 +1237,12 @@ if (vector_dimension_current != 0 && writer_vectors_present > 0)
 	/*
 		V3: build the HNSW graph sidecar alongside .vec.  Non-fatal to the
 		flush -- a failure leaves the segment graph-less (exact-scanned) until
-		build_hnsw()/compaction.
+		build_hnsw()/compaction.  Skipped when PQ is configured: the graph
+		must be built over the resident tier source (float / int8 /
+		pq_vectors), which is only realized after build_pq() runs -- the
+		eager pq_eager block below calls build_hnsw() itself for that case.
 	*/
-	if (hnsw_M_current != 0)
+	if (hnsw_M_current != 0 && !pq_configured())
 		{
 		char hnsw_name[4096], vec_reload[4096];
 		segment_filename(hnsw_name, sizeof(hnsw_name), flushed_vector_generation, "hnsw");
@@ -1450,6 +1453,8 @@ if (token_index_eager)
 */
 if (pq_eager)
 	build_pq();
+if (pq_eager && hnsw_M_current != 0)
+	build_hnsw();				/* PQ tiers: build the graph over the just-realized tier source */
 
 /*
 	Eager token-PQ policy: build .mvpq for the segment just flushed
