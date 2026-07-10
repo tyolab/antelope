@@ -150,6 +150,51 @@ static void test_compaction_hnsw_over_tier(void)
 	delete idx;
 }
 
+static void fill_vec32(long long seed, float *v)
+{
+	unsigned long long s = seed*2654435761ULL+1;
+	for (int j=0;j<32;j++)
+		{ s = s*6364136223846793005ULL+1442695040888963407ULL; v[j] = (float)((double)((s>>33)&0x7fffffff)/(double)0x7fffffff*2.0-1.0); }
+}
+
+/* build a dim-32 index at `tier`/`posture` with 200 random docs + 3 planted near q (docs 50,120,190). */
+static ATIRE_segment_index *build_recall_idx(long tier, long posture, const float *q)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(32, ATIRE_segment_index::VECTOR_METRIC_COSINE)==0);
+	CHECK(idx->open(DIR)==0); CHECK(idx->set_hnsw_config(16,200)==0);
+	CHECK(idx->set_pq_config(0, posture, ATIRE_segment_index::RERANK_QUANT_FLOAT)==0);	/* default m */
+	CHECK(idx->set_pq_resident_tier(tier)==0);
+	float v[32];
+	for (int d=0; d<200; d++)
+		{
+		char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d);
+		if (d==50||d==120||d==190){ for(int j=0;j<32;j++) v[j]=q[j]+0.001f*((d%3)-1); }
+		else fill_vec32(d, v);
+		CHECK(idx->add_document(nm,"body words here",v)>=0);
+		}
+	CHECK(idx->flush()==0); CHECK(idx->build_pq()==0); CHECK(idx->build_hnsw()==0);
+	return idx;
+}
+
+static void test_cross_tier_recall(void)
+{
+	float q[32]; fill_vec32(999999, q);
+	long planted[3] = {50,120,190};
+	ATIRE_segment_index *f = build_recall_idx(ATIRE_segment_index::PQ_TIER_FLOAT, ATIRE_segment_index::PQ_POSTURE_RERANK, q);
+	double rf = recall10(f, q, planted, 3); delete f;
+	ATIRE_segment_index *i8 = build_recall_idx(ATIRE_segment_index::PQ_TIER_INT8, ATIRE_segment_index::PQ_POSTURE_RERANK, q);
+	double ri = recall10(i8, q, planted, 3); delete i8;
+	ATIRE_segment_index *n = build_recall_idx(ATIRE_segment_index::PQ_TIER_NONE, ATIRE_segment_index::PQ_POSTURE_REPLACE, q);
+	double rn = recall10(n, q, planted, 3); delete n;
+	printf("hnsw recall: float=%.3f int8=%.3f none=%.3f\n", rf, ri, rn);
+	CHECK(rf >= 1.0 - 1e-9);
+	CHECK(rn >= 0.8);
+	CHECK(ri >= rn - 1e-9);
+	CHECK(ri <= rf + 1e-9);
+}
+
 int main(void)
 {
 	test_score_stack_cap();
@@ -157,6 +202,7 @@ int main(void)
 	test_none_tier_hnsw_search();
 	test_float_tier_hnsw_byte_identical();
 	test_compaction_hnsw_over_tier();
+	test_cross_tier_recall();
 	printf("test_pq_hnsw_tiered PASSED\n");
 	return 0;
 }
