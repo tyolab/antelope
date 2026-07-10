@@ -446,29 +446,6 @@ if (signature_bits_current != 0 && query_signer != NULL)
 	}
 
 /*
-	V3: rebuild the merged segment's HNSW graph over the merged DENSE
-	vectors (reload the fresh output .vec).  Best-effort: failure leaves the
-	output graph-less (exact-scanned), never aborts a successful merge.
-*/
-if (hnsw_M_current != 0)
-	{
-	char out_vec[4096], out_hnsw[4096];
-	segment_filename(out_vec, sizeof(out_vec), output_generation, vext);
-	segment_filename(out_hnsw, sizeof(out_hnsw), output_generation, "hnsw");
-	long long out_docs = output_segment->engine->get_document_count();
-	ANT_vector_store *out_vectors = ANT_vector_store::load(out_vec, vector_dimension_current, out_docs);
-	if (out_vectors->document_count() == out_docs && out_docs > 0)
-		{
-		ANT_hnsw graph;
-		if (graph.build(out_vectors, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
-			graph.save(out_hnsw);
-		}
-	delete out_vectors;
-	delete output_segment->hnsw_graph;
-	output_segment->hnsw_graph = ANT_hnsw::load(out_hnsw, hnsw_M_current, hnsw_ef_construction_current, output_segment->engine->get_document_count());
-	}
-
-/*
 	PQ: rebuild the merged segment's .pq over the merged DENSE vectors (reload
 	the fresh output .vec) with a fresh per-segment codebook + renumbered codes.
 	Best-effort: a failure leaves the output PQ-less (PQ search falls back to
@@ -563,6 +540,30 @@ else if (pq_configured() && pq_resident_tier_current == PQ_TIER_NONE
 	{
 	delete output_segment->vectors;
 	output_segment->vectors = NULL;				/* NONE: drop the float append_segment loaded pre-.pq (pure ADC) */
+	}
+
+/*
+	V3 (tier-aware, #20): rebuild the merged segment's HNSW graph over the
+	tier source -- output_segment->vectors (float/int8) or ->pq_vectors under
+	NONE.  Placed AFTER the #19 .pq/.pqr refresh so the tier source is the
+	merged store, keeping build-source == search-source.  Best-effort.
+*/
+if (hnsw_M_current != 0)
+	{
+	char out_hnsw[4096];
+	segment_filename(out_hnsw, sizeof(out_hnsw), output_generation, "hnsw");
+	long long out_docs = output_segment->engine->get_document_count();
+	ANT_vector_source *gsrc = output_segment->vectors != NULL
+		? (ANT_vector_source *)output_segment->vectors
+		: (ANT_vector_source *)output_segment->pq_vectors;
+	if (gsrc != NULL && gsrc->document_count() == out_docs && out_docs > 0)
+		{
+		ANT_hnsw graph;
+		if (graph.build(gsrc, hnsw_M_current, hnsw_ef_construction_current, vector_metric) == 0)
+			graph.save(out_hnsw);
+		}
+	delete output_segment->hnsw_graph;
+	output_segment->hnsw_graph = ANT_hnsw::load(out_hnsw, hnsw_M_current, hnsw_ef_construction_current, out_docs);
 	}
 
 /*

@@ -126,12 +126,37 @@ static void test_float_tier_hnsw_byte_identical(void)
 	delete a; delete b;
 }
 
+static void test_compaction_hnsw_over_tier(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_COSINE)==0);
+	CHECK(idx->open(DIR)==0); CHECK(idx->set_hnsw_config(16,100)==0);		/* set_hnsw_config POST-open */
+	CHECK(idx->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT)==0);
+	CHECK(idx->set_pq_resident_tier(ATIRE_segment_index::PQ_TIER_NONE)==0);
+	float v[16];
+	for (int d=0; d<20; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%13-6)/6.0f; CHECK(idx->add_document(nm,"body words here",v)>=0);}
+	CHECK(idx->flush()==0);
+	for (int d=20; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); for(int j=0;j<16;j++) v[j]=(float)((d*7+j*3)%13-6)/6.0f; CHECK(idx->add_document(nm,"body words here",v)>=0);}
+	CHECK(idx->flush()==0);
+	CHECK(idx->build_pq()==0); CHECK(idx->build_hnsw()==0);
+	long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+	CHECK(idx->compact(gens, 2)==0);
+	CHECK(idx->disk_segment_resident_tier(0) == ATIRE_segment_index::PQ_TIER_NONE);
+	CHECK(idx->disk_segment_has_hnsw(0) == 1);					/* merged graph rebuilt over pq_vectors */
+	float q[16]; for (int j=0;j<16;j++) q[j]=(float)((7*7+j*3)%13-6)/6.0f;
+	long planted[1] = {7};
+	CHECK(recall10(idx, q, planted, 1) >= 1.0 - 1e-9);			/* planted doc recalled after merge */
+	delete idx;
+}
+
 int main(void)
 {
 	test_score_stack_cap();
 	test_build_hnsw_over_tier_source();
 	test_none_tier_hnsw_search();
 	test_float_tier_hnsw_byte_identical();
+	test_compaction_hnsw_over_tier();
 	printf("test_pq_hnsw_tiered PASSED\n");
 	return 0;
 }
