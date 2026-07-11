@@ -94,9 +94,6 @@ static void test_default_source_noop(void)
 	printf("test_default_source_noop PASSED\n");
 }
 
-/* Placeholder for Task 2's HNSW seam test; defined there. */
-void test_hnsw_prepares_once(void);
-
 /* End-to-end: one search over a PQ-code graph builds the ADC table exactly ONCE
    (not per visited node), and the prepared-path result recalls the true ADC argmax. */
 void test_hnsw_prepares_once(void)

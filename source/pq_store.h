@@ -22,7 +22,7 @@ private:
 	unsigned char *codes;		// documents*m, NULL when empty
 	ANT_pq_store();
 public:
-	long long adc_table_builds;	// # of adc_table() builds (score() + prepare_query); test proves the seam engaged
+	long long adc_table_builds;	// diagnostic-only, NOT thread-safe: # of adc_table() builds (score() + prepare_query); test proves the seam engaged
 	~ANT_pq_store();
 	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
 	long long get_m(void) { return m; }
