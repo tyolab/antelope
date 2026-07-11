@@ -97,12 +97,42 @@ static void test_default_source_noop(void)
 /* Placeholder for Task 2's HNSW seam test; defined there. */
 void test_hnsw_prepares_once(void);
 
+/* End-to-end: one search over a PQ-code graph builds the ADC table exactly ONCE
+   (not per visited node), and the prepared-path result recalls the true ADC argmax. */
+void test_hnsw_prepares_once(void)
+{
+	const char *path = "/tmp/test_pq_prepared_hnsw.pq";
+	long long dim=32, m=8, n=60;
+	ANT_pq_store *pq = make_pq(dim, m, n, ANT_pq_codec::METRIC_COSINE, path);
+	ANT_hnsw graph;
+	CHECK(graph.build(pq, 16, 100, ANT_pq_codec::METRIC_COSINE) == 0);
+
+	float q[32]; for (int i=0;i<dim;i++) q[i]=(float)(rand()%200-100)/100.0f;
+	long long ids[10]; double sc[10];
+	long long before = pq->adc_table_builds;
+	long long got = graph.search(q, ANT_pq_codec::METRIC_COSINE, 50, 10, pq, NULL, ids, sc, NULL);
+	CHECK(got > 1);								/* traversal returned many nodes -> visited many */
+	CHECK(pq->adc_table_builds - before == 1);	/* ADC table built ONCE per search, not per node */
+
+	/* brute-force ADC argmax over all docs; assert the graph returned it among top-k */
+	double *table = new double[m*256];
+	ANT_pq_codec::adc_table(q, dim, m, pq->get_codebook(), ANT_pq_codec::METRIC_COSINE, table);
+	long long best_d = -1; double best_s = -1e30;
+	for (long long d=0; d<n; d++)
+		{ double s = ANT_pq_codec::adc_score(pq->codes_for(d), m, table); if (s > best_s){best_s=s;best_d=d;} }
+	delete [] table;
+	int found = 0; for (long long h=0; h<got; h++) if (ids[h]==best_d) found=1;
+	CHECK(found);								/* prepared-path search recalls the true ADC nearest */
+	delete pq; remove(path);
+	printf("test_hnsw_prepares_once PASSED\n");
+}
+
 int main(void)
 {
 	test_prepared_equivalence();
 	test_counter_contract();
 	test_default_source_noop();
-	/* test_hnsw_prepares_once();  <-- enabled in Task 2 */
+	test_hnsw_prepares_once();
 	printf("ALL test_pq_hnsw_prepared PASSED\n");
 	return 0;
 }

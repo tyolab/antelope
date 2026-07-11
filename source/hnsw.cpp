@@ -24,9 +24,9 @@ ANT_hnsw::~ANT_hnsw()
 delete [] levels; delete [] offsets; delete [] neighbours;
 }
 
-double ANT_hnsw::distance(long long a, const float *query, ANT_vector_source *vectors, long metric)
+double ANT_hnsw::distance(long long a, const float *query, ANT_vector_source *vectors, long metric, void *ctx)
 {
-return -vectors->score(a, query, metric);		// score() handles float and int8 backends (reconstructs a for int8)
+return -vectors->score_prepared(a, query, metric, ctx);	// ctx==NULL -> falls back to score() (build path, float/int8)
 }
 
 #ifdef ANT_HNSW_PROFILE
@@ -310,8 +310,10 @@ long long ef = ef_search < top_k ? top_k : ef_search;
 	((tombstones == NULL || !tombstones->is_deleted(docid)) && \
 	 (filter_bits == NULL || (filter_bits[(docid) >> 3] & (1 << ((docid) & 7)))))
 
+void *qctx = vectors->prepare_query(query, metric);		/* build any per-query structure ONCE (PQ: the ADC table) */
+
 long long ep = entry_point;
-double dep = distance(ep, query, vectors, metric);
+double dep = distance(ep, query, vectors, metric, qctx);
 
 /* greedy descent from max_level down to layer 1 with ef=1 */
 for (long long lc = max_level; lc >= 1; lc--)
@@ -323,7 +325,7 @@ for (long long lc = max_level; lc >= 1; lc--)
 		long long count; const int *nb = neighbours_of(neighbours, offsets, levels, ep, lc, &count);
 		for (long long e = 0; e < count; e++)
 			{
-			double d = distance(nb[e], query, vectors, metric);
+			double d = distance(nb[e], query, vectors, metric, qctx);
 			if (d < dep) { dep = d; ep = nb[e]; changed = 1; }
 			}
 		}
@@ -346,7 +348,7 @@ while (!C.empty())
 		long long ecand = nb[e];
 		if (visited[ecand]) continue;
 		visited[ecand] = 1;
-		double de = distance(ecand, query, vectors, metric);
+		double de = distance(ecand, query, vectors, metric, qctx);
 		if (W.empty() || (long long)W.size() < ef || de < W.top().first)
 			{
 			C.push(DN(de, ecand));		/* deleted/non-matching nodes still route (graph connectivity) */
@@ -369,6 +371,7 @@ for (size_t i = 0; i < found.size() && out < top_k; i++)
 	out_scores[out] = -found[i].first;		/* back to kernel: higher = nearer */
 	out++;
 	}
+vectors->free_query(qctx);				/* release the per-query structure (no-op for float/int8) */
 return out;
 #undef ANT_HNSW_ADMIT
 }
