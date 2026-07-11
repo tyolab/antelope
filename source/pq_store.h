@@ -22,6 +22,7 @@ private:
 	unsigned char *codes;		// documents*m, NULL when empty
 	ANT_pq_store();
 public:
+	long long adc_table_builds;	// # of adc_table() builds (score() + prepare_query); test proves the seam engaged
 	~ANT_pq_store();
 	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
 	long long get_m(void) { return m; }
@@ -32,6 +33,9 @@ public:
 	long is_quantized(void) override { return 1; }
 	void reconstruct(long long docid, float *out) override;
 	double score(long long docid, const float *query, long metric) override;
+	void  *prepare_query(const float *query, long metric) override;
+	double score_prepared(long long docid, const float *query, long metric, void *ctx) override;
+	void   free_query(void *ctx) override;
 	const unsigned char *codes_for(long long docid) { return has(docid) ? codes + docid*m : 0; }
 	const float *get_codebook(void) { return codebook; }
 
