@@ -43,6 +43,7 @@ metric = 0;
 presence = NULL;
 codebook = NULL;
 codes = NULL;
+adc_table_builds = 0;
 }
 
 /*
@@ -183,12 +184,47 @@ if (table_size > (long long)PQ_SCORE_STACK_CAP)
 	table = new double[table_size];				/* larger m: heap the ADC table */
 
 ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+adc_table_builds++;
 double result = ANT_pq_codec::adc_score(codes + docid * m, m, table);
 
 if (table != stack_table)
 	delete [] table;
 
 return result;
+}
+
+/*
+	ANT_PQ_STORE::PREPARE_QUERY / SCORE_PREPARED / FREE_QUERY
+	--------------------------------------------------------
+	Build the m*K ADC table once per query (prepare_query), reuse it across every
+	node (score_prepared), free it once (free_query). ANT_hnsw::search threads the
+	returned ctx through distance() so NONE-tier navigation builds the table once
+	per search instead of once per visited node. The table encodes (query, metric);
+	score_prepared ignores its own query/metric when ctx != NULL, which is sound
+	because a single search uses one fixed query and metric.
+*/
+void *ANT_pq_store::prepare_query(const float *query, long metric)
+{
+if (documents == 0 || codebook == 0)
+	return 0;								/* degraded store: ctx==NULL -> score_prepared falls back */
+double *table = new double[m * (long long)ANT_pq_codec::K];
+ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+adc_table_builds++;
+return table;
+}
+
+double ANT_pq_store::score_prepared(long long docid, const float *query, long metric, void *ctx)
+{
+if (ctx == 0)
+	return score(docid, query, metric);		/* no prepared table -> per-call build (e.g. build path) */
+if (!has(docid))
+	return 0.0;
+return ANT_pq_codec::adc_score(codes + docid * m, m, (double *)ctx);
+}
+
+void ANT_pq_store::free_query(void *ctx)
+{
+delete [] (double *)ctx;					/* delete[] NULL is a no-op */
 }
 
 /*

@@ -30,7 +30,7 @@ private:
 	int *neighbours;				// CSR stream: per node, per layer 0..level: [count][docid...]
 
 	/* build helpers (defined in the .cpp) */
-	double distance(long long a, const float *query, ANT_vector_source *vectors, long metric);
+	double distance(long long a, const float *query, ANT_vector_source *vectors, long metric, void *ctx = NULL);
 
 public:
 	ANT_hnsw();
