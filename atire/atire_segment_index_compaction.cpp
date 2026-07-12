@@ -637,8 +637,9 @@ if (rerank_configured())
 	Token-PQ: rebuild the merged segment's .mvpq over the just-refreshed float
 	.mvec token pool (retrain per-segment codebook + renumbered ragged codes),
 	then refresh the in-memory multivector_pq.  Best-effort: a failure leaves the
-	merged segment on the .mvec fallback.  (No cross-store ordering constraint:
-	the .tann graph is built over multivectors, not multivector_pq, in Phase 2.)
+	merged segment on the .mvec fallback.  Ordering matters under the NONE tier:
+	the token_source (and .tann graph) is rebuilt over multivector_pq below, so
+	this refresh must complete first -- enforced by the tier-aware rebuild ~line 688.
 */
 if (multivector_pq_configured() && output_segment->multivectors != NULL
 	&& !output_segment->multivectors->tokens_quantized() && output_segment->multivectors->token_count() > 0)

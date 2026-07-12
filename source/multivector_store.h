@@ -52,7 +52,8 @@ public:
 	ANT_MULTIVECTOR_SOURCE
 	----------------------
 	Adapts an ANT_multivector_store's flattened token pool to the
-	ANT_vector_source interface, so ANT_hnsw can build/search a graph over
+	ANT_token_source interface (an ANT_vector_source over tokens plus
+	num_documents/token_docid_of), so ANT_hnsw can build/search a graph over
 	individual tokens rather than whole documents.  Node index == token index.
 */
 class ANT_multivector_source : public ANT_token_source

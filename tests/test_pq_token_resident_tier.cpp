@@ -17,7 +17,6 @@ static ATIRE_segment_index *build_v6(long long *gen_out)
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);	/* POST-open */
 	/* token index M/ef = ctor defaults 16/200; no public setter */
-	float row[8];
 	for (int d = 0; d < 40; d++)
 		{
 		char name[64]; snprintf(name,sizeof(name),"doc%d",d);
@@ -115,7 +114,6 @@ static void test_tier_change_invalidates_tann(void)
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
 	/* token index M/ef = ctor defaults 16/200; no public setter */
 	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
-	float row[8];
 	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); int md=2+(d%3); float rows[4*8];
 		for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
 		CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
