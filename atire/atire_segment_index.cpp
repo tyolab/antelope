@@ -386,8 +386,8 @@ rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
 load_pq_config();
-load_multivector_pq_config();
 load_rerank_config();
+load_multivector_pq_config();
 load_attributes_config();
 if (vector_config_pending)
 	{

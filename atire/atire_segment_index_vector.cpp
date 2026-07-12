@@ -479,6 +479,8 @@ if (version == 2u)
 		{ fclose(fp); return 0; }
 	}
 fclose(fp);
+if (vector_dimension_current != 0 && vector_dimension_current % m != 0)
+	return 0;					/* m must divide the vector dimension; leave PQ unconfigured */
 pq_m_current = m;
 pq_posture_current = (long)posture;
 pq_rerank_quant_current = (long)rerank_quant;
@@ -654,10 +656,18 @@ fclose(in);
 if (!ok)
 	return 1;
 
-mvpq_m_current = vals[0];
-mvpq_posture_current = (long)vals[1];
-mvpq_rerank_quant_current = (long)vals[2];
-mvpq_resident_tier_current = (long)vals[3];
+long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3];
+if (m < 1
+	|| (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
+	|| (rq != RERANK_QUANT_FLOAT && rq != RERANK_QUANT_INT8)
+	|| (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
+	|| (rerank_dimension_current != 0 && rerank_dimension_current % m != 0))
+	return 1;					/* invalid persisted config; leave token-PQ unconfigured */
+
+mvpq_m_current = m;
+mvpq_posture_current = (long)posture;
+mvpq_rerank_quant_current = (long)rq;
+mvpq_resident_tier_current = (long)tier;
 return 0;
 }
 
