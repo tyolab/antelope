@@ -194,6 +194,37 @@ static void test_none_rerank_rejected(void)
 	printf("test_none_rerank_rejected PASSED\n");
 }
 
+static void test_compaction_under_none(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	/* token index M/ef = ctor defaults 16/200; no public setter */
+	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	for (int f=0; f<2; f++)
+		{
+		for (int d=0; d<20; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d_%d",f,d); int md=2+(d%3); float rows[4*8];
+			for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3+f)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
+			CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
+		CHECK(idx->flush() == 0);
+		}
+	CHECK(idx->build_multivector_pq() == 0);
+	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) == 0);
+	delete idx;
+	idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->build_multivector_pq() == 0);
+	CHECK(idx->build_token_index() == 0);
+	long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+	CHECK(idx->compact(gens, 2) == 0);
+	CHECK(idx->disk_segment_resident_tier_mv(0) == ATIRE_segment_index::MV_TIER_NONE);
+	float q[2*8]; for (int r=0;r<2;r++){ double n=0; for(int j=0;j<8;j++){ q[r*8+j]=(float)((r*11+j*2)%13-6)/6.0f; n+=q[r*8+j]*q[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) q[r*8+j]/=(float)n; }
+	CHECK(idx->search_multivector(q, 2, 10) > 0);
+	delete idx;
+	printf("test_compaction_under_none PASSED\n");
+}
+
 int main(void)
 {
 	test_float_token_byte_identical();
@@ -201,6 +232,7 @@ int main(void)
 	test_tier_change_invalidates_tann();
 	test_none_tier_end_to_end();
 	test_none_rerank_rejected();
+	test_compaction_under_none();
 	printf("ALL test_pq_token_resident_tier PASSED\n");
 	return 0;
 }

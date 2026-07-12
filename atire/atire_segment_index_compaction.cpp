@@ -249,10 +249,38 @@ if (vector_dimension_current != 0)
 */
 if (rerank_configured())
 	{
+	/*
+		Under the NONE resident tier an input's float pool is NOT resident
+		(dropped from RAM at load -- see set_multivector_resident_tier /
+		append_segment's tier-select), so inputs[input]->multivectors is
+		NULL even though the token data exists on disk.  Load it from the
+		input's on-disk .mvec here as the merge source, exactly like
+		build_multivector_pq()'s on-disk fallback (atire_segment_index_vector.cpp).
+		mv_src_owned tracks which entries were loaded here (vs. borrowed from
+		a resident inputs[input]->multivectors) so each on-disk load is freed
+		exactly once, after the block below, regardless of which branch ran.
+	*/
+	ANT_multivector_store **mv_src = new ANT_multivector_store *[input_count];
+	long *mv_src_owned = new long[input_count];
 	long any_multivectors = 0;
 	for (input = 0; input < input_count; input++)
-		if (inputs[input]->multivectors != NULL && inputs[input]->multivectors->document_count() > 0)
+		{
+		mv_src[input] = inputs[input]->multivectors;
+		mv_src_owned[input] = 0;
+		if (mv_src[input] == NULL)
+			{
+			char in_mvec_name[4096];
+			long long in_docs = inputs[input]->engine->get_document_count();
+			segment_filename(in_mvec_name, sizeof(in_mvec_name), inputs[input]->generation, "mvec");
+			ANT_multivector_store *disk = ANT_multivector_store::load(in_mvec_name, rerank_dimension_current, in_docs);
+			if (disk->document_count() == in_docs)
+				{ mv_src[input] = disk; mv_src_owned[input] = 1; }
+			else
+				delete disk;
+			}
+		if (mv_src[input] != NULL && mv_src[input]->document_count() > 0)
 			any_multivectors = 1;
+		}
 	if (any_multivectors)
 		{
 		ANT_index_tombstones **mv_stone_list = new ANT_index_tombstones *[input_count];
@@ -262,9 +290,9 @@ if (rerank_configured())
 			{
 			mv_stone_list[input] = inputs[input]->tombstones;
 			mv_doc_counts[input] = inputs[input]->engine->get_document_count();
-			if (inputs[input]->multivectors != NULL)
+			if (mv_src[input] != NULL)
 				{
-				long long mc = inputs[input]->multivectors->max_vector_count();
+				long long mc = mv_src[input]->max_vector_count();
 				if (mc > mv_maxm) mv_maxm = mc;
 				}
 			}
@@ -282,8 +310,8 @@ if (rerank_configured())
 				if (mv_renumberer->renumber(input, docid) < 0)
 					continue;		/* tombstoned: dropped, exactly like its postings */
 				long long m = 0;
-				if (inputs[input]->multivectors != NULL)
-					m = inputs[input]->multivectors->copy_vectors(docid, mvbuf);
+				if (mv_src[input] != NULL)
+					m = mv_src[input]->copy_vectors(docid, mvbuf);
 				mv_failed = mvw.append(m > 0 ? mvbuf : NULL, m) != 0;
 				}
 		delete [] mvbuf;
@@ -293,6 +321,11 @@ if (rerank_configured())
 		delete [] mv_doc_counts;
 		/* best-effort, non-fatal -- mirrors the .vsig/.hnsw rebuild blocks below */
 		}
+	for (input = 0; input < input_count; input++)
+		if (mv_src_owned[input])
+			delete mv_src[input];
+	delete [] mv_src;
+	delete [] mv_src_owned;
 	}
 
 /*
@@ -589,8 +622,15 @@ if (rerank_configured())
 	segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
 	delete output_segment->multivectors;
 	output_segment->multivectors = ANT_multivector_store::load(mvec_name, rerank_dimension_current, output_segment->engine->get_document_count());
-	delete output_segment->token_source;
-	output_segment->token_source = (output_segment->multivectors != NULL) ? new ANT_multivector_source(output_segment->multivectors) : NULL;
+	/*
+		token_source is intentionally NOT rebuilt here: it must wrap whichever
+		store (float multivectors, or PQ multivector_pq under NONE) is FINAL
+		for this merged segment, and multivector_pq is not refreshed until the
+		block below.  Nothing between here and that rebuild dereferences
+		output_segment->token_source, so leaving it pointing at the
+		(now-freed) pre-merge store for that short window is safe -- see the
+		tier-aware rebuild after the multivector_pq refresh.
+	*/
 	}
 
 /*
@@ -631,16 +671,41 @@ else
 	}
 
 /*
-	V6: rebuild the merged segment's token-ANN (.tann) over the merged
-	multi-vectors (just refreshed above from the final .mvec, so this is the
-	same object output_segment->multivectors will hold going forward -- the
-	token_index's borrowed store pointer stays valid). Best-effort: a
-	failure leaves the output token-index-less (search_multivector falls
-	back to brute-force MaxSim), never aborts a successful merge. Refresh
-	the in-memory token_index so THIS session's search_multivector engages
-	the ANN path.
+	Rebuild output_segment->token_source now that BOTH multivectors
+	(refreshed above) and multivector_pq (just refreshed) are current for
+	the merged segment.  Tier-aware, mirroring append_segment's tier-select
+	(set_multivector_resident_tier): under NONE with a valid merged .mvpq,
+	drop the float pool from RAM and wrap the PQ store instead, so the
+	.tann build immediately below builds ADC geometry over the tier source
+	(same as a fresh NONE-tier load).  Guarded on multivector_pq != NULL so
+	a failed .mvpq refresh falls back to the float wrapper.  Must run AFTER
+	both store refreshes (a store must be current before token_source wraps
+	it) and BEFORE the .tann rebuild -- this is the exact V6 UAF lesson:
+	token_index borrows token_source, which borrows the store, so replacing
+	token_source (or freeing the store it wraps) after a graph is built over
+	it would leave that graph pointing at a freed/stale object.
 */
-if (rerank_configured() && output_segment->multivectors != NULL && output_segment->multivectors->document_count() > 0)
+delete output_segment->token_source;
+if (mvpq_resident_tier_current == MV_TIER_NONE && output_segment->multivector_pq != NULL)
+	{
+	delete output_segment->multivectors;		/* NONE: do not keep the float pool resident on the merged segment */
+	output_segment->multivectors = NULL;
+	output_segment->token_source = new ANT_multivector_pq_source(output_segment->multivector_pq);
+	}
+else if (output_segment->multivectors != NULL)
+	output_segment->token_source = new ANT_multivector_source(output_segment->multivectors);
+else
+	output_segment->token_source = NULL;
+
+/*
+	V6: rebuild the merged segment's token-ANN (.tann) over the just-rebuilt
+	token_source (float wrapper, or PQ/ADC wrapper under NONE -- see above).
+	Best-effort: a failure leaves the output token-index-less
+	(search_multivector falls back to brute-force MaxSim), never aborts a
+	successful merge. Refresh the in-memory token_index so THIS session's
+	search_multivector engages the ANN path.
+*/
+if (rerank_configured() && output_segment->token_source != NULL && output_segment->token_source->document_count() > 0)
 	{
 	char out_tann[4096];
 	segment_filename(out_tann, sizeof(out_tann), output_generation, "tann");
