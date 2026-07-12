@@ -107,10 +107,44 @@ static void test_token_seam_equivalence(void)
 	printf("test_token_seam_equivalence PASSED\n");
 }
 
+static void test_tier_change_invalidates_tann(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	/* token index M/ef = ctor defaults 16/200; no public setter */
+	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	float row[8];
+	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); int md=2+(d%3); float rows[4*8];
+		for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
+		CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
+	CHECK(idx->flush() == 0);
+	long long gen = idx->disk_segment_generation(0);
+	CHECK(idx->build_multivector_pq() == 0);
+	CHECK(idx->build_token_index() == 0);
+	CHECK(idx->disk_segment_has_token_index(0) == 1);
+	CHECK(idx->multivector_resident_tier() == ATIRE_segment_index::MV_TIER_FLOAT);
+
+	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) == 0);
+	CHECK(idx->multivector_resident_tier() == ATIRE_segment_index::MV_TIER_NONE);
+	/* stale float-geometry .tann must be gone + in-memory index nulled */
+	char tann[2048], tanng[2100];
+	snprintf(tann,sizeof(tann),"%s/seg_%06lld.tann",DIR,gen);
+	snprintf(tanng,sizeof(tanng),"%s/seg_%06lld.tann.g",DIR,gen);
+	FILE *a=fopen(tann,"rb"); CHECK(a==NULL); FILE *b=fopen(tanng,"rb"); CHECK(b==NULL);
+	CHECK(idx->disk_segment_has_token_index(0) == 0);
+	/* immutability: cannot move off NONE */
+	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_FLOAT) != 0);
+	delete idx;
+	printf("test_tier_change_invalidates_tann PASSED\n");
+}
+
 int main(void)
 {
 	test_float_token_byte_identical();
 	test_token_seam_equivalence();
+	test_tier_change_invalidates_tann();
 	printf("ALL test_pq_token_resident_tier PASSED\n");
 	return 0;
 }

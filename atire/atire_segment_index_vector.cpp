@@ -621,8 +621,10 @@ return 0;
 /*
 	ATIRE_SEGMENT_INDEX::LOAD_MULTIVECTOR_PQ_CONFIG() / SAVE_...()
 	-------------------------------------------------------------
-	Persist token-PQ config in <dir>/multivector_pq.config (magic "ANTMVPQC",
-	version 1, three i64: m, posture, rerank_quant).  Defensive parse.
+	Persist token-PQ config in <dir>/multivector_pq.config (magic "ANTMVPQC").
+	Version 2, four i64: m, posture, rerank_quant, resident_tier.  A version-1
+	file (three i64) loads with tier defaulting to MV_TIER_FLOAT (#24
+	back-compat).  Defensive parse.
 */
 long ATIRE_segment_index::load_multivector_pq_config(void)
 {
@@ -638,10 +640,16 @@ if (in == NULL)
 
 char tag[8];
 unsigned int version;
-long long vals[3];
-long ok = fread(tag, 1, 8, in) == 8 && memcmp(tag, "ANTMVPQC", 8) == 0
-	&& fread(&version, 4, 1, in) == 1 && version == 1
-	&& fread(vals, 8, 3, in) == 3;
+long long vals[4];
+if (fread(tag, 1, 8, in) != 8 || memcmp(tag, "ANTMVPQC", 8) != 0 || fread(&version, 4, 1, in) != 1)
+	{ fclose(in); return 1; }
+long ok;
+if (version == 1)
+	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; }
+else if (version == 2)
+	{ ok = (fread(vals, 8, 4, in) == 4); }
+else
+	ok = 0;
 fclose(in);
 if (!ok)
 	return 1;
@@ -649,6 +657,7 @@ if (!ok)
 mvpq_m_current = vals[0];
 mvpq_posture_current = (long)vals[1];
 mvpq_rerank_quant_current = (long)vals[2];
+mvpq_resident_tier_current = (long)vals[3];
 return 0;
 }
 
@@ -666,9 +675,9 @@ FILE *out = fopen(temp, "wb");
 if (out == NULL)
 	return 1;
 
-unsigned int version = 1;
-long long vals[3] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current };
-long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 3, out) == 3;
+unsigned int version = 2;
+long long vals[4] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current };
+long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 4, out) == 4;
 if (fclose(out) != 0)
 	ok = 0;
 if (ok && rename(temp, name) != 0)
@@ -707,6 +716,66 @@ mvpq_rerank_quant_current = rerank_quant;
 if (save_multivector_pq_config() != 0)
 	{ mvpq_m_current = 0; mvpq_posture_current = PQ_POSTURE_REPLACE; mvpq_rerank_quant_current = RERANK_QUANT_FLOAT; return 1; }
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_MULTIVECTOR_RESIDENT_TIER()
+	------------------------------------------------------
+	Selects whether the resident token graph source is the full float .mvec
+	pool (FLOAT, default -- Phase-1/Task-1..2 behaviour, no RAM win) or the
+	PQ-compressed .mvpq pool only (NONE -- float pool dropped from RAM, the
+	maximal RAM win; float stays on disk for retrain/compaction/rerank).
+	Like set_pq_resident_tier(), once moved off the FLOAT default the tier is
+	immutable: setting the SAME tier again is a no-op success, but any
+	further change is rejected.  The tier is realized at load (append_segment)
+	-- this call only persists config + invalidates stale .tann sidecars built
+	over the old (float) geometry; a reopen picks up the new tier source.
+*/
+long ATIRE_segment_index::set_multivector_resident_tier(long tier)
+{
+if (directory == NULL)
+	return 1;
+if (!multivector_pq_configured())
+	return 1;
+if (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
+	return 1;
+if (mvpq_resident_tier_current != tier && mvpq_resident_tier_current != MV_TIER_FLOAT)
+	return 1;						// immutable once moved off the default
+if (mvpq_resident_tier_current == tier)
+	return 0;						// idempotent
+long previous = mvpq_resident_tier_current;
+mvpq_resident_tier_current = tier;
+if (save_multivector_pq_config() != 0)
+	{ mvpq_resident_tier_current = previous; return 1; }
+
+/*
+	#24: a real tier change away from FLOAT changes the token graph source (float
+	.mvec -> .mvpq ADC). Any .tann built over the OLD float geometry no longer
+	matches how the PQ source scores nodes, so invalidate every per-segment .tann
+	(+ .tann.g) and null the in-memory token_index; the next build_token_index()/
+	compaction rebuilds over the new (PQ) source at reopen. Mirrors set_pq_resident_tier.
+*/
+char tann_name[4096], tanng_name[4200];
+long long which;
+for (which = 0; which < segment_count; which++)
+	{
+	segment_filename(tann_name, sizeof(tann_name), segments[which].generation, "tann");
+	snprintf(tanng_name, sizeof(tanng_name), "%s.g", tann_name);
+	remove(tann_name);
+	remove(tanng_name);
+	delete segments[which].token_index;
+	segments[which].token_index = NULL;
+	}
+return 0;
+}
+
+long ATIRE_segment_index::disk_segment_resident_tier_mv(long long which)
+{
+if (which < 0 || which >= segment_count)
+	return -1;
+if (segments[which].multivectors == NULL && segments[which].multivector_pq != NULL)
+	return MV_TIER_NONE;
+return MV_TIER_FLOAT;
 }
 
 /*

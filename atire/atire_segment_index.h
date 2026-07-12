@@ -127,6 +127,7 @@ private:
 	long long mvpq_m_current;			// 0 = token-PQ unconfigured
 	long mvpq_posture_current;			// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
 	long mvpq_rerank_quant_current;		// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
+	long mvpq_resident_tier_current;		// MV_TIER_FLOAT (default) / MV_TIER_NONE
 	long mvpq_eager;					// 0 ondemand (default), 1 eager
 
 	long long rerank_dimension_current;		// 0 = rerank not configured
@@ -244,6 +245,7 @@ public:
 	enum { RERANK_QUANT_FLOAT = 0, RERANK_QUANT_INT8 = 1 };
 	enum { PQ_POSTURE_REPLACE = 0, PQ_POSTURE_RERANK = 1 };
 	enum { PQ_TIER_FLOAT = 0, PQ_TIER_INT8 = 1, PQ_TIER_NONE = 2 };
+	enum { MV_TIER_FLOAT = 0, MV_TIER_NONE = 1 };
 
 	long set_vector_config(long long dimension, long metric);		// before open(); 0 on success
 	long long vector_dimension(void) { return vector_dimension_current; }
@@ -283,6 +285,9 @@ public:
 	long multivector_pq_configured(void) { return mvpq_m_current != 0; }
 	long long multivector_pq_m(void) { return mvpq_m_current; }
 	long set_multivector_pq_policy(long eager) { mvpq_eager = eager ? 1 : 0; return 0; }
+	long set_multivector_resident_tier(long tier);	// 0 ok; nonzero: not open / token-PQ unconfigured / invalid / already off-FLOAT (immutable)
+	long multivector_resident_tier(void) { return mvpq_resident_tier_current; }
+	long disk_segment_resident_tier_mv(long long which);	// test accessor: MV_TIER_NONE if float pool not resident but .mvpq is, else MV_TIER_FLOAT
 
 	long load_rerank_config(void);
 	long save_rerank_config(void);

@@ -96,6 +96,7 @@ pq_eager = 0;
 mvpq_m_current = 0;
 mvpq_posture_current = PQ_POSTURE_REPLACE;
 mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
+mvpq_resident_tier_current = MV_TIER_FLOAT;
 mvpq_eager = 0;
 
 rerank_dimension_current = 0;
@@ -1606,18 +1607,7 @@ else
 
 if (rerank_configured())
 	{
-	char mvec_filename[1024];
-	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
-	segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
-	segments[segment_count].token_source = (segments[segment_count].multivectors != NULL)
-		? new ANT_multivector_source(segments[segment_count].multivectors) : NULL;
-
-	char tann_filename[1024];
-	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
-	segments[segment_count].token_index = segments[segment_count].token_source
-		? ANT_token_index::load(tann_filename, segments[segment_count].token_source, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT)
-		: NULL;
-
+	/* load .mvpq first so the tier decision (below) can use it */
 	segments[segment_count].multivector_pq = NULL;
 	if (multivector_pq_configured())
 		{
@@ -1629,6 +1619,28 @@ if (rerank_configured())
 		else
 			delete p;			/* no/degraded .mvpq -> NULL -> .mvec fallback */
 		}
+
+	long none_tier = (mvpq_resident_tier_current == MV_TIER_NONE && segments[segment_count].multivector_pq != NULL);
+
+	char mvec_filename[1024];
+	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
+	if (none_tier)
+		segments[segment_count].multivectors = NULL;			/* drop resident float pool */
+	else
+		segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
+
+	if (none_tier)
+		segments[segment_count].token_source = new ANT_multivector_pq_source(segments[segment_count].multivector_pq);
+	else if (segments[segment_count].multivectors != NULL)
+		segments[segment_count].token_source = new ANT_multivector_source(segments[segment_count].multivectors);
+	else
+		segments[segment_count].token_source = NULL;
+
+	char tann_filename[1024];
+	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
+	segments[segment_count].token_index = segments[segment_count].token_source
+		? ANT_token_index::load(tann_filename, segments[segment_count].token_source, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT)
+		: NULL;
 	}
 else
 	{
