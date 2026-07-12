@@ -7,7 +7,7 @@
 #define TOKEN_INDEX_H_
 
 class ANT_hnsw;
-class ANT_multivector_store;
+class ANT_token_source;
 class ANT_index_tombstones;
 
 class ANT_token_index
@@ -21,13 +21,13 @@ private:
 	long metric;
 	long long M;
 	long long ef_construction;
-	ANT_multivector_store *store;   // borrowed (not owned) -- do NOT delete in dtor
+	ANT_token_source *source;   // borrowed (not owned) -- do NOT delete in dtor
 	ANT_token_index();
 public:
 	~ANT_token_index();
-	// Build over `store` (borrowed, not retained). 0 tokens -> returns NULL (nothing to index).
+	// Build over `source` (borrowed, not retained). 0 tokens -> returns NULL (nothing to index).
 	// Returns NULL on token_count > INT_MAX cap or graph/alloc failure (caller falls back to brute force).
-	static ANT_token_index *build(ANT_multivector_store *store, long long M, long long ef_construction, long metric);
+	static ANT_token_index *build(ANT_token_source *source, long long M, long long ef_construction, long metric);
 	long long get_token_count(void) { return token_count; }
 	long long get_documents(void) { return documents; }
 	long empty(void);                        // no graph / empty graph
@@ -38,8 +38,8 @@ public:
 	long save(const char *filename);
 	/* Forgiving factory: read the sidecar pair back, degrading to an empty
 	   index on ANY corruption or config/store mismatch.  Caller owns the
-	   returned pointer (delete); `store` is borrowed and retained (not owned). */
-	static ANT_token_index *load(const char *filename, ANT_multivector_store *store, long long expected_M, long long expected_ef_construction, long metric);
+	   returned pointer (delete); `source` is borrowed and retained (not owned). */
+	static ANT_token_index *load(const char *filename, ANT_token_source *source, long long expected_M, long long expected_ef_construction, long metric);
 
 	// For each of num_query_vecs query tokens (row-major query[num*dimension]), retrieve the
 	// token_top_p nearest doc-tokens, map to docids, accumulate provisional per-doc scores

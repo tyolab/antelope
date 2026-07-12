@@ -96,6 +96,7 @@ pq_eager = 0;
 mvpq_m_current = 0;
 mvpq_posture_current = PQ_POSTURE_REPLACE;
 mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
+mvpq_resident_tier_current = MV_TIER_FLOAT;
 mvpq_eager = 0;
 
 rerank_dimension_current = 0;
@@ -154,6 +155,7 @@ for (which = 0; which < segment_count; which++)
 	delete segments[which].hnsw_graph;
 	delete segments[which].multivectors;
 	delete segments[which].token_index;
+	delete segments[which].token_source;
 	delete segments[which].multivector_pq;
 	delete segments[which].attributes;
 	delete segments[which].payload;
@@ -1436,17 +1438,6 @@ if (wal != NULL)
 	}
 
 /*
-	Eager token-index policy: build the V6 token graph for the segment just
-	registered above (append_segment() already loaded its multivectors, so
-	it is visible to build_token_index()'s loop).  Idempotent -- skips any
-	segment that already has a built index -- and best-effort like the
-	other flush() sidecars: a build failure just leaves that segment on the
-	brute-force MaxSim fallback until the next flush/backfill.
-*/
-if (token_index_eager)
-	build_token_index();
-
-/*
 	Eager PQ policy: build .pq for the segment just flushed (append_segment()
 	already ran, so it is visible to build_pq()'s loop).  Idempotent, best-effort
 	like the other flush() sidecars.
@@ -1464,6 +1455,22 @@ if (pq_eager && hnsw_M_current != 0)
 */
 if (mvpq_eager)
 	build_multivector_pq();
+
+/*
+	Eager token-index policy: build the V6 token graph for the segment just
+	registered above (append_segment() already loaded its multivectors, so
+	it is visible to build_token_index()'s loop).  Idempotent -- skips any
+	segment that already has a built index -- and best-effort like the
+	other flush() sidecars: a build failure just leaves that segment on the
+	brute-force MaxSim fallback until the next flush/backfill.
+
+	#24: run AFTER the eager .mvpq build above -- under a NONE-configured
+	index a resident_tier NONE segment's token_source is the PQ store, so
+	build_multivector_pq() must have (re)built/loaded .mvpq before
+	build_token_index() walks token_source for that segment.
+*/
+if (token_index_eager)
+	build_token_index();
 
 return 0;
 }
@@ -1605,14 +1612,7 @@ else
 
 if (rerank_configured())
 	{
-	char mvec_filename[1024];
-	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
-	segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
-
-	char tann_filename[1024];
-	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
-	segments[segment_count].token_index = ANT_token_index::load(tann_filename, segments[segment_count].multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
-
+	/* load .mvpq first so the tier decision (below) can use it */
 	segments[segment_count].multivector_pq = NULL;
 	if (multivector_pq_configured())
 		{
@@ -1624,11 +1624,34 @@ if (rerank_configured())
 		else
 			delete p;			/* no/degraded .mvpq -> NULL -> .mvec fallback */
 		}
+
+	long none_tier = (mvpq_resident_tier_current == MV_TIER_NONE && segments[segment_count].multivector_pq != NULL);
+
+	char mvec_filename[1024];
+	segment_filename(mvec_filename, sizeof(mvec_filename), generation, "mvec");
+	if (none_tier)
+		segments[segment_count].multivectors = NULL;			/* drop resident float pool */
+	else
+		segments[segment_count].multivectors = ANT_multivector_store::load(mvec_filename, rerank_dimension_current, engine->get_document_count());
+
+	if (none_tier)
+		segments[segment_count].token_source = new ANT_multivector_pq_source(segments[segment_count].multivector_pq);
+	else if (segments[segment_count].multivectors != NULL)
+		segments[segment_count].token_source = new ANT_multivector_source(segments[segment_count].multivectors);
+	else
+		segments[segment_count].token_source = NULL;
+
+	char tann_filename[1024];
+	segment_filename(tann_filename, sizeof(tann_filename), generation, "tann");
+	segments[segment_count].token_index = segments[segment_count].token_source
+		? ANT_token_index::load(tann_filename, segments[segment_count].token_source, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT)
+		: NULL;
 	}
 else
 	{
 	segments[segment_count].multivectors = NULL;
 	segments[segment_count].token_index = NULL;
+	segments[segment_count].token_source = NULL;
 	segments[segment_count].multivector_pq = NULL;
 	}
 
