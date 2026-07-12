@@ -28,4 +28,18 @@ public:
 	                    { (void)ctx; return score(node, query, metric); }
 	virtual void   free_query(void *ctx) { (void)ctx; }
 } ;
+
+/*
+	ANT_TOKEN_SOURCE -- an ANT_vector_source whose nodes are TOKENS, plus the two
+	things a token index needs beyond per-node scoring: the owning docid of a token
+	and the distinct-document count (ANT_vector_source::document_count() is the token
+	/ node count for these sources). Implemented by ANT_multivector_source (float)
+	and ANT_multivector_pq_source (PQ codes).
+*/
+class ANT_token_source : public ANT_vector_source
+{
+public:
+	virtual long long num_documents(void) = 0;
+	virtual long long token_docid_of(long long t) = 0;
+} ;
 #endif /* VECTOR_SOURCE_H_ */

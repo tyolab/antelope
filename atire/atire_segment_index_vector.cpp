@@ -1055,7 +1055,7 @@ for (which = 0; which < segment_count; which++)
 		continue;	/* already built */
 
 	segment_filename(tann_name, sizeof(tann_name), segments[which].generation, "tann");
-	ANT_token_index *idx = ANT_token_index::build(segments[which].multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
+	ANT_token_index *idx = ANT_token_index::build(segments[which].token_source, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
 	if (idx == NULL)
 		continue;	/* empty/over-cap/failed -> segment stays in brute-force fallback */
 	if (idx->save(tann_name) != 0)

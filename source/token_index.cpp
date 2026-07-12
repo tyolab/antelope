@@ -5,12 +5,12 @@
 #include <algorithm>
 #include "token_index.h"
 #include "hnsw.h"
-#include "multivector_store.h"
+#include "vector_source.h"
 #include "index_tombstones.h"
 
 ANT_token_index::ANT_token_index()
 {
-graph = NULL; token_docid = NULL; token_count = 0; documents = 0; dimension = 0; metric = 0; M = 0; ef_construction = 0; store = NULL;
+graph = NULL; token_docid = NULL; token_count = 0; documents = 0; dimension = 0; metric = 0; M = 0; ef_construction = 0; source = NULL;
 }
 
 ANT_token_index::~ANT_token_index()
@@ -19,9 +19,9 @@ delete graph;
 delete [] token_docid;
 }
 
-ANT_token_index *ANT_token_index::build(ANT_multivector_store *store, long long M_in, long long ef_construction_in, long metric_in)
+ANT_token_index *ANT_token_index::build(ANT_token_source *source_in, long long M_in, long long ef_construction_in, long metric_in)
 {
-long long n = store->token_count();
+long long n = source_in->document_count();			// token / node count
 if (n <= 0)
 	return NULL;                             // nothing to index
 if (n > ANT_HNSW_MAX_DOCUMENTS)
@@ -29,20 +29,19 @@ if (n > ANT_HNSW_MAX_DOCUMENTS)
 
 ANT_token_index *idx = new ANT_token_index();
 idx->token_count = n;
-idx->documents = store->document_count();
-idx->dimension = store->get_dimension();
+idx->documents = source_in->num_documents();
+idx->dimension = source_in->get_dimension();
 idx->metric = metric_in;
 idx->M = M_in;
 idx->ef_construction = ef_construction_in;
-idx->store = store;
+idx->source = source_in;
 
 idx->token_docid = new int[n];
 for (long long t = 0; t < n; t++)
-	idx->token_docid[t] = (int)store->token_docid_of(t);
+	idx->token_docid[t] = (int)source_in->token_docid_of(t);
 
-ANT_multivector_source source(store);
 idx->graph = new ANT_hnsw();
-if (idx->graph->build(&source, M_in, ef_construction_in, metric_in) != 0)
+if (idx->graph->build(source_in, M_in, ef_construction_in, metric_in) != 0)
 	{ delete idx; return NULL; }             // graph build failed -> caller falls back
 
 return idx;
@@ -97,10 +96,10 @@ if (graph->save(gfilename) != 0) { remove(filename); remove(gfilename); return 1
 return 0;
 }
 
-ANT_token_index *ANT_token_index::load(const char *filename, ANT_multivector_store *store, long long expected_M, long long expected_ef_construction, long metric)
+ANT_token_index *ANT_token_index::load(const char *filename, ANT_token_source *source_in, long long expected_M, long long expected_ef_construction, long metric)
 {
 ANT_token_index *idx = new ANT_token_index();		/* empty by default (degraded) */
-idx->store = store;
+idx->source = source_in;
 idx->metric = metric;
 idx->M = expected_M;
 idx->ef_construction = expected_ef_construction;
@@ -113,7 +112,7 @@ if (fread(&magic,sizeof(magic),1,fp)!=1 || magic != ant_tann_magic()
 	|| fread(&version,sizeof(version),1,fp)!=1 || version != ANT_TANN_VERSION
 	|| fread(&tc,sizeof(tc),1,fp)!=1 || fread(&m,sizeof(m),1,fp)!=1
 	|| fread(&efc,sizeof(efc),1,fp)!=1
-	|| tc != store->token_count() || m != expected_M || efc != expected_ef_construction
+	|| tc != source_in->document_count() || m != expected_M || efc != expected_ef_construction
 	|| tc < 0 || tc > ANT_HNSW_MAX_DOCUMENTS)
 	{ fclose(fp); return idx; }
 
@@ -140,8 +139,8 @@ if (g == NULL || g->empty())
 idx->graph = g;
 idx->token_docid = docid;
 idx->token_count = tc;
-idx->documents = store->document_count();
-idx->dimension = store->get_dimension();
+idx->documents = source_in->num_documents();
+idx->dimension = source_in->get_dimension();
 
 return idx;
 }
@@ -165,7 +164,6 @@ long long ANT_token_index::search_candidates(const float *query, long long num_q
 if (empty() || query == NULL || num_query_vecs <= 0 || max_candidates <= 0 || token_top_p <= 0)
 	return 0;
 
-ANT_multivector_source source(store);
 std::vector<double> provisional((size_t)documents, 0.0);
 std::vector<char> in_touched((size_t)documents, 0);
 std::vector<long long> touched;
@@ -179,7 +177,7 @@ for (long long i = 0; i < num_query_vecs; i++)
 	const float *q = query + i * dimension;
 	// tombstones/filter passed as NULL: nodes are tokens, not docids -> admit at doc level below
 	long long got = graph->search(q, metric, /*ef_search=*/token_top_p, token_top_p,
-		&source, /*tombstones=*/NULL, tok_docids.data(), tok_scores.data(), /*filter_bits=*/NULL);
+		source, /*tombstones=*/NULL, tok_docids.data(), tok_scores.data(), /*filter_bits=*/NULL);
 	for (long long r = 0; r < got; r++)
 		{
 		long long t = tok_docids[r];               // token id

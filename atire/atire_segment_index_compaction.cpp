@@ -589,6 +589,8 @@ if (rerank_configured())
 	segment_filename(mvec_name, sizeof(mvec_name), output_generation, "mvec");
 	delete output_segment->multivectors;
 	output_segment->multivectors = ANT_multivector_store::load(mvec_name, rerank_dimension_current, output_segment->engine->get_document_count());
+	delete output_segment->token_source;
+	output_segment->token_source = (output_segment->multivectors != NULL) ? new ANT_multivector_source(output_segment->multivectors) : NULL;
 	}
 
 /*
@@ -642,7 +644,7 @@ if (rerank_configured() && output_segment->multivectors != NULL && output_segmen
 	{
 	char out_tann[4096];
 	segment_filename(out_tann, sizeof(out_tann), output_generation, "tann");
-	ANT_token_index *tidx = ANT_token_index::build(output_segment->multivectors, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
+	ANT_token_index *tidx = ANT_token_index::build(output_segment->token_source, token_index_M, token_index_ef_construction, ANT_vector_store::METRIC_DOT);
 	if (tidx != NULL)
 		{
 		if (tidx->save(out_tann) == 0)
@@ -701,6 +703,7 @@ for (input = 0; input < input_count; input++)
 			delete segments[which].hnsw_graph;
 			delete segments[which].multivectors;
 			delete segments[which].token_index;
+			delete segments[which].token_source;
 			delete segments[which].multivector_pq;
 			delete segments[which].attributes;
 			delete segments[which].payload;

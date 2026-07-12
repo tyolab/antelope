@@ -55,8 +55,9 @@ char path[64]; strcpy(path, "/tmp/ant_v6tokidx_XXXXXX"); { int fd = mkstemp(path
 
 ANT_multivector_store *store = build_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 CHECK(idx->get_token_count() == 6);
 CHECK(idx->get_documents() == 3);
@@ -88,8 +89,9 @@ CHECK(w.finish() == 0);
 ANT_multivector_store *store = ANT_multivector_store::load(path, dim, 1);
 CHECK(store != NULL);
 CHECK(store->token_count() == 0);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx == NULL);
 
 delete store;
@@ -102,14 +104,15 @@ static void save_load_test(void)
 char store_path[64]; strcpy(store_path, "/tmp/ant_v6tokidx_sl_XXXXXX"); { int fd = mkstemp(store_path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_store(store_path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 
 char path[64]; strcpy(path, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 CHECK(idx->save(path) == 0);
 
-ANT_token_index *r = ANT_token_index::load(path, store, 16, 200, 0);
+ANT_token_index *r = ANT_token_index::load(path, &store_src, 16, 200, 0);
 CHECK(r != NULL);
 CHECK(!r->empty());
 CHECK(r->get_token_count() == 6);
@@ -117,7 +120,7 @@ CHECK(r->token_docid_at(2) == 1 && r->token_docid_at(5) == 2);
 delete r;
 
 /* nonexistent path -> empty, no crash */
-ANT_token_index *m = ANT_token_index::load("/tmp/does_not_exist_v6tann", store, 16, 200, 0);
+ANT_token_index *m = ANT_token_index::load("/tmp/does_not_exist_v6tann", &store_src, 16, 200, 0);
 CHECK(m != NULL && m->empty());
 delete m;
 
@@ -128,14 +131,14 @@ CHECK(f != NULL);
 CHECK(ftruncate(fileno(f), 10) == 0);
 fclose(f);
 }
-ANT_token_index *c = ANT_token_index::load(path, store, 16, 200, 0);
+ANT_token_index *c = ANT_token_index::load(path, &store_src, 16, 200, 0);
 CHECK(c != NULL && c->empty());
 delete c;
 
 /* config mismatch (wrong M) -> empty; re-save fresh since `path` was truncated above */
 char path2[64]; strcpy(path2, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path2); if (fd >= 0) close(fd); }
 CHECK(idx->save(path2) == 0);
-ANT_token_index *w = ANT_token_index::load(path2, store, 32 /* wrong M */, 200, 0);
+ANT_token_index *w = ANT_token_index::load(path2, &store_src, 32 /* wrong M */, 200, 0);
 CHECK(w != NULL && w->empty());
 delete w;
 
@@ -149,12 +152,13 @@ CHECK(w2.append(doc0, 1) == 0);
 CHECK(w2.finish() == 0);
 ANT_multivector_store *store2 = ANT_multivector_store::load(store2_path, dim, 1);
 CHECK(store2 != NULL);
-ANT_token_index *idx2 = ANT_token_index::build(store2, 16, 200, 0);
+ANT_multivector_source store2_src(store2);
+ANT_token_index *idx2 = ANT_token_index::build(&store2_src, 16, 200, 0);
 CHECK(idx2 != NULL);
 char path3[64]; strcpy(path3, "/tmp/ant_tann_XXXXXX"); { int fd = mkstemp(path3); if (fd >= 0) close(fd); }
 CHECK(idx2->save(path3) == 0);
 
-ANT_token_index *stale = ANT_token_index::load(path3, store /* wrong token_count */, 16, 200, 0);
+ANT_token_index *stale = ANT_token_index::load(path3, &store_src /* wrong token_count */, 16, 200, 0);
 CHECK(stale != NULL && stale->empty());
 delete stale;
 
@@ -222,8 +226,9 @@ static void search_candidates_basic_test(void)
 char path[64]; strcpy(path, "/tmp/ant_v6tokidx_cand_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_candidates_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 
 float query[2*4] =
@@ -250,8 +255,9 @@ static void search_candidates_cap_test(void)
 char path[64]; strcpy(path, "/tmp/ant_v6tokidx_cap_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_candidates_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 
 float query[2*4] =
@@ -280,8 +286,9 @@ static void search_candidates_filter_test(void)
 char path[64]; strcpy(path, "/tmp/ant_v6tokidx_filt_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_candidates_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 
 /* admit only doc1 (bit 1) and doc3 (bit 3) */
@@ -313,8 +320,9 @@ static void search_candidates_tombstone_test(void)
 char path[64]; strcpy(path, "/tmp/ant_v6tokidx_tomb_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_candidates_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::build(store, 16, 200, 0 /* METRIC_DOT */);
+ANT_token_index *idx = ANT_token_index::build(&store_src, 16, 200, 0 /* METRIC_DOT */);
 CHECK(idx != NULL);
 
 ANT_index_tombstones stones(idx->get_documents());
@@ -337,8 +345,9 @@ static void search_candidates_empty_index_test(void)
 char path[64]; strcpy(path, "/tmp/ant_v6tokidx_ce_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 ANT_multivector_store *store = build_candidates_store(path);
 CHECK(store != NULL);
+ANT_multivector_source store_src(store);
 
-ANT_token_index *idx = ANT_token_index::load("/tmp/ant_v6tokidx_does_not_exist", store, 16, 200, 0);
+ANT_token_index *idx = ANT_token_index::load("/tmp/ant_v6tokidx_does_not_exist", &store_src, 16, 200, 0);
 CHECK(idx != NULL);
 CHECK(idx->empty());
 

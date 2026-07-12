@@ -55,7 +55,7 @@ public:
 	ANT_vector_source interface, so ANT_hnsw can build/search a graph over
 	individual tokens rather than whole documents.  Node index == token index.
 */
-class ANT_multivector_source : public ANT_vector_source
+class ANT_multivector_source : public ANT_token_source
 {
 private:
 	ANT_multivector_store *store;
@@ -69,6 +69,8 @@ public:
 	long is_quantized(void) override { return store->tokens_quantized(); }
 	void reconstruct(long long node, float *out) override { store->token_reconstruct(node, out); }
 	double score(long long node, const float *query, long metric) override { return store->token_score(node, query, metric); }
+	long long num_documents(void) override { return store->document_count(); }
+	long long token_docid_of(long long t) override { return store->token_docid_of(t); }
 } ;
 
 class ANT_multivector_store_writer

@@ -35,6 +35,7 @@ class ANT_filter;
 class ANT_token_index;
 class ANT_pq_store;
 class ANT_multivector_pq_store;
+class ANT_token_source;
 struct ANT_vector_candidate;
 
 class ATIRE_segment_index
@@ -64,6 +65,7 @@ public:
 	ANT_hnsw *hnsw_graph;			// NULL when HNSW is not configured for this index
 	ANT_multivector_store *multivectors;	// V5 late-interaction sidecar; NULL unless rerank configured
 	ANT_token_index *token_index;		// V6 token-level ANN over multivectors' flattened token pool; NULL unless built/loadable
+	ANT_token_source *token_source;		// owns the graph source token_index borrows; float wrapper (FLOAT) or PQ wrapper (NONE); freed AFTER token_index
 	ANT_multivector_pq_store *multivector_pq;	// PQ-compressed token pool (seg_G.mvpq); NULL unless token-PQ configured AND a valid .mvpq loaded/built
 	ANT_attribute_store *attributes;	// filter columns; NULL unless attributes configured
 	ANT_payload_store *payload;			// opaque per-doc blob; NULL unless attributes configured
