@@ -170,12 +170,37 @@ static void test_none_tier_end_to_end(void)
 	printf("test_none_tier_end_to_end PASSED\n");
 }
 
+static void test_none_rerank_rejected(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	/* NONE is replace-only: RERANK posture has no resident store to rescore against */
+	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) != 0);
+	CHECK(idx->multivector_resident_tier() == ATIRE_segment_index::MV_TIER_FLOAT);
+	delete idx;
+
+	/* REPLACE posture still accepts NONE */
+	char cmd2[2048]; snprintf(cmd2,sizeof(cmd2),"rm -rf %s2 && mkdir -p %s2",DIR,DIR); system(cmd2);
+	char dir2[2048]; snprintf(dir2,sizeof(dir2),"%s2",DIR);
+	ATIRE_segment_index *idx2 = new ATIRE_segment_index();
+	CHECK(idx2->open(dir2) == 0);
+	CHECK(idx2->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx2->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx2->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) == 0);
+	delete idx2;
+	printf("test_none_rerank_rejected PASSED\n");
+}
+
 int main(void)
 {
 	test_float_token_byte_identical();
 	test_token_seam_equivalence();
 	test_tier_change_invalidates_tann();
 	test_none_tier_end_to_end();
+	test_none_rerank_rejected();
 	printf("ALL test_pq_token_resident_tier PASSED\n");
 	return 0;
 }

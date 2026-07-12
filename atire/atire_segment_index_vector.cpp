@@ -739,6 +739,8 @@ if (!multivector_pq_configured())
 	return 1;
 if (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
 	return 1;
+if (tier == MV_TIER_NONE && mvpq_posture_current == PQ_POSTURE_RERANK)
+	return 1;					// NONE is replace-only: no resident float to rerank against
 if (mvpq_resident_tier_current != tier && mvpq_resident_tier_current != MV_TIER_FLOAT)
 	return 1;						// immutable once moved off the default
 if (mvpq_resident_tier_current == tier)
