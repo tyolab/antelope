@@ -119,6 +119,37 @@ ANT_pq_store *wrong_docs = ANT_pq_store::load(path, dim, 99, ANT_pq_codec::METRI
 CHECK(wrong_docs != NULL && wrong_docs->document_count() == 0);
 delete wrong_docs;
 
+/* bad magic: a byte-identical-size copy with the 8 magic bytes clobbered -> degraded empty */
+char badmagic_path[64]; strcpy(badmagic_path, "/tmp/ant_pqbm_XXXXXX"); { int fd = mkstemp(badmagic_path); if (fd >= 0) close(fd); }
+{
+FILE *in = fopen(path, "rb"); FILE *out_f = fopen(badmagic_path, "wb");
+CHECK(in != NULL && out_f != NULL);
+fseek(in, 0, SEEK_END); long sz = ftell(in); fseek(in, 0, SEEK_SET);
+char *buf = new char[sz]; CHECK(fread(buf, 1, sz, in) == (size_t)sz);
+memcpy(buf, "BADMAGIC", 8);				/* clobber magic, keep size */
+CHECK(fwrite(buf, 1, sz, out_f) == (size_t)sz);
+delete [] buf; fclose(in); fclose(out_f);
+}
+ANT_pq_store *bad_magic = ANT_pq_store::load(badmagic_path, dim, 4, ANT_pq_codec::METRIC_DOT);
+CHECK(bad_magic != NULL && bad_magic->document_count() == 0);
+delete bad_magic; unlink(badmagic_path);
+
+/* size-consistent invalid m: same file size, but the header's m field flipped to 6 (16 % 6 != 0).
+   Rejection here comes from the m-divides-dimension field check, NOT the exact-size gate. */
+char badm_path[64]; strcpy(badm_path, "/tmp/ant_pqim_XXXXXX"); { int fd = mkstemp(badm_path); if (fd >= 0) close(fd); }
+{
+FILE *in = fopen(path, "rb"); FILE *out_f = fopen(badm_path, "wb");
+CHECK(in != NULL && out_f != NULL);
+fseek(in, 0, SEEK_END); long sz = ftell(in); fseek(in, 0, SEEK_SET);
+char *buf = new char[sz]; CHECK(fread(buf, 1, sz, in) == (size_t)sz);
+long long bad_m = 6; memcpy(buf + 28, &bad_m, 8);	/* m field at header offset 28; size unchanged */
+CHECK(fwrite(buf, 1, sz, out_f) == (size_t)sz);
+delete [] buf; fclose(in); fclose(out_f);
+}
+ANT_pq_store *bad_m = ANT_pq_store::load(badm_path, dim, 4, ANT_pq_codec::METRIC_DOT);
+CHECK(bad_m != NULL && bad_m->document_count() == 0);
+delete bad_m; unlink(badm_path);
+
 unlink(path);
 printf("forgiving_load OK\n");
 }
