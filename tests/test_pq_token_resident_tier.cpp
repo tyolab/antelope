@@ -4,6 +4,8 @@
 #include <math.h>
 #include "../atire/atire_segment_index.h"
 #include "../source/pq_codec.h"
+#include "../source/multivector_pq_store.h"
+#include "../source/vector_source.h"
 #define CHECK(c) do { if(!(c)){printf("FAIL %s:%d: %s\n",__FILE__,__LINE__,#c);exit(1);} } while(0)
 static const char *DIR = "/tmp/test_pq_token_tier_idx";
 
@@ -47,9 +49,68 @@ static void test_float_token_byte_identical(void)
 	printf("test_float_token_byte_identical PASSED\n");
 }
 
+static ANT_multivector_pq_store *make_mvpq(long long dim, long long m, long long ndoc, const char *path)
+{
+	remove(path);
+	ANT_multivector_pq_store_writer w;
+	CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT) == 0);
+	srand(5);
+	for (long long d=0; d<ndoc; d++)
+		{
+		long long md = 2 + (d % 3);
+		float rows[4*16];
+		for (long long r=0;r<md;r++){ double nrm=0; for(long long j=0;j<dim;j++){ rows[r*dim+j]=(float)(rand()%200-100)/100.0f; nrm+=rows[r*dim+j]*rows[r*dim+j]; } nrm=sqrt(nrm)+1e-9; for(long long j=0;j<dim;j++) rows[r*dim+j]/=(float)nrm; }
+		CHECK(w.append(rows, md) == 0);
+		}
+	CHECK(w.finish() == 0);
+	ANT_multivector_pq_store *s = ANT_multivector_pq_store::load(path, dim, ndoc, ANT_pq_codec::METRIC_DOT);
+	CHECK(s->token_count() > 0);
+	return s;
+}
+
+static void test_token_seam_equivalence(void)
+{
+	const char *path = "/tmp/test_pq_token_seam.mvpq";
+	long long dim=16, m=8, ndoc=30;
+	ANT_multivector_pq_store *s = make_mvpq(dim, m, ndoc, path);
+	float q[16]; for(int j=0;j<dim;j++) q[j]=(float)(rand()%200-100)/100.0f;
+
+	void *ctx = s->token_prepare_query(q);
+	CHECK(ctx != 0);
+	for (long long t=0; t<s->token_count(); t+=5)
+		CHECK(fabs(s->token_score_prepared(t, q, ctx) - s->token_score(t, q, ANT_pq_codec::METRIC_DOT)) < 1e-9);
+	CHECK(fabs(s->token_score_prepared(1, q, NULL) - s->token_score(1, q, ANT_pq_codec::METRIC_DOT)) < 1e-9);	/* NULL ctx fallback */
+	s->token_free_query(ctx);
+	s->token_free_query(NULL);	/* delete[] NULL safe */
+
+	/* counter: +1 per prepare, +1 per token_score, +0 per prepared reuse */
+	long long b = s->adc_table_builds;
+	for (long long t=0;t<10;t++) s->token_score(t, q, ANT_pq_codec::METRIC_DOT);
+	CHECK(s->adc_table_builds - b == 10);
+	long long b2 = s->adc_table_builds;
+	void *c2 = s->token_prepare_query(q);
+	CHECK(s->adc_table_builds - b2 == 1);
+	for (long long t=0;t<10;t++) s->token_score_prepared(t, q, c2);
+	CHECK(s->adc_table_builds - b2 == 1);
+	s->token_free_query(c2);
+
+	/* source adapter delegates */
+	ANT_multivector_pq_source src(s);
+	CHECK(src.is_quantized() == 1);
+	CHECK(src.get(0) == 0);
+	CHECK(src.document_count() == s->token_count());
+	CHECK(src.num_documents() == s->document_count());
+	void *c3 = src.prepare_query(q, ANT_pq_codec::METRIC_DOT);
+	CHECK(fabs(src.score_prepared(0, q, ANT_pq_codec::METRIC_DOT, c3) - s->token_score(0, q, ANT_pq_codec::METRIC_DOT)) < 1e-9);
+	src.free_query(c3);
+	delete s; remove(path);
+	printf("test_token_seam_equivalence PASSED\n");
+}
+
 int main(void)
 {
 	test_float_token_byte_identical();
+	test_token_seam_equivalence();
 	printf("ALL test_pq_token_resident_tier PASSED\n");
 	return 0;
 }

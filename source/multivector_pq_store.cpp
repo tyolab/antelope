@@ -9,7 +9,7 @@
 
 ANT_multivector_pq_store::ANT_multivector_pq_store() :
 	dimension(0), documents(0), total_tokens(0), m(0), metric(0),
-	counts(0), offsets(0), codebook(0), codes(0) {}
+	counts(0), offsets(0), codebook(0), codes(0), adc_table_builds(0) {}
 
 ANT_multivector_pq_store::~ANT_multivector_pq_store()
 {
@@ -42,9 +42,34 @@ double ANT_multivector_pq_store::token_score(long long t, const float *query, lo
 if (!token_has(t)) return 0.0;
 double *table = new double[(size_t)(m * ANT_pq_codec::K)];
 ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+adc_table_builds++;
 double s = ANT_pq_codec::adc_score(codes + t*m, m, table);
 delete [] table;
 return s;
+}
+
+void *ANT_multivector_pq_store::token_prepare_query(const float *query)
+{
+if (total_tokens == 0 || codebook == 0)
+	return 0;								/* degraded store: ctx==NULL -> score_prepared falls back */
+double *table = new double[(size_t)(m * ANT_pq_codec::K)];
+ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+adc_table_builds++;
+return table;
+}
+
+double ANT_multivector_pq_store::token_score_prepared(long long t, const float *query, void *ctx)
+{
+if (ctx == 0)
+	return token_score(t, query, metric);	/* no prepared table -> per-call build (build path) */
+if (!token_has(t))
+	return 0.0;
+return ANT_pq_codec::adc_score(codes + t*m, m, (double *)ctx);
+}
+
+void ANT_multivector_pq_store::token_free_query(void *ctx)
+{
+delete [] (double *)ctx;					/* delete[] NULL is a no-op */
 }
 
 double ANT_multivector_pq_store::maxsim(long long docid, const float *query_vecs, long long num_query_vecs)
