@@ -275,6 +275,8 @@ public:
 	long set_pq_config(long long m, long posture, long rerank_quant);	// enable PQ (m==0 => default_pq_m()); persists pq.config. Idempotent for the same config; nonzero if already set to a DIFFERENT config (immutable), mode invalid, m does not divide the vector dimension, vectors not configured, or V4 int8 quantization already enabled (mutually exclusive).
 	long pq_configured(void) { return pq_m_current != 0; }
 	long long pq_m(void) { return pq_m_current; }
+	long pq_posture(void) { return pq_posture_current; }
+	long pq_rerank_quant(void) { return pq_rerank_quant_current; }
 	long set_pq_policy(long eager) { pq_eager = eager ? 1 : 0; return 0; }
 	long set_pq_resident_tier(long tier);   // 0 ok; nonzero: not open / PQ or vectors unconfigured / invalid tier / NONE+RERANK / already set to a DIFFERENT tier (immutable)
 	long pq_resident_tier(void) { return pq_resident_tier_current; }

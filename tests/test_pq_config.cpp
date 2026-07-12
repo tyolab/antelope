@@ -174,6 +174,32 @@ delete [] dir;
 printf("test_pq_config_persists OK\n");
 }
 
+/*
+	TEST_POSTURE_QUANT_PERSIST()
+	-------------------------------
+	set_pq_config()'s posture and rerank_quant (not just m) persist across
+	close/reopen via load_pq_config().
+*/
+static void test_posture_quant_persist(void)
+{
+char dir[64]; strcpy(dir, "/tmp/ant_pqcfg2_XXXXXX"); { char *d = mkdtemp(dir); CHECK(d != NULL); }
+ATIRE_segment_index *ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(ix->open(dir) == 0);
+CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_RERANK, ATIRE_segment_index::RERANK_QUANT_INT8) == 0);
+delete ix;						/* close; pq.config persisted */
+
+ix = new ATIRE_segment_index();
+CHECK(ix->set_vector_config(16, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+CHECK(ix->open(dir) == 0);				/* load_pq_config restores posture+quant */
+CHECK(ix->pq_configured());
+CHECK(ix->pq_m() == 4);
+CHECK(ix->pq_posture() == ATIRE_segment_index::PQ_POSTURE_RERANK);
+CHECK(ix->pq_rerank_quant() == ATIRE_segment_index::RERANK_QUANT_INT8);
+delete ix;
+printf("test_posture_quant_persist OK\n");
+}
+
 int main(void)
 {
 test_basic_set_and_idempotent_and_immutable();
@@ -183,6 +209,7 @@ test_m_must_divide_dimension();
 test_default_m_rule();
 test_requires_vectors_configured();
 test_pq_config_persists();
+test_posture_quant_persist();
 printf("test_pq_config PASSED\n");
 return 0;
 }
