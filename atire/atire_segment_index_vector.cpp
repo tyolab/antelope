@@ -1118,8 +1118,8 @@ if (!rerank_configured())
 
 for (which = 0; which < segment_count; which++)
 	{
-	if (segments[which].multivectors == NULL || segments[which].multivectors->document_count() == 0)
-		continue;
+	if (segments[which].token_source == NULL || segments[which].token_source->document_count() == 0)
+		continue;	/* no resident token source (float dropped AND no .mvpq) */
 	if (segments[which].token_index != NULL && !segments[which].token_index->empty())
 		continue;	/* already built */
 
@@ -1366,14 +1366,23 @@ if (!multivector_pq_configured() || rerank_dimension_current == 0)
 
 for (which = 0; which < segment_count; which++)
 	{
-	ANT_multivector_store *mv = segments[which].multivectors;
-	if (mv == NULL || mv->tokens_quantized())
-		continue;
 	long long docs = segments[which].engine->get_document_count();
+	ANT_multivector_store *mv = segments[which].multivectors;
+	ANT_multivector_store *mv_disk = NULL;			/* loaded from disk when float pool not resident (NONE tier) */
+	if (mv == NULL)
+		{
+		char mvec_name[4096];
+		segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
+		mv_disk = ANT_multivector_store::load(mvec_name, rerank_dimension_current, docs);
+		if (mv_disk->document_count() == docs && mv_disk->token_count() > 0 && !mv_disk->tokens_quantized())
+			mv = mv_disk;
+		}
+	if (mv == NULL || mv->tokens_quantized())
+		{ delete mv_disk; continue; }
 	if (segments[which].multivector_pq != NULL
 		&& segments[which].multivector_pq->document_count() == docs
 		&& segments[which].multivector_pq->token_count() > 0)
-		continue;
+		{ delete mv_disk; continue; }
 
 	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
 	ANT_multivector_pq_store_writer w;
@@ -1395,6 +1404,7 @@ for (which = 0; which < segment_count; which++)
 		delete segments[which].multivector_pq;
 		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
 		}
+	delete mv_disk;
 	}
 return 0;
 }
@@ -2505,14 +2515,22 @@ long long which, best_count = 0, pool_size = top_k * candidate_multiplier;
 for (which = 0; which < segment_count; which++)
 	{
 	ANT_multivector_store *mv = segments[which].multivectors;
-	if (mv == NULL)
-		continue;
+	ANT_multivector_pq_store *pqs = segments[which].multivector_pq;
 
 	long use_pq = (multivector_pq_configured() && mvpq_posture_current == PQ_POSTURE_REPLACE
-		&& segments[which].multivector_pq != NULL
-		&& segments[which].multivector_pq->token_count() > 0
-		&& segments[which].multivector_pq->document_count() == segments[which].engine->get_document_count());
-	ANT_multivector_pq_store *pqs = segments[which].multivector_pq;
+		&& pqs != NULL
+		&& pqs->token_count() > 0
+		&& pqs->document_count() == segments[which].engine->get_document_count());
+
+	/*
+		#24 NONE tier: mv is NULL (float pool dropped from RAM on load) and the
+		segment's only per-doc existence/exact-score source is the PQ store
+		(ADC maxsim).  That is only usable in REPLACE posture (use_pq); a
+		NONE-tier segment configured RERANK-posture has no float to rerank
+		against, so it is skipped -- same as any segment with neither source.
+	*/
+	if (mv == NULL && !use_pq)
+		continue;
 
 	unsigned char *fbits = evaluate_filter_for_segment(which, filter);   /* NULL when filter==NULL */
 
@@ -2531,7 +2549,7 @@ for (which = 0; which < segment_count; which++)
 		for (long long p = 0; p < n; p++)
 			{
 			long long did = cand[p];
-			if (!mv->has(did))
+			if (mv != NULL ? !mv->has(did) : !pqs->has(did))
 				continue;   /* tombstone+filter already applied by search_candidates */
 			ANT_vector_candidate_insert(best, &best_count, top_k, (use_pq ? pqs->maxsim(did, qn, num_query_vecs) : mv->maxsim(did, qn, num_query_vecs)), segments[which].generation, did);
 			}
@@ -2543,7 +2561,7 @@ for (which = 0; which < segment_count; which++)
 
 		for (long long did = 0; did < docs; did++)
 			{
-			if (!mv->has(did))
+			if (mv != NULL ? !mv->has(did) : !pqs->has(did))
 				continue;
 			if (segments[which].tombstones != NULL && segments[which].tombstones->is_deleted(did))
 				continue;

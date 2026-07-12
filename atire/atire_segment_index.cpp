@@ -1438,17 +1438,6 @@ if (wal != NULL)
 	}
 
 /*
-	Eager token-index policy: build the V6 token graph for the segment just
-	registered above (append_segment() already loaded its multivectors, so
-	it is visible to build_token_index()'s loop).  Idempotent -- skips any
-	segment that already has a built index -- and best-effort like the
-	other flush() sidecars: a build failure just leaves that segment on the
-	brute-force MaxSim fallback until the next flush/backfill.
-*/
-if (token_index_eager)
-	build_token_index();
-
-/*
 	Eager PQ policy: build .pq for the segment just flushed (append_segment()
 	already ran, so it is visible to build_pq()'s loop).  Idempotent, best-effort
 	like the other flush() sidecars.
@@ -1466,6 +1455,22 @@ if (pq_eager && hnsw_M_current != 0)
 */
 if (mvpq_eager)
 	build_multivector_pq();
+
+/*
+	Eager token-index policy: build the V6 token graph for the segment just
+	registered above (append_segment() already loaded its multivectors, so
+	it is visible to build_token_index()'s loop).  Idempotent -- skips any
+	segment that already has a built index -- and best-effort like the
+	other flush() sidecars: a build failure just leaves that segment on the
+	brute-force MaxSim fallback until the next flush/backfill.
+
+	#24: run AFTER the eager .mvpq build above -- under a NONE-configured
+	index a resident_tier NONE segment's token_source is the PQ store, so
+	build_multivector_pq() must have (re)built/loaded .mvpq before
+	build_token_index() walks token_source for that segment.
+*/
+if (token_index_eager)
+	build_token_index();
 
 return 0;
 }
