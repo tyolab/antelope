@@ -225,6 +225,123 @@ static void test_compaction_under_none(void)
 	printf("test_compaction_under_none PASSED\n");
 }
 
+/*
+	TEST_CROSS_TIER_RECALL()
+	-------------------------
+	Build the SAME 40-doc synthetic set + fixed 2-vector query at FLOAT tier (plain
+	V6, no token-PQ -- reuses build_v6()) and record the top-10 docids from
+	search_multivector(); then build a second index over identical data with
+	token-PQ configured, flip to MV_TIER_NONE, reopen (tier realized at load),
+	build_token_index() (over the PQ source), and record its top-10 docids.
+	Assert the NONE top-10 overlaps the FLOAT top-10 by at least 7/10 -- PQ
+	token-ANN search is a faithful approximation of exact float MaxSim, not an
+	unrelated ranking.
+*/
+static void test_cross_tier_recall(void)
+{
+	/* --- FLOAT baseline: plain V6, no token-PQ --- */
+	long long gen_f;
+	ATIRE_segment_index *idxf = build_v6(&gen_f);
+	float qf[2*8];
+	for (int r=0;r<2;r++){ double n=0; for(int j=0;j<8;j++){ qf[r*8+j]=(float)((r*11+j*2)%13-6)/6.0f; n+=qf[r*8+j]*qf[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) qf[r*8+j]/=(float)n; }
+	long long nf = idxf->search_multivector(qf, 2, 10);
+	CHECK(nf > 0);
+	long long float_n = nf < 10 ? nf : 10;
+	long long float_docids[10];
+	for (long long i=0;i<float_n;i++)
+		float_docids[i] = idxf->get_hit(i)->docid;
+	delete idxf;
+
+	/* --- NONE tier: same 40 docs, token-PQ configured, tier flipped to NONE, reopened --- */
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	for (int d=0; d<40; d++)
+		{
+		char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d);
+		int md = 2 + (d % 3);
+		float rows[4*8];
+		for (int r=0;r<md;r++)
+			{ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; }
+			  n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
+		CHECK(idx->add_document(nm, "body", NULL, rows, md) >= 0);
+		}
+	CHECK(idx->flush() == 0);
+	CHECK(idx->build_multivector_pq() == 0);
+	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) == 0);
+	delete idx;						/* close; NONE takes effect on reopen */
+
+	idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);				/* load_multivector_pq_config -> NONE */
+	CHECK(idx->disk_segment_resident_tier_mv(0) == ATIRE_segment_index::MV_TIER_NONE);
+	CHECK(idx->build_token_index() == 0);			/* builds .tann over the PQ source */
+	CHECK(idx->disk_segment_has_token_index(0) == 1);
+
+	float qn[2*8];
+	for (int r=0;r<2;r++){ double n=0; for(int j=0;j<8;j++){ qn[r*8+j]=(float)((r*11+j*2)%13-6)/6.0f; n+=qn[r*8+j]*qn[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) qn[r*8+j]/=(float)n; }
+	long long nn = idx->search_multivector(qn, 2, 10);
+	CHECK(nn > 0);
+	long long none_n = nn < 10 ? nn : 10;
+	long long none_docids[10];
+	for (long long i=0;i<none_n;i++)
+		none_docids[i] = idx->get_hit(i)->docid;
+	delete idx;
+
+	/* overlap: how many of the FLOAT top-10 docids also appear in the NONE top-10 */
+	long long overlap = 0;
+	for (long long i=0;i<float_n;i++)
+		for (long long j=0;j<none_n;j++)
+			if (float_docids[i] == none_docids[j])
+				{ overlap++; break; }
+
+	printf("cross-tier recall overlap = %lld / %lld\n", overlap, float_n);
+	CHECK(overlap >= 7);
+	printf("test_cross_tier_recall PASSED\n");
+}
+
+/*
+	TEST_CONFIG_V1_BACKCOMPAT()
+	-----------------------------
+	Locks load_multivector_pq_config()'s version==1 branch (Task 3 review noted no
+	standalone regression for this). Configure token-PQ (which writes the CURRENT
+	v2 layout: 8-byte tag "ANTMVPQC" + u32 version=2 + 4 i64 { m, posture,
+	rerank_quant, tier }), close, then hand-rewrite multivector_pq.config to the
+	EXACT v1 on-disk layout (u32 version=1 + 3 i64 { m, posture, rerank_quant },
+	no tier field) and reopen. The v1 file has no tier field, so the loader must
+	default it to MV_TIER_FLOAT (see the version==1 branch: "vals[3] = MV_TIER_FLOAT").
+*/
+static void test_config_v1_backcompat(void)
+{
+	char cmd[2048]; snprintf(cmd,sizeof(cmd),"rm -rf %s && mkdir -p %s",DIR,DIR); system(cmd);
+	ATIRE_segment_index *idx = new ATIRE_segment_index();
+	CHECK(idx->open(DIR) == 0);
+	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);	/* writes v2 */
+	CHECK(idx->multivector_pq_m() == 4);
+	delete idx;
+
+	/* hand-rewrite multivector_pq.config from v2 to the EXACT v1 layout */
+	char path[2048]; snprintf(path,sizeof(path),"%s/multivector_pq.config",DIR);
+	unsigned int v1 = 1;
+	long long vals[3] = { 4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT };
+	FILE *out = fopen(path, "wb");
+	CHECK(out != NULL);
+	CHECK(fwrite("ANTMVPQC", 1, 8, out) == 8);
+	CHECK(fwrite(&v1, 4, 1, out) == 1);
+	CHECK(fwrite(vals, 8, 3, out) == 3);
+	CHECK(fclose(out) == 0);
+
+	ATIRE_segment_index *idx2 = new ATIRE_segment_index();
+	CHECK(idx2->open(DIR) == 0);				/* triggers load_multivector_pq_config(), version==1 branch */
+	CHECK(idx2->multivector_pq_configured() == 1);
+	CHECK(idx2->multivector_pq_m() == 4);
+	CHECK(idx2->multivector_resident_tier() == ATIRE_segment_index::MV_TIER_FLOAT);	/* v1 has no tier field -> must default FLOAT */
+	delete idx2;
+	printf("test_config_v1_backcompat PASSED\n");
+}
+
 int main(void)
 {
 	test_float_token_byte_identical();
@@ -233,6 +350,8 @@ int main(void)
 	test_none_tier_end_to_end();
 	test_none_rerank_rejected();
 	test_compaction_under_none();
+	test_cross_tier_recall();
+	test_config_v1_backcompat();
 	printf("ALL test_pq_token_resident_tier PASSED\n");
 	return 0;
 }
