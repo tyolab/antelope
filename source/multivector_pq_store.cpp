@@ -111,9 +111,12 @@ long long dim = read_i64(hdr+12), docs = read_i64(hdr+20), toks = read_i64(hdr+2
 if (dim != expected_dimension || docs != expected_documents || kk != ANT_pq_codec::K) { fclose(in); return s; }
 if (mm < 1 || dim < 1 || mm > dim || dim % mm != 0 || docs < 0 || toks < 0) { fclose(in); return s; }
 
-long long expected_size = 52 + docs*4 + toks*mm + 256*dim*4;
 if (fseek(in, 0, SEEK_END) != 0) { fclose(in); return s; }
 long long actual = ftell(in);
+/* toks is the only header count without an upper bound; cap it against the real file size so
+   toks*mm below cannot signed-overflow (docs/dim are already pinned to expected_* above). */
+if (actual < 52 || (mm > 0 && toks > (actual - 52) / mm)) { fclose(in); return s; }
+long long expected_size = 52 + docs*4 + toks*mm + 256*dim*4;
 if (actual != expected_size) { fclose(in); return s; }
 if (fseek(in, 52, SEEK_SET) != 0) { fclose(in); return s; }
 

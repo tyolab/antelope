@@ -107,6 +107,12 @@ if (memcmp(stored_magic, ANT_PQ_STORE_MAGIC, 8) != 0
 	the actual file size matches exactly what the writer would have produced
 	before trusting the header.
 */
+/*
+	#25: unlike the token .mvpq path, no extra overflow bound is needed here --
+	stored_documents is capped at 2^40 and stored_dimension at 65536 (validated
+	above), so stored_documents*stored_m <= 2^56 and codebook_floats*4 <= 2^26,
+	both well below LLONG_MAX; the products cannot signed-overflow.
+*/
 long long presence_bytes = (stored_documents + 7) / 8;
 long long codebook_floats = stored_m * (long long)ANT_pq_codec::K * (stored_dimension / stored_m);
 long long codes_bytes = stored_documents * stored_m;

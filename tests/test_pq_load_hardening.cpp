@@ -2,8 +2,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <limits.h>
 #include "../atire/atire_segment_index.h"
 #include "../source/pq_codec.h"
+#include "../source/multivector_pq_store.h"
+#include "../source/pq_store.h"
 #define CHECK(c) do { if(!(c)){printf("FAIL %s:%d: %s\n",__FILE__,__LINE__,#c);exit(1);} } while(0)
 static const char *DIR = "/tmp/test_pq_load_hardening_idx";
 
@@ -112,12 +115,49 @@ static void test_valid_config_still_loads(void)
 	printf("test_valid_config_still_loads PASSED\n");
 }
 
+/* A .mvpq header claiming a huge total_tokens must degrade to an empty store, not overflow/alloc. */
+static void test_mvpq_crafted_toks_rejected(void)
+{
+	const char *path = "/tmp/test_pq_hardening_crafted.mvpq";
+	FILE *f = fopen(path,"wb"); CHECK(f != NULL);
+	long long dim=16, docs=1, toks = LLONG_MAX/2, m=8, k=256;	/* toks*m overflows if unbounded */
+	unsigned int version = 1;
+	CHECK(fwrite("ANTMVPQ1",1,8,f)==8 && fwrite(&version,4,1,f)==1
+		&& fwrite(&dim,8,1,f)==1 && fwrite(&docs,8,1,f)==1 && fwrite(&toks,8,1,f)==1
+		&& fwrite(&m,8,1,f)==1 && fwrite(&k,8,1,f)==1);
+	/* deliberately DO NOT write the (impossibly huge) body */
+	fclose(f);
+	ANT_multivector_pq_store *s = ANT_multivector_pq_store::load(path, dim, docs, ANT_pq_codec::METRIC_DOT);
+	CHECK(s->token_count() == 0);					/* degraded empty: bound rejected the header */
+	delete s; remove(path);
+	printf("test_mvpq_crafted_toks_rejected PASSED\n");
+}
+
+/* Dense .pq with an out-of-cap documents count is already rejected (the 2^40 cap); confirm it degrades. */
+static void test_pq_crafted_documents_rejected(void)
+{
+	const char *path = "/tmp/test_pq_hardening_crafted.pq";
+	FILE *f = fopen(path,"wb"); CHECK(f != NULL);
+	/* header layout: magic[8]="ANTPQ001", u32 version(1), i64 dimension, i64 documents, i64 m, i64 k */
+	long long dim=16, documents = (1LL<<41), m=4, k=256;		/* > 2^40 cap -> rejected */
+	unsigned int version = 1;
+	CHECK(fwrite("ANTPQ001",1,8,f)==8 && fwrite(&version,4,1,f)==1
+		&& fwrite(&dim,8,1,f)==1 && fwrite(&documents,8,1,f)==1 && fwrite(&m,8,1,f)==1 && fwrite(&k,8,1,f)==1);
+	fclose(f);
+	ANT_pq_store *s = ANT_pq_store::load(path, dim, documents, ANT_pq_codec::METRIC_DOT);
+	CHECK(s->document_count() == 0);				/* degraded empty */
+	delete s; remove(path);
+	printf("test_pq_crafted_documents_rejected PASSED\n");
+}
+
 int main(void)
 {
 	test_dense_config_bad_m_rejected();
 	test_dense_config_bad_posture_rejected();
 	test_token_config_bad_m_rejected();
 	test_valid_config_still_loads();
+	test_mvpq_crafted_toks_rejected();
+	test_pq_crafted_documents_rejected();
 	printf("ALL test_pq_load_hardening PASSED\n");
 	return 0;
 }
