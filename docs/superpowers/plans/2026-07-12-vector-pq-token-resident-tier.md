@@ -16,7 +16,14 @@
 - After an ASan sweep, a full clean rebuild (`rm -f obj/*.o lib/libantelope_engine.a bin/<test>`) is required before a normal link.
 - Config setters are POST-open: order is `open(dir)` → `set_rerank_config(dim, RERANK_QUANT_FLOAT)` → `set_multivector_pq_config(m, posture, rerank_quant)` → `set_multivector_resident_tier(tier)` → `set_token_index_policy(...)`.
 - `segment_filename(buf, size, generation, "ext")` → `seg_%06lld.<ext>`. Token graph metric is `ANT_vector_store::METRIC_DOT` / `ANT_pq_codec::METRIC_DOT` (== 0); `ANT_pq_codec::K == 256`.
-- Multi-vector docs are added via the `add_document` multi-vector overload used by the existing `tests/test_multivector*.cpp` / token-PQ tests — copy that call shape from `tests/test_pq_tokens*.cpp` when writing tests.
+- Multi-vector docs are added via the 5-arg `add_document` overload (see VERIFIED API below); copy the call shape from `tests/test_mvpq_recall.cpp` (`add_document(k,b,NULL,doc,md)`).
+
+**VERIFIED API (this block WINS over any test snippet below — the snippets predate this verification; use these exact forms):**
+- Multi-vector add is **5-arg**: `add_document(const char *key, const char *body, const float *vector, const float *multivector, long long num_vectors)`. The dense `vector` arg is `NULL` for token-only docs. So every `add_document(name, "body", rows, md)` in the snippets below must be written `add_document(name, "body", NULL, rows, md)`.
+- **There is NO `set_token_index_config`.** `token_index_M`/`token_index_ef_construction` default to **16 / 200** in the constructor (no public setter). **Delete every `set_token_index_config(...)` call** from the snippets below — the defaults apply; `ANT_token_index::build`/`load` use `token_index_M`/`token_index_ef_construction` directly.
+- Compaction entry point is **`compact(long long *input_generations, long long input_count)`**, NOT `compact()`. To merge the two segments in the Task-5 test, collect the generations first: `long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) }; CHECK(idx->compact(gens, 2) == 0);`.
+- Existing regression suites to re-run are `test_mvpq_recall` / `test_mvpq_search` / `test_mvpq_compaction` / `test_v6_search_multivector` / `test_v6_build_token_index` (NOT `test_pq_tokens`/`test_multivector`, which do not exist). List them with `ls tests/ | grep -E 'mvpq|v6'`.
+- Doc/query rows must be L2-normalized (MaxSim over normalized vectors == dot); the snippets already normalize — keep that.
 
 **IMPORTANT design decision (pin this):** the resident tier is **realized at load** (`append_segment`), not in-session. `set_multivector_resident_tier` persists the config and invalidates stale `.tann` (below); the NONE load path (no float resident, PQ token source) engages on the next `open()`. Tests therefore build/`.mvpq` at FLOAT, set the tier, **reopen**, then `build_token_index`/search. And `build_multivector_pq` must read the on-disk `.mvec` when `multivectors == NULL` (NONE, post-reopen backfill) — see Task 4.
 
@@ -64,7 +71,7 @@ static ATIRE_segment_index *build_v6(long long *gen_out)
 	ATIRE_segment_index *idx = new ATIRE_segment_index();
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);	/* POST-open */
-	CHECK(idx->set_token_index_config(16, 100) == 0);		/* token-ANN M/ef; POST-open */
+	/* token index M/ef = ctor defaults 16/200; no public setter */
 	float row[8];
 	for (int d = 0; d < 40; d++)
 		{
@@ -74,7 +81,7 @@ static ATIRE_segment_index *build_v6(long long *gen_out)
 		for (int r = 0; r < md; r++)
 			{ double nrm=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; nrm+=rows[r*8+j]*rows[r*8+j]; }
 			  nrm=sqrt(nrm)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)nrm; }
-		CHECK(idx->add_document(name, "body words here", rows, md) >= 0);	/* multi-vector overload */
+		CHECK(idx->add_document(name, "body words here", NULL, rows, md) >= 0);	/* 5-arg multi-vector overload */
 		}
 	CHECK(idx->flush() == 0);
 	*gen_out = idx->disk_segment_generation(0);
@@ -268,8 +275,8 @@ Run:
 ```bash
 rm -f obj/*.o lib/libantelope_engine.a
 make test_pq_token_resident_tier && ./bin/test_pq_token_resident_tier
-make test_pq_tokens && ./bin/test_pq_tokens
-make test_multivector && ./bin/test_multivector
+make test_mvpq_recall && ./bin/test_mvpq_recall
+make test_v6_search_multivector && ./bin/test_v6_search_multivector
 ```
 (Confirm the exact existing token/token-PQ test names with `ls tests/ | grep -E 'token|multivector'` and run them.)
 Expected: `test_pq_token_resident_tier` prints the SAME top-1 line as Step 2 and PASSES; the existing token/token-PQ/multivector suites all PASS (float path byte-identical).
@@ -467,12 +474,12 @@ static void test_tier_change_invalidates_tann(void)
 	ATIRE_segment_index *idx = new ATIRE_segment_index();
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
-	CHECK(idx->set_token_index_config(16, 100) == 0);
+	/* token index M/ef = ctor defaults 16/200; no public setter */
 	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
 	float row[8];
 	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); int md=2+(d%3); float rows[4*8];
 		for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
-		CHECK(idx->add_document(nm,"body",rows,md)>=0); }
+		CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
 	CHECK(idx->flush() == 0);
 	long long gen = idx->disk_segment_generation(0);
 	CHECK(idx->build_multivector_pq() == 0);
@@ -653,7 +660,7 @@ Add `#include "../source/multivector_pq_store.h"` at the top of `atire_segment_i
 - [ ] **Step 7: Rebuild and run (invalidation fail-first now passes)**
 
 Run: `rm -f obj/*.o lib/libantelope_engine.a && make test_pq_token_resident_tier && ./bin/test_pq_token_resident_tier`
-Expected: PASS including `test_tier_change_invalidates_tann PASSED`. Re-run the existing token-PQ suite (`make test_pq_tokens && ./bin/test_pq_tokens`) — still PASS (v1 config back-compat + FLOAT default unchanged).
+Expected: PASS including `test_tier_change_invalidates_tann PASSED`. Re-run the existing token-PQ suite (`make test_mvpq_recall && ./bin/test_mvpq_recall`) — still PASS (v1 config back-compat + FLOAT default unchanged).
 
 - [ ] **Step 8: Commit**
 
@@ -681,11 +688,11 @@ static void test_none_tier_end_to_end(void)
 	ATIRE_segment_index *idx = new ATIRE_segment_index();
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
-	CHECK(idx->set_token_index_config(16, 100) == 0);
+	/* token index M/ef = ctor defaults 16/200; no public setter */
 	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
 	for (int d=0; d<40; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d",d); int md=2+(d%3); float rows[4*8];
 		for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
-		CHECK(idx->add_document(nm,"body",rows,md)>=0); }
+		CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
 	CHECK(idx->flush() == 0);
 	CHECK(idx->build_multivector_pq() == 0);
 	CHECK(idx->set_multivector_resident_tier(ATIRE_segment_index::MV_TIER_NONE) == 0);
@@ -755,7 +762,7 @@ And free `mv_disk` at the end of the per-segment iteration (after the `.mvpq` is
 - [ ] **Step 5: Rebuild and run (NONE end-to-end + seam-engaged pass)**
 
 Run: `rm -f obj/*.o lib/libantelope_engine.a && make test_pq_token_resident_tier && ./bin/test_pq_token_resident_tier`
-Expected: PASS including `test_none_tier_end_to_end PASSED`. Re-run `test_pq_tokens` — still PASS.
+Expected: PASS including `test_none_tier_end_to_end PASSED`. Re-run `test_mvpq_recall` — still PASS.
 
 - [ ] **Step 6: Eager-flush ordering (`atire/atire_segment_index.cpp:1446`)**
 
@@ -787,13 +794,13 @@ static void test_compaction_under_none(void)
 	ATIRE_segment_index *idx = new ATIRE_segment_index();
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->set_rerank_config(8, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
-	CHECK(idx->set_token_index_config(16, 100) == 0);
+	/* token index M/ef = ctor defaults 16/200; no public setter */
 	CHECK(idx->set_multivector_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
 	for (int f=0; f<2; f++)
 		{
 		for (int d=0; d<20; d++){ char nm[64]; snprintf(nm,sizeof(nm),"doc%d_%d",f,d); int md=2+(d%3); float rows[4*8];
 			for(int r=0;r<md;r++){ double n=0; for(int j=0;j<8;j++){ rows[r*8+j]=(float)((d*7+r*5+j*3+f)%13-6)/6.0f; n+=rows[r*8+j]*rows[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) rows[r*8+j]/=(float)n; }
-			CHECK(idx->add_document(nm,"body",rows,md)>=0); }
+			CHECK(idx->add_document(nm,"body",NULL,rows,md)>=0); }
 		CHECK(idx->flush() == 0);
 		}
 	CHECK(idx->build_multivector_pq() == 0);
@@ -803,7 +810,8 @@ static void test_compaction_under_none(void)
 	CHECK(idx->open(DIR) == 0);
 	CHECK(idx->build_multivector_pq() == 0);
 	CHECK(idx->build_token_index() == 0);
-	CHECK(idx->compact() == 0);
+	long long gens[2] = { idx->disk_segment_generation(0), idx->disk_segment_generation(1) };
+	CHECK(idx->compact(gens, 2) == 0);
 	CHECK(idx->disk_segment_resident_tier_mv(0) == ATIRE_segment_index::MV_TIER_NONE);
 	float q[2*8]; for (int r=0;r<2;r++){ double n=0; for(int j=0;j<8;j++){ q[r*8+j]=(float)((r*11+j*2)%13-6)/6.0f; n+=q[r*8+j]*q[r*8+j]; } n=sqrt(n)+1e-9; for(int j=0;j<8;j++) q[r*8+j]/=(float)n; }
 	CHECK(idx->search_multivector(q, 2, 10) > 0);
@@ -839,7 +847,7 @@ Place this AFTER both the `multivectors` reload (~591) and the `multivector_pq` 
 - [ ] **Step 4: Rebuild and run**
 
 Run: `rm -f obj/*.o lib/libantelope_engine.a && make test_pq_token_resident_tier && ./bin/test_pq_token_resident_tier`
-Expected: PASS including `test_compaction_under_none PASSED`. Re-run `test_pq_tokens`, `test_segment_index` (compaction regressions) — PASS.
+Expected: PASS including `test_compaction_under_none PASSED`. Re-run `test_mvpq_compaction` and `test_v6_search_multivector` (compaction/token regressions) — PASS.
 
 - [ ] **Step 5: Commit**
 
