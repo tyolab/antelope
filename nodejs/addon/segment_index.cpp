@@ -42,6 +42,23 @@ private:
 	long option_quantize;				// ATIRE_segment_index::QUANTIZE_OFF/REPLACE/EXACT
 	long long option_rerank_dim;		// 0 = off
 	long option_rerank_quant;			// ATIRE_segment_index::RERANK_QUANT_FLOAT/INT8
+	bool option_rerank_quant_explicit;	// true when options.rerank.quantize was supplied
+	// #23 dense PQ
+	bool option_pq_requested;
+	long long option_pq_m;
+	long option_pq_posture;
+	long option_pq_rerank_quant;
+	bool option_pq_tier_requested;
+	long option_pq_tier;
+	long option_pq_eager;
+	// #23 token (multivector) PQ
+	bool option_mvpq_requested;
+	long long option_mvpq_m;
+	long option_mvpq_posture;
+	long option_mvpq_rerank_quant;
+	bool option_mvpq_tier_requested;
+	long option_mvpq_tier;
+	long option_mvpq_eager;
 	ANT_attribute_schema option_attributes;	// attribute filter schema captured at construction
 	bool option_has_attributes;			// true when options.attributes was supplied
 
@@ -86,6 +103,8 @@ public:
 	Napi::Value BuildSignatures(const Napi::CallbackInfo &info);
 	Napi::Value BuildHnsw(const Napi::CallbackInfo &info);
 	Napi::Value BuildQuantized(const Napi::CallbackInfo &info);
+	Napi::Value BuildPq(const Napi::CallbackInfo &info);
+	Napi::Value BuildMultivectorPq(const Napi::CallbackInfo &info);
 };
 
 /*
@@ -117,6 +136,21 @@ option_hnsw_ef_search = 0;			// unset
 option_quantize = ATIRE_segment_index::QUANTIZE_OFF;
 option_rerank_dim = 0;				// off
 option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+option_rerank_quant_explicit = false;
+option_pq_requested = false;
+option_pq_m = 0;
+option_pq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+option_pq_tier_requested = false;
+option_pq_tier = ATIRE_segment_index::PQ_TIER_FLOAT;
+option_pq_eager = 0;
+option_mvpq_requested = false;
+option_mvpq_m = 0;
+option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+option_mvpq_tier_requested = false;
+option_mvpq_tier = ATIRE_segment_index::MV_TIER_FLOAT;
+option_mvpq_eager = 0;
 option_has_attributes = false;
 
 if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
@@ -215,7 +249,67 @@ if (info.Length() >= 1 && !info[0].IsUndefined() && !info[0].IsNull())
 			{
 			std::string q = r.Get("quantize").ToString().Utf8Value();
 			option_rerank_quant = (q == "float") ? ATIRE_segment_index::RERANK_QUANT_FLOAT : ATIRE_segment_index::RERANK_QUANT_INT8;
+			option_rerank_quant_explicit = true;
 			}
+		}
+	if (options.Has("pq") && options.Get("pq").IsObject())
+		{
+		Napi::Object p = options.Get("pq").As<Napi::Object>();
+		option_pq_requested = true;
+		if (p.Has("m")) option_pq_m = (long long)p.Get("m").As<Napi::Number>().Int64Value();
+		if (p.Has("posture"))
+			{
+			std::string s = p.Get("posture").ToString().Utf8Value();
+			if (s == "replace") option_pq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+			else if (s == "rerank") option_pq_posture = ATIRE_segment_index::PQ_POSTURE_RERANK;
+			else { Napi::TypeError::New(env, "pq.posture must be 'replace' or 'rerank'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("rerankQuant"))
+			{
+			std::string s = p.Get("rerankQuant").ToString().Utf8Value();
+			if (s == "float") option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+			else if (s == "int8") option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+			else { Napi::TypeError::New(env, "pq.rerankQuant must be 'float' or 'int8'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("residentTier"))
+			{
+			std::string s = p.Get("residentTier").ToString().Utf8Value();
+			option_pq_tier_requested = true;
+			if (s == "float") option_pq_tier = ATIRE_segment_index::PQ_TIER_FLOAT;
+			else if (s == "int8") option_pq_tier = ATIRE_segment_index::PQ_TIER_INT8;
+			else if (s == "none") option_pq_tier = ATIRE_segment_index::PQ_TIER_NONE;
+			else { Napi::TypeError::New(env, "pq.residentTier must be 'float', 'int8', or 'none'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("eager")) option_pq_eager = p.Get("eager").ToBoolean().Value() ? 1 : 0;
+		}
+	if (options.Has("multivectorPq") && options.Get("multivectorPq").IsObject())
+		{
+		Napi::Object p = options.Get("multivectorPq").As<Napi::Object>();
+		option_mvpq_requested = true;
+		if (p.Has("m")) option_mvpq_m = (long long)p.Get("m").As<Napi::Number>().Int64Value();
+		if (p.Has("posture"))
+			{
+			std::string s = p.Get("posture").ToString().Utf8Value();
+			if (s == "replace") option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+			else if (s == "rerank") option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_RERANK;
+			else { Napi::TypeError::New(env, "multivectorPq.posture must be 'replace' or 'rerank'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("rerankQuant"))
+			{
+			std::string s = p.Get("rerankQuant").ToString().Utf8Value();
+			if (s == "float") option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+			else if (s == "int8") option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+			else { Napi::TypeError::New(env, "multivectorPq.rerankQuant must be 'float' or 'int8'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("residentTier"))
+			{
+			std::string s = p.Get("residentTier").ToString().Utf8Value();
+			option_mvpq_tier_requested = true;
+			if (s == "float") option_mvpq_tier = ATIRE_segment_index::MV_TIER_FLOAT;
+			else if (s == "none") option_mvpq_tier = ATIRE_segment_index::MV_TIER_NONE;
+			else { Napi::TypeError::New(env, "multivectorPq.residentTier must be 'float' or 'none'").ThrowAsJavaScriptException(); return; }
+			}
+		if (p.Has("eager")) option_mvpq_eager = p.Get("eager").ToBoolean().Value() ? 1 : 0;
 		}
 	if (options.Has("attributes") && !options.Get("attributes").IsUndefined() && !options.Get("attributes").IsNull())
 		{
@@ -348,11 +442,37 @@ if (option_hnsw_M >= 0)
    if it fails (mode stays off -- e.g. a different mode already persisted). */
 if (option_quantize != ATIRE_segment_index::QUANTIZE_OFF)
 	engine->set_quantization(option_quantize);
+/* token-pool PQ needs a float .mvec tier (int8 .mvec is the mutually-exclusive alternative);
+   default the rerank tier to float when multivectorPq is requested and the caller didn't pin quantize. */
+if (option_mvpq_requested && !option_rerank_quant_explicit)
+	option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
 /* Rerank (late-interaction / MaxSim) config is index-wide and must be set
    before the first flush; NON-FATAL if it fails (rerank simply stays off --
    e.g. a different dimension already persisted). */
 if (option_rerank_dim > 0)
 	engine->set_rerank_config(option_rerank_dim, option_rerank_quant);
+/* Dense + token product-quantization config is index-wide and must be set
+   before the first flush; NON-FATAL if it fails (PQ simply stays off --
+   e.g. mutually exclusive with int8 quantize/rerank, or already persisted
+   with a different config). */
+if (option_pq_requested)
+	{
+	if (engine->set_pq_config(option_pq_m, option_pq_posture, option_pq_rerank_quant) == 0)
+		{
+		if (option_pq_tier_requested)
+			engine->set_pq_resident_tier(option_pq_tier);
+		engine->set_pq_policy(option_pq_eager);
+		}
+	}
+if (option_mvpq_requested)
+	{
+	if (engine->set_multivector_pq_config(option_mvpq_m, option_mvpq_posture, option_mvpq_rerank_quant) == 0)
+		{
+		if (option_mvpq_tier_requested)
+			engine->set_multivector_resident_tier(option_mvpq_tier);
+		engine->set_multivector_pq_policy(option_mvpq_eager);
+		}
+	}
 /* Attribute filter schema is index-wide and immutable once set; apply it here
    after a successful open, before the first flush (mirrors the rerank
    placement).  Non-fatal if unsupported -- filtering simply stays off. */
@@ -1623,7 +1743,7 @@ return hits_to_array(env, engine, count);
 class MaintenanceWorker : public Napi::AsyncWorker
 {
 public:
-	enum Operation { FLUSH, MAINTAIN, BUILD, BUILD_HNSW, BUILD_QUANTIZED };
+	enum Operation { FLUSH, MAINTAIN, BUILD, BUILD_HNSW, BUILD_QUANTIZED, BUILD_PQ, BUILD_MULTIVECTOR_PQ };
 
 private:
 	SegmentIndexWrap *wrapper;
@@ -1648,6 +1768,8 @@ public:
 		case BUILD:		result = wrapper->engine->build_signatures(); break;
 		case BUILD_HNSW:	result = wrapper->engine->build_hnsw(); break;
 		case BUILD_QUANTIZED:	result = wrapper->engine->build_quantized(); break;
+		case BUILD_PQ:				result = wrapper->engine->build_pq(); break;
+		case BUILD_MULTIVECTOR_PQ:	result = wrapper->engine->build_multivector_pq(); break;
 		}
 	}
 
@@ -1657,7 +1779,7 @@ public:
 	if (result == 0)
 		deferred.Resolve(Env().Undefined());
 	else
-		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : operation == BUILD_HNSW ? "build_hnsw failed" : operation == BUILD_QUANTIZED ? "build_quantized failed" : "maintain failed").Value());
+		deferred.Reject(Napi::Error::New(Env(), operation == FLUSH ? "flush failed; index degraded to read-only" : operation == BUILD ? "build_signatures failed" : operation == BUILD_HNSW ? "build_hnsw failed" : operation == BUILD_QUANTIZED ? "build_quantized failed" : operation == BUILD_PQ ? "build_pq failed" : operation == BUILD_MULTIVECTOR_PQ ? "build_multivector_pq failed" : "maintain failed").Value());
 	}
 
 	void OnError(const Napi::Error &error)
@@ -1790,6 +1912,55 @@ return worker->Promise();
 }
 
 /*
+	SEGMENTINDEXWRAP::BUILDPQ()
+	--------------------------------
+	Idempotent backfill: builds/rebuilds the dense product-quantization
+	codebook + codes (.pq) per the pq{} config captured at construction.
+	Identical to BuildQuantized() except for the MaintenanceWorker::BUILD_PQ
+	operation tag -- see Flush()'s banner comment for the busy-guard and
+	never-throw-synchronously rules, which apply here too.
+*/
+Napi::Value SegmentIndexWrap::BuildPq(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::BUILD_PQ);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
+	SEGMENTINDEXWRAP::BUILDMULTIVECTORPQ()
+	--------------------------------------------
+	Idempotent backfill: builds/rebuilds the token-pool (multivector)
+	product-quantization codebook + codes (.mvpq) per the multivectorPq{}
+	config captured at construction.  Identical to BuildPq() except for the
+	MaintenanceWorker::BUILD_MULTIVECTOR_PQ operation tag -- see Flush()'s
+	banner comment for the busy-guard and never-throw-synchronously rules,
+	which apply here too.
+*/
+Napi::Value SegmentIndexWrap::BuildMultivectorPq(const Napi::CallbackInfo &info)
+{
+Napi::Env env = info.Env();
+if (state != OPEN)
+	{
+	Napi::Promise::Deferred deferred = Napi::Promise::Deferred::New(env);
+	deferred.Reject(Napi::Error::New(env, state == MAINTENANCE ? "maintenance in progress" : "index is not open").Value());
+	return deferred.Promise();
+	}
+state = MAINTENANCE;
+MaintenanceWorker *worker = new MaintenanceWorker(env, this, info.This().As<Napi::Object>(), MaintenanceWorker::BUILD_MULTIVECTOR_PQ);
+worker->Queue();
+return worker->Promise();
+}
+
+/*
 	SEGMENTINDEXWRAP::REGISTER()
 	-------------------------------
 	Defines the complete method shape of the class in one place; the
@@ -1818,6 +1989,8 @@ Napi::Function ctor = DefineClass(env, "SegmentIndex", {
 	InstanceMethod("buildSignatures", &SegmentIndexWrap::BuildSignatures),
 	InstanceMethod("buildHnsw", &SegmentIndexWrap::BuildHnsw),
 	InstanceMethod("buildQuantized", &SegmentIndexWrap::BuildQuantized),
+	InstanceMethod("buildPq", &SegmentIndexWrap::BuildPq),
+	InstanceMethod("buildMultivectorPq", &SegmentIndexWrap::BuildMultivectorPq),
 });
 exports.Set("SegmentIndex", ctor);
 return exports;
