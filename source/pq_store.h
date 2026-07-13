@@ -51,9 +51,11 @@ class ANT_pq_store_writer
 private:
 	char *filename; long long dimension, m; long metric; long opq;
 	float *buffer; long long capacity, documents; unsigned char *presence; long long presence_capacity;
+	const float *ext_codebook; const float *ext_rotation;	// borrowed; when ext_codebook set, finish() skips training
 public:
 	ANT_pq_store_writer(); ~ANT_pq_store_writer();
 	long create(const char *path, long long dim, long long m, long metric, long opq);
+	void set_external_codebook(const float *codebook, const float *rotation);	// use these instead of training (rotation NULL = non-OPQ)
 	long append(const float *vector_or_null);
 	long finish(void);
 	void abandon(void);

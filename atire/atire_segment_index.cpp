@@ -94,6 +94,10 @@ pq_resident_tier_current = PQ_TIER_FLOAT;
 pq_opq_current = 0;
 pq_eager = 0;
 
+pq_global_current = 0;
+global_pq_codebook = NULL;
+global_pq_rotation = NULL;
+
 mvpq_m_current = 0;
 mvpq_posture_current = PQ_POSTURE_REPLACE;
 mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
@@ -144,6 +148,8 @@ delete writer_tombstones;
 reset_writer_vectors();
 delete query_signer;
 delete wal;
+delete [] global_pq_codebook;
+delete [] global_pq_rotation;
 
 for (which = 0; which < segment_count; which++)
 	{
@@ -387,6 +393,8 @@ rebuild_query_signer();
 load_hnsw_config();
 load_quantization_config();
 load_pq_config();
+if (pq_global_current)
+	load_pq_codebook();
 load_rerank_config();
 load_multivector_pq_config();
 load_attributes_config();

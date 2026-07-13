@@ -125,6 +125,10 @@ private:
 	long pq_opq_current;					// 0 (default, off) / 1 (OPQ rotation enabled); immutable once on
 	long pq_eager;							// 0 ondemand (default), 1 eager
 
+	long pq_global_current;				// 0 (default, off) / 1 (shared global codebook enabled); immutable once on
+	float *global_pq_codebook;				// m*K*(dimension/m) floats; trained once from the first built segment's floats; NULL until ensure_global_pq_codebook()/load_pq_codebook() populates it; freed in dtor
+	float *global_pq_rotation;				// D*D OPQ rotation R (row-major); NULL unless pq_opq_current && the global codebook has been trained
+
 	long long mvpq_m_current;			// 0 = token-PQ unconfigured
 	long mvpq_posture_current;			// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
 	long mvpq_rerank_quant_current;		// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
@@ -288,6 +292,13 @@ public:
 	long pq_resident_tier(void) { return pq_resident_tier_current; }
 	long set_pq_opq(long enable);			// 0 ok; nonzero: not open / PQ unconfigured / already set to a DIFFERENT value (immutable)
 	long pq_opq(void) { return pq_opq_current; }
+
+	long set_pq_global_codebook(long enable);	// 0 ok; nonzero: not open / PQ unconfigured / already set to a DIFFERENT value (immutable)
+	long pq_global_codebook(void) { return pq_global_current; }
+	long ensure_global_pq_codebook(long which);	// trains+persists the global codebook (from segment `which`'s floats) iff not already trained; 0 on success/already-trained, nonzero on failure (fail-soft: caller falls back to per-segment training)
+	long load_pq_codebook(void);			// reads <dir>/pq.codebook; forgiving (any mismatch leaves global_pq_codebook/global_pq_rotation NULL)
+	long save_pq_codebook(void);			// atomic write (temp + rename); 0 on success
+	long rebuild_pq_global_codebook(void);	// #22 Task 3: explicit retrain + re-encode every segment against the new global codebook
 
 	long load_multivector_pq_config(void);
 	long save_multivector_pq_config(void);

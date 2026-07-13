@@ -460,7 +460,7 @@ char filename[4096];
 FILE *fp;
 unsigned long long magic, want;
 unsigned int version;
-long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT, opq = 0;
+long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT, opq = 0, global = 0;
 const char *tag = "ANTPQCF1";
 
 memcpy(&want, tag, 8);
@@ -468,19 +468,24 @@ snprintf(filename, sizeof(filename), "%s/pq.config", directory);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return 0;
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
-	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u && version != 3u)
+	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u && version != 3u && version != 4u)
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
 	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
 	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
 	{ fclose(fp); return 0; }
-if (version == 2u || version == 3u)
+if (version == 2u || version == 3u || version == 4u)
 	{
 	if (fread(&tier, sizeof(tier), 1, fp) != 1 || tier < 0 || tier > 2)
 		{ fclose(fp); return 0; }
 	}
-if (version == 3u)
+if (version == 3u || version == 4u)
 	{
 	if (fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1))
+		{ fclose(fp); return 0; }
+	}
+if (version == 4u)
+	{
+	if (fread(&global, sizeof(global), 1, fp) != 1 || (global != 0 && global != 1))
 		{ fclose(fp); return 0; }
 	}
 fclose(fp);
@@ -491,6 +496,7 @@ pq_posture_current = (long)posture;
 pq_rerank_quant_current = (long)rerank_quant;
 pq_resident_tier_current = (long)tier;
 pq_opq_current = (long)opq;
+pq_global_current = (long)global;
 return 0;
 }
 
@@ -504,12 +510,13 @@ long ATIRE_segment_index::save_pq_config(void)
 char filename[4096], temp[4200];
 FILE *fp;
 unsigned long long magic;
-unsigned int version = 3u;
+unsigned int version = 4u;
 long long m = pq_m_current;
 long long posture = pq_posture_current;
 long long rerank_quant = pq_rerank_quant_current;
 long long tier = pq_resident_tier_current;
 long long opq = pq_opq_current;
+long long global = pq_global_current;
 const char *tag = "ANTPQCF1";
 
 memcpy(&magic, tag, 8);
@@ -523,7 +530,8 @@ if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version
 	|| fwrite(&posture, sizeof(posture), 1, fp) != 1
 	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1
 	|| fwrite(&tier, sizeof(tier), 1, fp) != 1
-	|| fwrite(&opq, sizeof(opq), 1, fp) != 1)
+	|| fwrite(&opq, sizeof(opq), 1, fp) != 1
+	|| fwrite(&global, sizeof(global), 1, fp) != 1)
 	{ fclose(fp); remove(temp); return 1; }
 fclose(fp);
 if (rename(temp, filename) != 0)
@@ -658,6 +666,388 @@ pq_opq_current = want;
 if (save_pq_config() != 0)
 	{ pq_opq_current = 0; return 1; }
 return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_GLOBAL_CODEBOOK()
+	----------------------------------------------
+	Opt-in to a single collection-wide (global) `.pq` codebook, trained ONCE
+	(from the first segment build_pq() trains against) instead of a fresh
+	codebook per segment: dense PQ codes then compare across segments (a
+	prerequisite for cross-segment ANN structures). Requires PQ already
+	configured (set_pq_config()).  Like set_pq_opq()/set_pq_resident_tier(),
+	once enabled it is immutable: setting the SAME value again is a no-op
+	success (idempotent), but flipping it back off (or to any other value
+	once on) is rejected.  Persists in pq.config v4.  Composes with OPQ
+	(#22.1): under global mode the learned rotation is ALSO shared (one R),
+	trained alongside the codebook by ensure_global_pq_codebook().
+*/
+long ATIRE_segment_index::set_pq_global_codebook(long enable)
+{
+long want;
+
+if (directory == NULL)
+	return 1;                       // must be open
+if (!pq_configured())
+	return 1;                       // PQ must be configured first
+want = enable ? 1 : 0;
+if (pq_global_current == want)
+	return 0;                       // idempotent
+if (pq_global_current != 0)
+	return 1;                       // immutable once enabled
+pq_global_current = want;
+if (save_pq_config() != 0)
+	{ pq_global_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_PQ_CODEBOOK() / LOAD_PQ_CODEBOOK()
+	----------------------------------------------------------------
+	Persist/load the frozen global codebook (+ OPQ rotation, when configured)
+	in <dir>/pq.codebook (magic "ANTPQGCB"): u32 version(1), i64 dimension,
+	i64 m, i64 k, i64 opq, then (opq ? global_pq_rotation: dimension*dimension
+	floats) + global_pq_codebook: m*k*(dimension/m) floats.  save_pq_codebook()
+	is an atomic write (temp + rename).  load_pq_codebook() is forgiving: any
+	mismatch (magic/version/dimension/m/k/opq/file size) leaves
+	global_pq_codebook/global_pq_rotation NULL (untrained) rather than
+	crashing or over-reading -- ensure_global_pq_codebook() will then
+	(re)train on the next build_pq().  Validates before allocating, and
+	bounds dimension*dimension (D <= 65536) before computing the rotation
+	block size, so a corrupt/hostile sidecar cannot trigger an oversized
+	allocation or an out-of-bounds read.
+*/
+long ATIRE_segment_index::save_pq_codebook(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long dimension = vector_dimension_current;
+long long m = pq_m_current;
+long long k = ANT_pq_codec::K;
+long long opq = pq_opq_current;
+long long sub = (m != 0) ? dimension / m : 0;
+long long codebook_floats = m * k * sub;
+const char *tag = "ANTPQGCB";
+
+if (global_pq_codebook == NULL)
+	return 1;					// nothing trained yet
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/pq.codebook", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&dimension, sizeof(dimension), 1, fp) != 1
+	|| fwrite(&m, sizeof(m), 1, fp) != 1
+	|| fwrite(&k, sizeof(k), 1, fp) != 1
+	|| fwrite(&opq, sizeof(opq), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+if (opq && global_pq_rotation != NULL)
+	{
+	if (fwrite(global_pq_rotation, sizeof(float), (size_t)(dimension * dimension), fp) != (size_t)(dimension * dimension))
+		{ fclose(fp); remove(temp); return 1; }
+	}
+if (fwrite(global_pq_codebook, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+long ATIRE_segment_index::load_pq_codebook(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long dimension, m, k, opq;
+long long sub, codebook_floats, rotation_floats;
+long fail;
+const char *tag = "ANTPQGCB";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/pq.codebook", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;					// absent: leave untrained (ensure_global_pq_codebook() will train)
+
+fail = (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&dimension, sizeof(dimension), 1, fp) != 1 || dimension != vector_dimension_current
+	|| fread(&m, sizeof(m), 1, fp) != 1 || m != pq_m_current
+	|| fread(&k, sizeof(k), 1, fp) != 1 || k != (long long)ANT_pq_codec::K
+	|| fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1) || opq != pq_opq_current);
+if (!fail && (dimension <= 0 || dimension > 65536 || m <= 0 || dimension % m != 0))
+	fail = 1;					// bounds dimension*dimension before it is used below
+if (fail)
+	{ fclose(fp); return 0; }
+
+sub = dimension / m;
+codebook_floats = m * k * sub;
+rotation_floats = opq ? dimension * dimension : 0;
+
+/* validate the exact remaining file size before allocating anything */
+{
+long here = ftell(fp);
+long end;
+if (here < 0) { fclose(fp); return 0; }
+fseek(fp, 0, SEEK_END);
+end = ftell(fp);
+fseek(fp, here, SEEK_SET);
+if (end < 0 || (end - here) != (long)((rotation_floats + codebook_floats) * (long long)sizeof(float)))
+	{ fclose(fp); return 0; }
+}
+
+float *new_rotation = NULL;
+float *new_codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
+if (opq)
+	{
+	new_rotation = new float[rotation_floats > 0 ? rotation_floats : 1];
+	if (fread(new_rotation, sizeof(float), (size_t)rotation_floats, fp) != (size_t)rotation_floats)
+		{ delete [] new_rotation; delete [] new_codebook; fclose(fp); return 0; }
+	}
+if (fread(new_codebook, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
+	{ delete [] new_rotation; delete [] new_codebook; fclose(fp); return 0; }
+fclose(fp);
+
+delete [] global_pq_codebook;
+delete [] global_pq_rotation;
+global_pq_codebook = new_codebook;
+global_pq_rotation = new_rotation;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::ENSURE_GLOBAL_PQ_CODEBOOK()
+	---------------------------------------------------
+	Trains (and persists) the shared global codebook the FIRST time it is
+	needed -- from segment `which`'s present on-disk float rows (mirrors how
+	build_pq() itself loads a segment's float .vec, decoupled from whatever
+	resident tier is currently realized).  A no-op (returns 0) once
+	global_pq_codebook is already populated (by an earlier call in this
+	session, or by load_pq_codebook() at open()).  Fail-soft: any failure
+	(missing/degraded/empty .vec, training failure, or a save_pq_codebook()
+	failure) leaves global_pq_codebook NULL and returns nonzero -- the caller
+	(build_pq()) then skips set_external_codebook() and the writer trains a
+	per-segment codebook instead, so a transient failure here never hard-fails
+	a build.
+*/
+long ATIRE_segment_index::ensure_global_pq_codebook(long which)
+{
+char vec_name[4096];
+long long docs, present_count, d;
+float *rows, *tmp;
+ANT_vector_store *src;
+
+if (global_pq_codebook != NULL)
+	return 0;					// already trained (this session or loaded at open())
+if (which < 0 || which >= segment_count || pq_m_current == 0)
+	return 1;
+
+segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
+docs = segments[which].engine->get_document_count();
+src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+if (src->document_count() != docs || docs <= 0 || src->is_quantized())
+	{ delete src; return 1; }
+
+rows = new float[docs * vector_dimension_current];
+present_count = 0;
+for (d = 0; d < docs; d++)
+	if (src->has(d))
+		{
+		src->reconstruct(d, rows + present_count * vector_dimension_current);
+		present_count++;
+		}
+delete src;
+
+if (present_count == 0)
+	{ delete [] rows; return 1; }
+
+if (pq_opq_current)
+	{
+	global_pq_rotation = new float[vector_dimension_current * vector_dimension_current];
+	if (ANT_pq_codec::train_rotation(rows, vector_dimension_current, pq_m_current, present_count, global_pq_rotation) != 0)
+		{ delete [] global_pq_rotation; global_pq_rotation = NULL; delete [] rows; return 1; }
+	tmp = new float[vector_dimension_current];
+	for (d = 0; d < present_count; d++)
+		{
+		ANT_pq_codec::apply_rotation(rows + d * vector_dimension_current, vector_dimension_current, global_pq_rotation, tmp);
+		memcpy(rows + d * vector_dimension_current, tmp, (size_t)vector_dimension_current * sizeof(float));
+		}
+	delete [] tmp;
+	}
+
+{
+long long sub = vector_dimension_current / pq_m_current;
+long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
+global_pq_codebook = new float[floats > 0 ? floats : 1];
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_count, global_pq_codebook) != 0)
+	{
+	delete [] global_pq_codebook; global_pq_codebook = NULL;
+	delete [] global_pq_rotation; global_pq_rotation = NULL;
+	delete [] rows;
+	return 1;
+	}
+}
+delete [] rows;
+
+if (save_pq_codebook() != 0)
+	{
+	delete [] global_pq_codebook; global_pq_codebook = NULL;
+	delete [] global_pq_rotation; global_pq_rotation = NULL;
+	return 1;
+	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::REBUILD_PQ_GLOBAL_CODEBOOK()
+	--------------------------------------------------
+	Explicit retrain + re-encode escape hatch (#22 Task 3).  Unlike
+	ensure_global_pq_codebook() (which trains once, from a single segment,
+	the first time it is needed), this gathers present float rows across
+	EVERY disk segment's on-disk .vec, retrains a fresh codebook (+ OPQ
+	rotation when configured) from that index-wide sample, persists it, then
+	re-encodes every segment that currently has a .pq against the new
+	codebook -- so all segments stay comparable after the retrain.
+
+	Requires open + PQ configured + global mode.  Rows are gathered BEFORE
+	the current global_pq_codebook/rotation are freed, so a failure during
+	gathering (no present rows anywhere) leaves the prior codebook intact
+	and every on-disk .pq untouched.  Once gathering succeeds the prior
+	buffers are freed and retraining begins; a subsequent training/persist
+	failure leaves global_pq_codebook/rotation NULL (untrained -- callers
+	fall back to per-segment training, same fail-soft contract as
+	ensure_global_pq_codebook()) but does NOT touch any on-disk .pq (the
+	re-encode loop below has not started yet).  Once the new codebook is
+	persisted, each segment is re-encoded independently; a per-segment
+	failure is skipped (that segment's .pq is left as-is, referencing the
+	OLD codebook until the next successful rebuild) rather than aborting
+	the whole operation.  Returns 0 iff every segment with a .pq was
+	re-encoded successfully.
+*/
+long ATIRE_segment_index::rebuild_pq_global_codebook(void)
+{
+char vec_name[4096], pq_name[4096];
+long long which, d, docs, present_count, total_docs;
+float *rows, *tmp;
+
+if (directory == NULL || !pq_configured() || !pq_global_current)
+	return 1;
+
+total_docs = 0;
+for (which = 0; which < segment_count; which++)
+	total_docs += segments[which].engine->get_document_count();
+if (total_docs <= 0)
+	return 1;
+
+/* Pass 1: gather every segment's present float rows into one contiguous buffer. */
+rows = new float[total_docs * vector_dimension_current];
+present_count = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	if (docs <= 0)
+		continue;
+	segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() == docs && !src->is_quantized())
+		for (d = 0; d < docs; d++)
+			if (src->has(d))
+				{
+				src->reconstruct(d, rows + present_count * vector_dimension_current);
+				present_count++;
+				}
+	delete src;
+	}
+
+if (present_count == 0)
+	{ delete [] rows; return 1; }				/* nothing to retrain from -- leave the prior codebook/.pq files untouched */
+
+/* Only now discard the prior codebook: we know we have rows to train a replacement. */
+delete [] global_pq_codebook; global_pq_codebook = NULL;
+delete [] global_pq_rotation; global_pq_rotation = NULL;
+
+if (pq_opq_current)
+	{
+	global_pq_rotation = new float[vector_dimension_current * vector_dimension_current];
+	if (ANT_pq_codec::train_rotation(rows, vector_dimension_current, pq_m_current, present_count, global_pq_rotation) != 0)
+		{ delete [] global_pq_rotation; global_pq_rotation = NULL; delete [] rows; return 1; }
+	tmp = new float[vector_dimension_current];
+	for (d = 0; d < present_count; d++)
+		{
+		ANT_pq_codec::apply_rotation(rows + d * vector_dimension_current, vector_dimension_current, global_pq_rotation, tmp);
+		memcpy(rows + d * vector_dimension_current, tmp, (size_t)vector_dimension_current * sizeof(float));
+		}
+	delete [] tmp;
+	}
+
+{
+long long sub = vector_dimension_current / pq_m_current;
+long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
+global_pq_codebook = new float[floats > 0 ? floats : 1];
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_count, global_pq_codebook) != 0)
+	{
+	delete [] global_pq_codebook; global_pq_codebook = NULL;
+	delete [] global_pq_rotation; global_pq_rotation = NULL;
+	delete [] rows;
+	return 1;
+	}
+}
+delete [] rows;
+
+if (save_pq_codebook() != 0)
+	return 1;						/* persist failed -> skip re-encoding: on-disk sidecar and every .pq keep the OLD codebook (in-session search stays consistent via each .pq's embedded copy); resident global_pq_* now holds the NEW codebook, so a later same-session build_pq()/compact() would emit an incomparable segment -- caller must honor this nonzero return */
+
+/*
+	Pass 2: re-encode every segment that currently has a .pq against the new
+	codebook (present rows reconstructed + absent rows appended as NULL, to
+	keep docids aligned -- mirrors build_pq()'s append loop).  A segment
+	without a valid resident .pq is left alone (nothing to re-encode).
+*/
+long any_failed = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	int have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
+	if (!have_pq)
+		continue;
+
+	segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
+	segment_filename(pq_name, sizeof(pq_name), segments[which].generation, "pq");
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() != docs || src->is_quantized())
+		{ delete src; any_failed = 1; continue; }		/* no usable float .vec -- leave this segment's .pq as-is */
+
+	ANT_pq_store_writer w;
+	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+	if (!failed)
+		w.set_external_codebook(global_pq_codebook, global_pq_rotation);
+	float *buf = new float[vector_dimension_current];
+	for (d = 0; !failed && d < docs; d++)
+		{
+		if (src->has(d))
+			{ src->reconstruct(d, buf); failed = w.append(buf) != 0; }
+		else
+			failed = w.append(NULL) != 0;
+		}
+	delete [] buf;
+	if (!failed)
+		failed = w.finish() != 0;
+	if (failed)
+		{ w.abandon(); any_failed = 1; }
+	else
+		{
+		delete segments[which].pq_vectors;
+		segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+		}
+	delete src;
+	}
+
+return any_failed ? 1 : 0;
 }
 
 /*
@@ -1285,6 +1675,19 @@ for (which = 0; which < segment_count; which++)
 			{
 			ANT_pq_store_writer w;
 			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+			if (!failed && pq_global_current)
+				{
+				/*
+					Global mode: reuse the shared codebook (training it now, from
+					THIS segment's floats, if this is the first build this
+					session/on-disk). Fail-soft -- if ensure_global_pq_codebook()
+					could not train/persist one, fall through and let the writer
+					train its own per-segment codebook (no hard build failure).
+				*/
+				ensure_global_pq_codebook((long)which);
+				if (global_pq_codebook != NULL)
+					w.set_external_codebook(global_pq_codebook, global_pq_rotation);
+				}
 			float *buf = new float[vector_dimension_current];
 			for (long long docid = 0; !failed && docid < docs; docid++)
 				{
