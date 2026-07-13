@@ -450,6 +450,23 @@ struct PySegmentIndex
 	long option_quantize;				// ATIRE_segment_index::QUANTIZE_OFF/REPLACE/EXACT
 	long long option_rerank_dim;		// 0 = off
 	long option_rerank_quant;			// ATIRE_segment_index::RERANK_QUANT_FLOAT/INT8
+	bool option_rerank_quant_explicit;	// caller pinned rerank.quantize (vs. the INT8 default)
+	// #23 dense PQ
+	bool option_pq_requested;
+	long long option_pq_m;
+	long option_pq_posture;
+	long option_pq_rerank_quant;
+	bool option_pq_tier_requested;
+	long option_pq_tier;
+	long option_pq_eager;
+	// #23 token (multivector) PQ
+	bool option_mvpq_requested;
+	long long option_mvpq_m;
+	long option_mvpq_posture;
+	long option_mvpq_rerank_quant;
+	bool option_mvpq_tier_requested;
+	long option_mvpq_tier;
+	long option_mvpq_eager;
 	ANT_attribute_schema option_attributes;
 	bool option_has_attributes;
 
@@ -482,6 +499,21 @@ struct PySegmentIndex
 	option_quantize = ATIRE_segment_index::QUANTIZE_OFF;
 	option_rerank_dim = 0;
 	option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+	option_rerank_quant_explicit = false;
+	option_pq_requested = false;
+	option_pq_m = 0;
+	option_pq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+	option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+	option_pq_tier_requested = false;
+	option_pq_tier = ATIRE_segment_index::PQ_TIER_FLOAT;
+	option_pq_eager = 0;
+	option_mvpq_requested = false;
+	option_mvpq_m = 0;
+	option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+	option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+	option_mvpq_tier_requested = false;
+	option_mvpq_tier = ATIRE_segment_index::MV_TIER_FLOAT;
+	option_mvpq_eager = 0;
 	option_has_attributes = false;
 
 	if (kw.contains("dimension"))
@@ -560,7 +592,67 @@ struct PySegmentIndex
 			{
 			std::string q = r["quantize"].cast<std::string>();
 			option_rerank_quant = (q == "float") ? ATIRE_segment_index::RERANK_QUANT_FLOAT : ATIRE_segment_index::RERANK_QUANT_INT8;
+			option_rerank_quant_explicit = true;
 			}
+		}
+	if (kw.contains("pq") && !kw["pq"].is_none())
+		{
+		py::dict p = kw["pq"].cast<py::dict>();
+		option_pq_requested = true;
+		if (p.contains("m")) option_pq_m = p["m"].cast<long long>();
+		if (p.contains("posture"))
+			{
+			std::string s = p["posture"].cast<std::string>();
+			if (s == "replace") option_pq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+			else if (s == "rerank") option_pq_posture = ATIRE_segment_index::PQ_POSTURE_RERANK;
+			else throw py::value_error("pq.posture must be 'replace' or 'rerank'");
+			}
+		if (p.contains("rerank_quant"))
+			{
+			std::string s = p["rerank_quant"].cast<std::string>();
+			if (s == "float") option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+			else if (s == "int8") option_pq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+			else throw py::value_error("pq.rerank_quant must be 'float' or 'int8'");
+			}
+		if (p.contains("resident_tier"))
+			{
+			std::string s = p["resident_tier"].cast<std::string>();
+			option_pq_tier_requested = true;
+			if (s == "float") option_pq_tier = ATIRE_segment_index::PQ_TIER_FLOAT;
+			else if (s == "int8") option_pq_tier = ATIRE_segment_index::PQ_TIER_INT8;
+			else if (s == "none") option_pq_tier = ATIRE_segment_index::PQ_TIER_NONE;
+			else throw py::value_error("pq.resident_tier must be 'float', 'int8', or 'none'");
+			}
+		if (p.contains("eager")) option_pq_eager = p["eager"].cast<bool>() ? 1 : 0;
+		}
+	if (kw.contains("multivectorPq") && !kw["multivectorPq"].is_none())
+		{
+		py::dict p = kw["multivectorPq"].cast<py::dict>();
+		option_mvpq_requested = true;
+		if (p.contains("m")) option_mvpq_m = p["m"].cast<long long>();
+		if (p.contains("posture"))
+			{
+			std::string s = p["posture"].cast<std::string>();
+			if (s == "replace") option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_REPLACE;
+			else if (s == "rerank") option_mvpq_posture = ATIRE_segment_index::PQ_POSTURE_RERANK;
+			else throw py::value_error("multivectorPq.posture must be 'replace' or 'rerank'");
+			}
+		if (p.contains("rerank_quant"))
+			{
+			std::string s = p["rerank_quant"].cast<std::string>();
+			if (s == "float") option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
+			else if (s == "int8") option_mvpq_rerank_quant = ATIRE_segment_index::RERANK_QUANT_INT8;
+			else throw py::value_error("multivectorPq.rerank_quant must be 'float' or 'int8'");
+			}
+		if (p.contains("resident_tier"))
+			{
+			std::string s = p["resident_tier"].cast<std::string>();
+			option_mvpq_tier_requested = true;
+			if (s == "float") option_mvpq_tier = ATIRE_segment_index::MV_TIER_FLOAT;
+			else if (s == "none") option_mvpq_tier = ATIRE_segment_index::MV_TIER_NONE;
+			else throw py::value_error("multivectorPq.resident_tier must be 'float' or 'none'");
+			}
+		if (p.contains("eager")) option_mvpq_eager = p["eager"].cast<bool>() ? 1 : 0;
 		}
 	if (kw.contains("attributes") && !kw["attributes"].is_none())
 		{
@@ -697,8 +789,30 @@ struct PySegmentIndex
 		}
 	if (option_quantize != ATIRE_segment_index::QUANTIZE_OFF)
 		engine->set_quantization(option_quantize);
+	// token-pool PQ needs a float .mvec tier (int8 .mvec is the mutually-exclusive alternative);
+	// default the rerank tier to float when multivectorPq is requested and the caller didn't pin quantize.
+	if (option_mvpq_requested && !option_rerank_quant_explicit)
+		option_rerank_quant = ATIRE_segment_index::RERANK_QUANT_FLOAT;
 	if (option_rerank_dim > 0)
 		engine->set_rerank_config(option_rerank_dim, option_rerank_quant);
+	if (option_pq_requested)
+		{
+		if (engine->set_pq_config(option_pq_m, option_pq_posture, option_pq_rerank_quant) == 0)
+			{
+			if (option_pq_tier_requested)
+				engine->set_pq_resident_tier(option_pq_tier);
+			engine->set_pq_policy(option_pq_eager);
+			}
+		}
+	if (option_mvpq_requested)
+		{
+		if (engine->set_multivector_pq_config(option_mvpq_m, option_mvpq_posture, option_mvpq_rerank_quant) == 0)
+			{
+			if (option_mvpq_tier_requested)
+				engine->set_multivector_resident_tier(option_mvpq_tier);
+			engine->set_multivector_pq_policy(option_mvpq_eager);
+			}
+		}
 	if (option_has_attributes)
 		engine->set_attributes_config(option_attributes);
 	}
@@ -1191,6 +1305,42 @@ struct PySegmentIndex
 	if (rc != 0)
 		throw std::runtime_error("build_quantized failed");
 	}
+
+	/*
+		PYSEGMENTINDEX::BUILD_PQ()
+		---------------------------
+		Idempotent backfill: builds the dense product-quantization tier (.pq)
+		per set_pq_config()'s posture/m/rerank_quant.
+	*/
+	void build_pq()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->build_pq();
+	}
+	if (rc != 0)
+		throw std::runtime_error("build_pq failed (PQ not configured or no dense vectors)");
+	}
+
+	/*
+		PYSEGMENTINDEX::BUILD_MULTIVECTOR_PQ()
+		-----------------------------------------
+		Idempotent backfill: builds the token-pool product-quantization tier
+		(.mvpq) per set_multivector_pq_config()'s posture/m/rerank_quant.
+	*/
+	void build_multivector_pq()
+	{
+	require_open();
+	long rc;
+	{
+	py::gil_scoped_release release;
+	rc = engine->build_multivector_pq();
+	}
+	if (rc != 0)
+		throw std::runtime_error("build_multivector_pq failed (token PQ not configured or no multi-vectors)");
+	}
 };
 
 PYBIND11_MODULE(_core, m)
@@ -1234,6 +1384,8 @@ PYBIND11_MODULE(_core, m)
 		.def("build_hnsw", &PySegmentIndex::build_hnsw)
 		.def("search_rerank", &PySegmentIndex::search_rerank, py::arg("text"), py::arg("vector"), py::arg("query_multi_vectors"), py::arg("first_stage_n"), py::arg("k"), py::arg("filter") = py::none())
 		.def("build_quantized", &PySegmentIndex::build_quantized)
+		.def("build_pq", &PySegmentIndex::build_pq)
+		.def("build_multivector_pq", &PySegmentIndex::build_multivector_pq)
 		.def("__enter__", [](PySegmentIndex &s) -> PySegmentIndex & { return s; }, py::return_value_policy::reference)
 		.def("__exit__", [](PySegmentIndex &s, py::object, py::object, py::object) { s.close(); return false; });
 }
