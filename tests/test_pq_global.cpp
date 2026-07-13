@@ -246,6 +246,248 @@ static void test_default_off_no_codebook_file(void)
 	printf("test_default_off_no_codebook_file OK\n");
 }
 
+/*
+	----------------------------------------------------------------------
+	Task 3: compaction no-retrain + rebuild_pq_global_codebook().
+	----------------------------------------------------------------------
+*/
+
+static long read_file_bytes(const char *path, unsigned char **out, long *out_len)
+{
+	FILE *fp = fopen(path, "rb");
+	if (fp == NULL) return 1;
+	fseek(fp, 0, SEEK_END);
+	long len = ftell(fp);
+	rewind(fp);
+	unsigned char *buf = new unsigned char[len > 0 ? len : 1];
+	if (len > 0 && fread(buf, 1, (size_t)len, fp) != (size_t)len)
+		{ fclose(fp); delete [] buf; return 1; }
+	fclose(fp);
+	*out = buf; *out_len = len;
+	return 0;
+}
+
+static long long gcb_codebook_floats(long long dim, long long m)
+{
+	long long sub = dim / m;
+	return m * (long long)ANT_pq_codec::K * sub;
+}
+
+/* pq.codebook layout: magic(8) version(4) dimension(8) m(8) k(8) opq(8) [rotation dim*dim floats] codebook(m*K*sub floats).
+   The codebook block is always LAST, so we can locate it from the tail without decoding the header. */
+static void assert_codebook_matches_file(ANT_pq_store *s, const unsigned char *file_bytes, long file_len, long long dim, long long m)
+{
+	long long floats = gcb_codebook_floats(dim, m);
+	long long bytes = floats * (long long)sizeof(float);
+	CHECK(file_len >= bytes);
+	CHECK(memcmp(s->get_codebook(), file_bytes + (file_len - bytes), (size_t)bytes) == 0);
+}
+
+/* no-retrain compaction: two global-mode segments built (codebook trained once
+   from segment A, reused verbatim for segment B); compacting them must NOT
+   retrain -- pq.codebook bytes stay identical, and the merged segment's
+   embedded codebook still equals the (unchanged) global codebook. */
+static void test_compaction_reuses_global_codebook(void)
+{
+	const long long N = 12;
+	char *dir = make_engine_dir("/tmp/ant_gcompact_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+
+	add_gdocs(ix, 0, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* trains the global codebook from segment A */
+
+	add_gdocs(ix, N, N + N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* reuses it (no retrain) */
+
+	CHECK(ix->disk_segment_count() == 2);
+
+	char cb_path[4096];
+	snprintf(cb_path, sizeof(cb_path), "%s/pq.codebook", dir);
+	unsigned char *before = NULL; long before_len = 0;
+	CHECK(read_file_bytes(cb_path, &before, &before_len) == 0);
+
+	long long gens[2] = { ix->disk_segment_generation(0), ix->disk_segment_generation(1) };
+	CHECK(ix->compact(gens, 2) == 0);
+	CHECK(ix->disk_segment_count() == 1);
+	CHECK(ix->disk_segment_has_pq(0) == 1);
+
+	unsigned char *after = NULL; long after_len = 0;
+	CHECK(read_file_bytes(cb_path, &after, &after_len) == 0);
+	CHECK(after_len == before_len && memcmp(before, after, (size_t)before_len) == 0);	/* compaction did NOT retrain */
+
+	long long out_gen = ix->disk_segment_generation(0);
+	char pq_path[4096];
+	snprintf(pq_path, sizeof(pq_path), "%s/seg_%06lld.pq", dir, out_gen);
+	ANT_pq_store *merged = ANT_pq_store::load(pq_path, GDIM, N + N, ANT_pq_codec::METRIC_DOT);
+	CHECK(merged != NULL && merged->document_count() == N + N);
+	assert_codebook_matches_file(merged, after, after_len, GDIM, 4);
+	delete merged;
+
+	float q[GDIM]; make_gvec(7, q);
+	CHECK(ix->search_vector(q, 5) >= 1);
+
+	delete [] before; delete [] after;
+	delete ix;
+	delete [] dir;
+	printf("test_compaction_reuses_global_codebook OK\n");
+}
+
+/* doc i: differently-distributed from make_gvec (opposite-sign, larger, shifted
+   dominant coordinate) -- used to prove rebuild_pq_global_codebook() actually
+   retrains against the new distribution rather than being a no-op. */
+static void make_shift_vec(long long i, float *v)
+{
+	for (int d = 0; d < GDIM; d++)
+		v[d] = 0.02f * (float)(((i * 11 + d * 3) % 5) - 2);
+	v[i % GDIM] -= 6.0f;
+}
+
+static void add_shift_docs(ATIRE_segment_index *ix, long long lo, long long hi)
+{
+	float v[GDIM]; char key[32], body[64];
+	for (long long i = lo; i < hi; i++)
+		{
+		make_shift_vec(i, v);
+		sprintf(key, "shift-%lld", i);
+		sprintf(body, "<DOC>shiftterm%lld z</DOC>", i);
+		CHECK(ix->add_document(key, body, v) >= 0);
+		}
+}
+
+/* rebuild: after adding a third, differently-distributed segment (still built
+   against the STALE global codebook, since ensure_* is a no-op once trained),
+   rebuild_pq_global_codebook() must retrain from ALL segments' floats (new
+   pq.codebook bytes differ) and re-encode every segment (all three now embed
+   the new codebook); search still resolves correctly post-rebuild. */
+static void test_rebuild_global_codebook(void)
+{
+	const long long N = 12;
+	char *dir = make_engine_dir("/tmp/ant_grebuild_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+
+	add_gdocs(ix, 0, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);
+
+	add_gdocs(ix, N, N + N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);
+
+	char cb_path[4096];
+	snprintf(cb_path, sizeof(cb_path), "%s/pq.codebook", dir);
+	unsigned char *before = NULL; long before_len = 0;
+	CHECK(read_file_bytes(cb_path, &before, &before_len) == 0);
+
+	add_shift_docs(ix, 0, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* still reuses the OLD (stale) codebook */
+	CHECK(ix->disk_segment_count() == 3);
+
+	CHECK(ix->rebuild_pq_global_codebook() == 0);
+
+	unsigned char *after = NULL; long after_len = 0;
+	CHECK(read_file_bytes(cb_path, &after, &after_len) == 0);
+	CHECK(!(after_len == before_len && memcmp(before, after, (size_t)before_len) == 0));	/* retrained: bytes differ */
+
+	for (long long which = 0; which < ix->disk_segment_count(); which++)
+		{
+		CHECK(ix->disk_segment_has_pq(which) == 1);
+		long long gen = ix->disk_segment_generation(which);
+		char pq_path[4096];
+		snprintf(pq_path, sizeof(pq_path), "%s/seg_%06lld.pq", dir, gen);
+		ANT_pq_store *s = ANT_pq_store::load(pq_path, GDIM, N, ANT_pq_codec::METRIC_DOT);
+		CHECK(s != NULL && s->document_count() == N);
+		assert_codebook_matches_file(s, after, after_len, GDIM, 4);
+		delete s;
+		}
+
+	/* sanity: search still resolves a shifted-distribution doc as its own top-1 */
+	float q[GDIM]; make_shift_vec(3, q);
+	CHECK(ix->search_vector(q, 5) >= 1);
+	CHECK(strcmp(ix->get_hit(0)->filename, "shift-3") == 0);
+
+	delete [] before; delete [] after;
+	delete ix;
+	delete [] dir;
+	printf("test_rebuild_global_codebook OK\n");
+}
+
+/* OPQ composition: global mode + OPQ together train/persist ONE shared R +
+   codebook (pq.codebook grows an R block, opq flag == 1); every segment
+   embeds the same R+codebook, so the SAME probe vector encodes identically
+   in both segments (rotation composed with the codebook, not just the codebook). */
+static void test_opq_global_composition(void)
+{
+	const long long N = 12;
+	char *dir = make_engine_dir("/tmp/ant_gopq_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_opq(1) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+
+	float probe[GDIM];
+	make_gvec(3, probe);						/* shared probe vector, reused verbatim in both segments */
+
+	CHECK(ix->add_document("probe-a", "<DOC>proba</DOC>", probe) >= 0);
+	add_gdocs(ix, 1, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* trains the global codebook + rotation from segment A */
+
+	CHECK(ix->add_document("probe-b", "<DOC>probb</DOC>", probe) >= 0);
+	add_gdocs(ix, N + 1, N + N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* reuses the SAME R + codebook (no retrain) */
+
+	char cb_path[4096];
+	snprintf(cb_path, sizeof(cb_path), "%s/pq.codebook", dir);
+	unsigned char *bytes = NULL; long len = 0;
+	CHECK(read_file_bytes(cb_path, &bytes, &len) == 0);
+
+	/* header layout: magic(8) version(4) dimension(8) m(8) k(8) opq(8) */
+	long long opq_flag; memcpy(&opq_flag, bytes + 8+4+8+8+8, 8);
+	CHECK(opq_flag == 1);
+	long long expect_len = (long long)(8+4+8+8+8+8) + GDIM * GDIM * (long long)sizeof(float)
+		+ gcb_codebook_floats(GDIM, 4) * (long long)sizeof(float);
+	CHECK((long long)len == expect_len);				/* R block present alongside the codebook */
+
+	CHECK(ix->disk_segment_count() == 2);
+	long long gen_a = ix->disk_segment_generation(0);
+	long long gen_b = ix->disk_segment_generation(1);
+	delete ix;
+
+	char pa[4096], pb[4096];
+	snprintf(pa, sizeof(pa), "%s/seg_%06lld.pq", dir, gen_a);
+	snprintf(pb, sizeof(pb), "%s/seg_%06lld.pq", dir, gen_b);
+	ANT_pq_store *sa = ANT_pq_store::load(pa, GDIM, N, ANT_pq_codec::METRIC_DOT);
+	ANT_pq_store *sb = ANT_pq_store::load(pb, GDIM, N, ANT_pq_codec::METRIC_DOT);
+	CHECK(sa != NULL && sb != NULL && sa->document_count() == N && sb->document_count() == N);
+
+	assert_codebook_matches_file(sa, bytes, len, GDIM, 4);
+	assert_codebook_matches_file(sb, bytes, len, GDIM, 4);
+	/* the shared probe vector (docid 0 in both segments) encodes to the same code bytes */
+	CHECK(memcmp(sa->codes_for(0), sb->codes_for(0), 4) == 0);
+
+	delete sa; delete sb;
+	delete [] bytes;
+	delete [] dir;
+	printf("test_opq_global_composition OK\n");
+}
+
 int main(void)
 {
 	test_external_codebook_encodes_and_embeds();
@@ -253,6 +495,9 @@ int main(void)
 	test_train_once_and_persistence();
 	test_cross_segment_comparability();
 	test_default_off_no_codebook_file();
+	test_compaction_reuses_global_codebook();
+	test_rebuild_global_codebook();
+	test_opq_global_composition();
 	printf("ALL TESTS PASSED\n");
 	return 0;
 }

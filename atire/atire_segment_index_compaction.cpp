@@ -500,6 +500,21 @@ if (pq_configured())
 		{
 		ANT_pq_store_writer w;
 		long failed = w.create(out_pq, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+		if (!failed && pq_global_current)
+			{
+			/*
+				Global mode: reuse the shared codebook -- no retrain on compaction.
+				Post-open the codebook is already resident (loaded at open() or
+				trained by an earlier build_pq()/compact() this session), so this
+				is normally a no-op; pass the freshly-merged output segment as the
+				fallback training source in the (should-not-happen) case it is
+				still NULL.  Fail-soft -- if it cannot be trained, fall through and
+				let the writer train its own per-segment codebook.
+			*/
+			ensure_global_pq_codebook((long)(segment_count - 1));
+			if (global_pq_codebook != NULL)
+				w.set_external_codebook(global_pq_codebook, global_pq_rotation);
+			}
 		float *buf = new float[vector_dimension_current];
 		for (long long d = 0; !failed && d < out_docs; d++)
 			{

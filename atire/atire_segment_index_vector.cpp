@@ -904,6 +904,153 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::REBUILD_PQ_GLOBAL_CODEBOOK()
+	--------------------------------------------------
+	Explicit retrain + re-encode escape hatch (#22 Task 3).  Unlike
+	ensure_global_pq_codebook() (which trains once, from a single segment,
+	the first time it is needed), this gathers present float rows across
+	EVERY disk segment's on-disk .vec, retrains a fresh codebook (+ OPQ
+	rotation when configured) from that index-wide sample, persists it, then
+	re-encodes every segment that currently has a .pq against the new
+	codebook -- so all segments stay comparable after the retrain.
+
+	Requires open + PQ configured + global mode.  Rows are gathered BEFORE
+	the current global_pq_codebook/rotation are freed, so a failure during
+	gathering (no present rows anywhere) leaves the prior codebook intact
+	and every on-disk .pq untouched.  Once gathering succeeds the prior
+	buffers are freed and retraining begins; a subsequent training/persist
+	failure leaves global_pq_codebook/rotation NULL (untrained -- callers
+	fall back to per-segment training, same fail-soft contract as
+	ensure_global_pq_codebook()) but does NOT touch any on-disk .pq (the
+	re-encode loop below has not started yet).  Once the new codebook is
+	persisted, each segment is re-encoded independently; a per-segment
+	failure is skipped (that segment's .pq is left as-is, referencing the
+	OLD codebook until the next successful rebuild) rather than aborting
+	the whole operation.  Returns 0 iff every segment with a .pq was
+	re-encoded successfully.
+*/
+long ATIRE_segment_index::rebuild_pq_global_codebook(void)
+{
+char vec_name[4096], pq_name[4096];
+long long which, d, docs, present_count, total_docs;
+float *rows, *tmp;
+
+if (directory == NULL || !pq_configured() || !pq_global_current)
+	return 1;
+
+total_docs = 0;
+for (which = 0; which < segment_count; which++)
+	total_docs += segments[which].engine->get_document_count();
+if (total_docs <= 0)
+	return 1;
+
+/* Pass 1: gather every segment's present float rows into one contiguous buffer. */
+rows = new float[total_docs * vector_dimension_current];
+present_count = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	if (docs <= 0)
+		continue;
+	segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() == docs && !src->is_quantized())
+		for (d = 0; d < docs; d++)
+			if (src->has(d))
+				{
+				src->reconstruct(d, rows + present_count * vector_dimension_current);
+				present_count++;
+				}
+	delete src;
+	}
+
+if (present_count == 0)
+	{ delete [] rows; return 1; }				/* nothing to retrain from -- leave the prior codebook/.pq files untouched */
+
+/* Only now discard the prior codebook: we know we have rows to train a replacement. */
+delete [] global_pq_codebook; global_pq_codebook = NULL;
+delete [] global_pq_rotation; global_pq_rotation = NULL;
+
+if (pq_opq_current)
+	{
+	global_pq_rotation = new float[vector_dimension_current * vector_dimension_current];
+	if (ANT_pq_codec::train_rotation(rows, vector_dimension_current, pq_m_current, present_count, global_pq_rotation) != 0)
+		{ delete [] global_pq_rotation; global_pq_rotation = NULL; delete [] rows; return 1; }
+	tmp = new float[vector_dimension_current];
+	for (d = 0; d < present_count; d++)
+		{
+		ANT_pq_codec::apply_rotation(rows + d * vector_dimension_current, vector_dimension_current, global_pq_rotation, tmp);
+		memcpy(rows + d * vector_dimension_current, tmp, (size_t)vector_dimension_current * sizeof(float));
+		}
+	delete [] tmp;
+	}
+
+{
+long long sub = vector_dimension_current / pq_m_current;
+long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
+global_pq_codebook = new float[floats > 0 ? floats : 1];
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_count, global_pq_codebook) != 0)
+	{
+	delete [] global_pq_codebook; global_pq_codebook = NULL;
+	delete [] global_pq_rotation; global_pq_rotation = NULL;
+	delete [] rows;
+	return 1;
+	}
+}
+delete [] rows;
+
+if (save_pq_codebook() != 0)
+	return 1;						/* trained + resident this session, but not persisted; re-encoding below still uses it in-session */
+
+/*
+	Pass 2: re-encode every segment that currently has a .pq against the new
+	codebook (present rows reconstructed + absent rows appended as NULL, to
+	keep docids aligned -- mirrors build_pq()'s append loop).  A segment
+	without a valid resident .pq is left alone (nothing to re-encode).
+*/
+long any_failed = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	int have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
+	if (!have_pq)
+		continue;
+
+	segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
+	segment_filename(pq_name, sizeof(pq_name), segments[which].generation, "pq");
+	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
+	if (src->document_count() != docs || src->is_quantized())
+		{ delete src; any_failed = 1; continue; }		/* no usable float .vec -- leave this segment's .pq as-is */
+
+	ANT_pq_store_writer w;
+	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+	if (!failed)
+		w.set_external_codebook(global_pq_codebook, global_pq_rotation);
+	float *buf = new float[vector_dimension_current];
+	for (d = 0; !failed && d < docs; d++)
+		{
+		if (src->has(d))
+			{ src->reconstruct(d, buf); failed = w.append(buf) != 0; }
+		else
+			failed = w.append(NULL) != 0;
+		}
+	delete [] buf;
+	if (!failed)
+		failed = w.finish() != 0;
+	if (failed)
+		{ w.abandon(); any_failed = 1; }
+	else
+		{
+		delete segments[which].pq_vectors;
+		segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+		}
+	delete src;
+	}
+
+return any_failed ? 1 : 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::LOAD_MULTIVECTOR_PQ_CONFIG() / SAVE_...()
 	-------------------------------------------------------------
 	Persist token-PQ config in <dir>/multivector_pq.config (magic "ANTMVPQC").
