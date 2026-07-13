@@ -10,6 +10,7 @@
 #include <unistd.h>
 #include "../source/pq_codec.h"
 #include "../source/pq_store.h"
+#include "../atire/atire_segment_index.h"
 
 #define CHECK(cond) do { if (!(cond)) { printf("FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond); exit(1); } } while (0)
 
@@ -79,10 +80,179 @@ static void test_non_external_path_unchanged(void)
 	printf("test_non_external_path_unchanged OK\n");
 }
 
+/*
+	----------------------------------------------------------------------
+	Task 2: engine global codebook -- train-once, pq.codebook persistence,
+	cross-segment code comparability, default-off byte-identity (no
+	pq.codebook sidecar).
+	----------------------------------------------------------------------
+*/
+#define GDIM 16
+
+static char *make_engine_dir(const char *tmpl)
+{
+	char buffer[64];
+	strcpy(buffer, tmpl);
+	char *dir = mkdtemp(buffer);
+	if (dir == NULL) exit(printf("cannot create scratch dir\n"));
+	char *result = new char[strlen(dir) + 1];
+	strcpy(result, dir);
+	return result;
+}
+
+/* doc i: dominant coordinate on unique axis (i % GDIM) -- mirrors test_pq_metrics.cpp's pattern */
+static void make_gvec(long long i, float *v)
+{
+	for (int d = 0; d < GDIM; d++)
+		v[d] = 0.02f * (float)(((i * 7 + d) % 5) - 2);
+	v[i % GDIM] += 3.0f;
+}
+
+static void add_gdocs(ATIRE_segment_index *ix, long long lo, long long hi)
+{
+	float v[GDIM]; char key[32], body[64];
+	for (long long i = lo; i < hi; i++)
+		{
+		make_gvec(i, v);
+		sprintf(key, "gdoc-%lld", i);
+		sprintf(body, "<DOC>gterm%lld z</DOC>", i);
+		CHECK(ix->add_document(key, body, v) >= 0);
+		}
+}
+
+/* train-once + persistence: pq.codebook is written once global mode is on,
+   and a fresh reopen picks it back up (pq_global_codebook() survives, search
+   still works off the persisted .pq stores). */
+static void test_train_once_and_persistence(void)
+{
+	const long long N = 12;
+	char *dir = make_engine_dir("/tmp/ant_gtop_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+	CHECK(ix->pq_global_codebook() == 1);
+
+	add_gdocs(ix, 0, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);
+	CHECK(ix->disk_segment_has_pq(0) == 1);
+
+	add_gdocs(ix, N, N + N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);
+	CHECK(ix->disk_segment_has_pq(1) == 1);
+
+	char cb_path[4096];
+	snprintf(cb_path, sizeof(cb_path), "%s/pq.codebook", dir);
+	FILE *fp = fopen(cb_path, "rb");
+	CHECK(fp != NULL);
+	fclose(fp);
+
+	delete ix;
+
+	ATIRE_segment_index *re = new ATIRE_segment_index();
+	CHECK(re->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(re->open(dir) == 0);
+	CHECK(re->pq_global_codebook() == 1);				/* persisted config v4 survives reopen */
+	float q[GDIM]; make_gvec(5, q);
+	CHECK(re->search_vector(q, 5) >= 1);				/* .pq stores + shared codebook still usable */
+	delete re;
+
+	delete [] dir;
+	printf("test_train_once_and_persistence OK\n");
+}
+
+/* cross-segment comparability: the SAME vector, PQ-encoded in two different
+   segments under global mode, must produce IDENTICAL code bytes (both
+   segments embed a copy of the one shared codebook). */
+static void test_cross_segment_comparability(void)
+{
+	const long long N = 12;
+	char *dir = make_engine_dir("/tmp/ant_gxseg_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+
+	float probe[GDIM];
+	make_gvec(3, probe);						/* shared probe vector, reused verbatim in both segments */
+
+	CHECK(ix->add_document("probe-a", "<DOC>proba</DOC>", probe) >= 0);
+	add_gdocs(ix, 1, N);						/* fill out the rest of segment A (docid 0 == the probe) */
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* trains the global codebook from segment A's floats */
+
+	CHECK(ix->add_document("probe-b", "<DOC>probb</DOC>", probe) >= 0);
+	add_gdocs(ix, N + 1, N + N);				/* segment B; docid 0 == the same probe */
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);					/* reuses the SAME codebook (no retrain) */
+
+	CHECK(ix->disk_segment_count() == 2);
+	long long gen_a = ix->disk_segment_generation(0);
+	long long gen_b = ix->disk_segment_generation(1);
+	delete ix;
+
+	char pa[4096], pb[4096];
+	snprintf(pa, sizeof(pa), "%s/seg_%06lld.pq", dir, gen_a);
+	snprintf(pb, sizeof(pb), "%s/seg_%06lld.pq", dir, gen_b);
+	ANT_pq_store *sa = ANT_pq_store::load(pa, GDIM, N, ANT_pq_codec::METRIC_DOT);
+	ANT_pq_store *sb = ANT_pq_store::load(pb, GDIM, N, ANT_pq_codec::METRIC_DOT);
+	CHECK(sa != NULL && sb != NULL && sa->document_count() == N && sb->document_count() == N);
+
+	/* embedded codebooks are identical (both reference the frozen global codebook) */
+	size_t cb_bytes = (size_t)(4 * (long long)ANT_pq_codec::K * (GDIM / 4)) * sizeof(float);
+	CHECK(memcmp(sa->get_codebook(), sb->get_codebook(), cb_bytes) == 0);
+
+	/* the shared probe vector (docid 0 in both segments) encodes to the same code bytes */
+	CHECK(memcmp(sa->codes_for(0), sb->codes_for(0), 4) == 0);
+
+	delete sa; delete sb;
+	delete [] dir;
+	printf("test_cross_segment_comparability OK\n");
+}
+
+/* default-off: an index that never calls set_pq_global_codebook() builds .pq
+   exactly as today (existing suites already cover the resulting bytes/search
+   behaviour) -- spot-assert here that no pq.codebook sidecar is written. */
+static void test_default_off_no_codebook_file(void)
+{
+	const long long N = 8;
+	char *dir = make_engine_dir("/tmp/ant_gdoff_XXXXXX");
+
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(4, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	/* NOTE: set_pq_global_codebook() deliberately NOT called -- default off */
+
+	add_gdocs(ix, 0, N);
+	CHECK(ix->flush() == 0);
+	CHECK(ix->build_pq() == 0);
+	CHECK(ix->disk_segment_has_pq(0) == 1);
+	CHECK(ix->pq_global_codebook() == 0);
+
+	char cb_path[4096];
+	snprintf(cb_path, sizeof(cb_path), "%s/pq.codebook", dir);
+	FILE *fp = fopen(cb_path, "rb");
+	CHECK(fp == NULL);						/* sidecar absent under default-off mode */
+
+	delete ix;
+	delete [] dir;
+	printf("test_default_off_no_codebook_file OK\n");
+}
+
 int main(void)
 {
 	test_external_codebook_encodes_and_embeds();
 	test_non_external_path_unchanged();
+	test_train_once_and_persistence();
+	test_cross_segment_comparability();
+	test_default_off_no_codebook_file();
 	printf("ALL TESTS PASSED\n");
 	return 0;
 }
