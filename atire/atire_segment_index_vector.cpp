@@ -1000,7 +1000,7 @@ if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_co
 delete [] rows;
 
 if (save_pq_codebook() != 0)
-	return 1;						/* trained + resident this session, but not persisted; re-encoding below still uses it in-session */
+	return 1;						/* persist failed -> skip re-encoding: on-disk sidecar and every .pq keep the OLD codebook (in-session search stays consistent via each .pq's embedded copy); resident global_pq_* now holds the NEW codebook, so a later same-session build_pq()/compact() would emit an incomparable segment -- caller must honor this nonzero return */
 
 /*
 	Pass 2: re-encode every segment that currently has a .pq against the new

@@ -298,7 +298,7 @@ public:
 	long ensure_global_pq_codebook(long which);	// trains+persists the global codebook (from segment `which`'s floats) iff not already trained; 0 on success/already-trained, nonzero on failure (fail-soft: caller falls back to per-segment training)
 	long load_pq_codebook(void);			// reads <dir>/pq.codebook; forgiving (any mismatch leaves global_pq_codebook/global_pq_rotation NULL)
 	long save_pq_codebook(void);			// atomic write (temp + rename); 0 on success
-	long rebuild_pq_global_codebook(void);	// #22 Task 3: explicit retrain + re-encode every segment; not yet implemented
+	long rebuild_pq_global_codebook(void);	// #22 Task 3: explicit retrain + re-encode every segment against the new global codebook
 
 	long load_multivector_pq_config(void);
 	long save_multivector_pq_config(void);
