@@ -227,6 +227,11 @@ private:
 	unsigned char *evaluate_filter_for_live(const ANT_filter *filter);						// live-buffer match bitset (caller frees); NULL if filter==NULL
 	double maxsim_live(long long docid, const float *query_vecs, long long num_query_vecs);	// MaxSim over the writer's live multi-vector buffer for one docid
 	long long multivector_candidates(const float *qn, long long num_query_vecs, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter);	// token-ANN candidate-gen (falls back to brute-force MaxSim when no token index) -> exact MaxSim rescore
+	// #16: exact filtered MaxSim scan of one flushed segment into best[] (shared by the
+	// no-.tann branch and the token-ANN under-fill top-up). fbits: per-segment match bitset or NULL.
+	void multivector_scan_segment_exact(long long which, const float *qn, long long num_query_vecs,
+		long long top_k, ANT_vector_candidate *best, long long *best_count,
+		ANT_multivector_store *mv, ANT_multivector_pq_store *pqs, long use_pq, const unsigned char *fbits);
 	long long search_multivector_impl(const float *query_multivector, long long num_query_vecs, long long top_k, const ANT_filter *filter);
 	// candidate-gatherer selector shared by search_vector_impl()/search_hybrid_impl(); the three gatherers differ only in this dimension
 	enum vector_search_mode { VECTOR_MODE_EXACT, VECTOR_MODE_APPROX, VECTOR_MODE_HNSW, VECTOR_MODE_PQ, VECTOR_MODE_PQ_RERANK };
