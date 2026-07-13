@@ -34,7 +34,7 @@ def test_pq_rerank_tier_int8():
 def test_multivector_pq_build_and_rerank():
     dim = 4
     with antelope.SegmentIndex(dimension=dim, metric="cosine",
-                               rerank={"dimension": dim}, multivectorPq={"m": 0}) as ix:
+                               rerank={"dimension": dim}, multivector_pq={"m": 0}) as ix:
         ix.open(tempfile.mkdtemp())
         for i in range(12):
             v = [i + 1, 1, 0, 0]
@@ -78,7 +78,7 @@ def test_multivector_pq_conflicts_with_explicit_int8_rerank():
     # build_multivector_pq() then reports it's not configured, and int8 rerank still works.
     with antelope.SegmentIndex(dimension=dim, metric="cosine",
                                rerank={"dimension": dim, "quantize": "int8"},
-                               multivectorPq={"m": 0}) as ix:
+                               multivector_pq={"m": 0}) as ix:
         ix.open(tempfile.mkdtemp())
         for i in range(12):
             v = [i + 1, 1, 0, 0]

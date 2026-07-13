@@ -625,9 +625,9 @@ struct PySegmentIndex
 			}
 		if (p.contains("eager")) option_pq_eager = p["eager"].cast<bool>() ? 1 : 0;
 		}
-	if (kw.contains("multivectorPq") && !kw["multivectorPq"].is_none())
+	if (kw.contains("multivector_pq") && !kw["multivector_pq"].is_none())
 		{
-		py::dict p = kw["multivectorPq"].cast<py::dict>();
+		py::dict p = kw["multivector_pq"].cast<py::dict>();
 		option_mvpq_requested = true;
 		if (p.contains("m")) option_mvpq_m = p["m"].cast<long long>();
 		if (p.contains("posture"))
