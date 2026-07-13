@@ -460,7 +460,7 @@ char filename[4096];
 FILE *fp;
 unsigned long long magic, want;
 unsigned int version;
-long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT;
+long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT, opq = 0;
 const char *tag = "ANTPQCF1";
 
 memcpy(&want, tag, 8);
@@ -468,14 +468,19 @@ snprintf(filename, sizeof(filename), "%s/pq.config", directory);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return 0;
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
-	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u)
+	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u && version != 3u)
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
 	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
 	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
 	{ fclose(fp); return 0; }
-if (version == 2u)
+if (version == 2u || version == 3u)
 	{
 	if (fread(&tier, sizeof(tier), 1, fp) != 1 || tier < 0 || tier > 2)
+		{ fclose(fp); return 0; }
+	}
+if (version == 3u)
+	{
+	if (fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1))
 		{ fclose(fp); return 0; }
 	}
 fclose(fp);
@@ -485,6 +490,7 @@ pq_m_current = m;
 pq_posture_current = (long)posture;
 pq_rerank_quant_current = (long)rerank_quant;
 pq_resident_tier_current = (long)tier;
+pq_opq_current = (long)opq;
 return 0;
 }
 
@@ -498,11 +504,12 @@ long ATIRE_segment_index::save_pq_config(void)
 char filename[4096], temp[4200];
 FILE *fp;
 unsigned long long magic;
-unsigned int version = 2u;
+unsigned int version = 3u;
 long long m = pq_m_current;
 long long posture = pq_posture_current;
 long long rerank_quant = pq_rerank_quant_current;
 long long tier = pq_resident_tier_current;
+long long opq = pq_opq_current;
 const char *tag = "ANTPQCF1";
 
 memcpy(&magic, tag, 8);
@@ -515,7 +522,8 @@ if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version
 	|| fwrite(&m, sizeof(m), 1, fp) != 1
 	|| fwrite(&posture, sizeof(posture), 1, fp) != 1
 	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1
-	|| fwrite(&tier, sizeof(tier), 1, fp) != 1)
+	|| fwrite(&tier, sizeof(tier), 1, fp) != 1
+	|| fwrite(&opq, sizeof(opq), 1, fp) != 1)
 	{ fclose(fp); remove(temp); return 1; }
 fclose(fp);
 if (rename(temp, filename) != 0)
@@ -617,6 +625,38 @@ if (hnsw_M_current != 0)
 		segments[which].hnsw_graph = NULL;
 		}
 	}
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_OPQ()
+	----------------------------------
+	Enable OPQ rotation for the dense `.pq` store: a learned orthogonal D*D
+	rotation applied before subspace splitting, improving recall at the same
+	m/k (metric-exactly -- an orthogonal rotation preserves dot/L2/cosine).
+	Requires PQ already configured (set_pq_config()).  Like set_pq_resident_tier(),
+	once enabled it is immutable: setting the SAME value again is a no-op
+	success (idempotent), but flipping it back off (or to any other value once
+	on) is rejected.  Persists in pq.config v3; existing (v1/v2) writer create()
+	call sites pass pq_opq_current so backfilled/compacted segments train R
+	under the configured flag.
+*/
+long ATIRE_segment_index::set_pq_opq(long enable)
+{
+long want;
+
+if (directory == NULL)
+	return 1;                       // must be open
+if (!pq_configured())
+	return 1;                       // PQ must be configured first
+want = enable ? 1 : 0;
+if (pq_opq_current == want)
+	return 0;                       // idempotent
+if (pq_opq_current != 0)
+	return 1;                       // immutable once enabled
+pq_opq_current = want;
+if (save_pq_config() != 0)
+	{ pq_opq_current = 0; return 1; }
 return 0;
 }
 
@@ -1244,7 +1284,7 @@ for (which = 0; which < segment_count; which++)
 		if (src->document_count() == docs && docs > 0 && !src->is_quantized())
 			{
 			ANT_pq_store_writer w;
-			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, 0) != 0;
+			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
 			float *buf = new float[vector_dimension_current];
 			for (long long docid = 0; !failed && docid < docs; docid++)
 				{

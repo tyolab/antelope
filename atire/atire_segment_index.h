@@ -122,6 +122,7 @@ private:
 	long pq_posture_current;				// PQ_POSTURE_REPLACE / PQ_POSTURE_RERANK
 	long pq_rerank_quant_current;			// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
 	long pq_resident_tier_current;			// PQ_TIER_FLOAT (default) / PQ_TIER_INT8 / PQ_TIER_NONE
+	long pq_opq_current;					// 0 (default, off) / 1 (OPQ rotation enabled); immutable once on
 	long pq_eager;							// 0 ondemand (default), 1 eager
 
 	long long mvpq_m_current;			// 0 = token-PQ unconfigured
@@ -285,6 +286,8 @@ public:
 	long set_pq_policy(long eager) { pq_eager = eager ? 1 : 0; return 0; }
 	long set_pq_resident_tier(long tier);   // 0 ok; nonzero: not open / PQ or vectors unconfigured / invalid tier / NONE+RERANK / already set to a DIFFERENT tier (immutable)
 	long pq_resident_tier(void) { return pq_resident_tier_current; }
+	long set_pq_opq(long enable);			// 0 ok; nonzero: not open / PQ unconfigured / already set to a DIFFERENT value (immutable)
+	long pq_opq(void) { return pq_opq_current; }
 
 	long load_multivector_pq_config(void);
 	long save_multivector_pq_config(void);

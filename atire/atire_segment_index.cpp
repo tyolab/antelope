@@ -91,6 +91,7 @@ pq_m_current = 0;
 pq_posture_current = 0;
 pq_rerank_quant_current = 0;
 pq_resident_tier_current = PQ_TIER_FLOAT;
+pq_opq_current = 0;
 pq_eager = 0;
 
 mvpq_m_current = 0;
