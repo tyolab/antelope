@@ -484,7 +484,7 @@ for (i = 0; i < documents; i++)
 	this and stays byte-identical to the pre-OPQ writer.
 */
 float *rotation = NULL;
-if (opq)
+if (opq && present_count > 0)
 	{
 	rotation = new float[dimension * dimension];
 	if (ANT_pq_codec::train_rotation(present_rows, dimension, m, present_count, rotation) != 0)
@@ -541,7 +541,7 @@ if (fp == NULL)
 	}
 
 long long k = ANT_pq_codec::K;
-long long opq_flag = opq ? 1 : 0;
+long long opq_flag = (rotation != NULL) ? 1 : 0;		/* derive from the trained R, not the request (present_count==0 -> no R) */
 unsigned int version = ANT_PQ_STORE_VERSION;
 long failed = 0;
 
@@ -563,7 +563,7 @@ if (!failed && codebook_floats > 0 && fwrite(codebook, sizeof(float), (size_t)co
 if (!failed && codes_bytes > 0 && fwrite(codes, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes)
 	failed = 1;
 
-if (!failed && opq && fwrite(rotation, sizeof(float), (size_t)(dimension*dimension), fp) != (size_t)(dimension*dimension))
+if (!failed && rotation != NULL && fwrite(rotation, sizeof(float), (size_t)(dimension*dimension), fp) != (size_t)(dimension*dimension))
 	failed = 1;
 
 delete [] codebook;

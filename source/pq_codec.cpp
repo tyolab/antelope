@@ -384,12 +384,10 @@ void ANT_pq_codec::apply_rotation_transpose(const float *vec, long long dimensio
 {
 long long r, d, D = dimension;
 for (d = 0; d < D; d++)
-	out[d] = 0.0f;
-for (r = 0; r < D; r++)
 	{
-	double vr = (double)vec[r];
-	const float *Rr = R + r*D;
-	for (d = 0; d < D; d++)
-		out[d] += (float)(Rr[d] * vr);
+	double acc = 0.0;
+	for (r = 0; r < D; r++)
+		acc += (double)R[r*D + d] * (double)vec[r];
+	out[d] = (float)acc;
 	}
 }

@@ -154,6 +154,25 @@ static void test_store_opq_deterministic(void)
 	printf("test_store_opq_deterministic OK\n");
 }
 
+// M1: an OPQ-configured writer with ZERO present rows (all append(NULL)) must not hard-fail;
+// train_rotation rejects n==0, so finish() skips rotation, writes opq=0, and loads as an empty store.
+static void test_store_opq_empty_segment_degrades(void)
+{
+	const long long D = 8, m = 4, n = 12;
+	char p[] = "/tmp/ant_opqempty_XXXXXX";  CHECK(mkstemp(p) >= 0);
+	ANT_pq_store_writer w;
+	CHECK(w.create(p, D, m, ANT_pq_codec::METRIC_L2, 1) == 0);
+	for (long long i = 0; i < n; i++) CHECK(w.append(NULL) == 0);   // no present rows
+	CHECK(w.finish() == 0);                                          // opq=1 requested, but degrades gracefully
+
+	ANT_pq_store *s = ANT_pq_store::load(p, D, n, ANT_pq_codec::METRIC_L2);
+	CHECK(s != NULL && s->document_count() == n);
+	for (long long doc = 0; doc < n; doc++) CHECK(s->has(doc) == 0);  // empty store, nothing surfaced
+	delete s;
+	remove(p);
+	printf("test_store_opq_empty_segment_degrades OK\n");
+}
+
 /*
 	----------------------------------------------------------------------
 	Task 3: engine-level config + lifecycle (set_pq_opq / pq.config v3 /
@@ -349,6 +368,7 @@ int main(void)
 	test_rotation_rejects_bad_args();
 	test_store_opq_roundtrip_and_backcompat();
 	test_store_opq_deterministic();
+	test_store_opq_empty_segment_degrades();
 	test_engine_opq_recall_gain_and_persistence();
 	test_engine_opq_config_persistence_and_lifecycle();
 	printf("ALL TESTS PASSED\n");
