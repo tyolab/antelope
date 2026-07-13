@@ -15,6 +15,9 @@ ARCHIVES = [os.path.join(REPO, p) for p in [
 class make_then_build(build_ext):
     def run(self):
         # externals + engine objects, then archive; externals are gitignored artifacts absent in a fresh checkout
+        # engine has no header dependency tracking -> clear stale objects/archive so a header change can't link a
+        # mismatched libantelope_engine.a (which then SEGVs at runtime). A from-source build is already a full compile.
+        subprocess.check_call("rm -f obj/*.o lib/libantelope_engine.a", shell=True, cwd=REPO)
         subprocess.check_call(["make", "all"], cwd=REPO)
         subprocess.check_call(["make", "engine_lib"], cwd=REPO)
         missing = [a for a in ARCHIVES if not os.path.exists(a)]
