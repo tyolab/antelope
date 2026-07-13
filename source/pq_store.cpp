@@ -3,20 +3,25 @@
 
 	On-disk layout (".pq" sidecar), all fields little-endian native:
 		magic       8 bytes  "ANTPQ001"
-		version     u32      1
+		version     u32      1 (legacy) or 2 (OPQ-capable)
 		dimension   i64
 		documents   i64
 		m           i64
 		k           i64      (== ANT_pq_codec::K, 256)
+		opq         i64      (v2 only) 0 = no rotation, 1 = R block present
 		presence    (documents+7)/8 bytes, bit d = 1 iff docid d has a vector
 		codebook    m*K*(dimension/m) floats
 		codes       documents*m bytes
+		rotation    dimension*dimension floats (only when opq == 1)
 
-	Header size is fixed at 44 bytes (8 + 4 + 8*4).  Every document -- present
-	or absent -- gets an encoded row in `codes`, but absent rows are encodings
-	of an all-zero vector and are never surfaced (has() gates every accessor).
-	This keeps codes/presence in lockstep by docid, which simplifies random
-	access and the forgiving-load size check below.
+	Header size is 44 bytes for v1 (8 + 4 + 8*4) or 52 bytes for v2 (adds the
+	opq i64).  Every document -- present or absent -- gets an encoded row in
+	`codes`, but absent rows are encodings of an all-zero vector and are never
+	surfaced (has() gates every accessor).  This keeps codes/presence in
+	lockstep by docid, which simplifies random access and the forgiving-load
+	size check below.  Under OPQ the codebook/codes live in the ROTATED space
+	(every stored vector was R*x); reconstruct un-rotates via R^T and queries
+	are rotated by R before building the ADC table (both metric-preserving).
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -27,8 +32,10 @@
 #include "vector_store.h"
 
 static const char ANT_PQ_STORE_MAGIC[8] = { 'A', 'N', 'T', 'P', 'Q', '0', '0', '1' };
-static const unsigned int ANT_PQ_STORE_VERSION = 1;
-enum { ANT_PQ_STORE_HEADER_SIZE = 8 + 4 + 8 + 8 + 8 + 8 };	// magic, version, dimension, documents, m, k
+static const unsigned int ANT_PQ_STORE_VERSION = 2;
+static const unsigned int ANT_PQ_STORE_VERSION_V1 = 1;
+enum { ANT_PQ_STORE_HEADER_SIZE_V1 = 8 + 4 + 8 + 8 + 8 + 8 };		// v1: magic, version, dimension, documents, m, k
+enum { ANT_PQ_STORE_HEADER_SIZE = 8 + 4 + 8 + 8 + 8 + 8 + 8 };	// v2: + opq i64
 
 /*
 	ANT_PQ_STORE::ANT_PQ_STORE()
@@ -43,6 +50,7 @@ metric = 0;
 presence = NULL;
 codebook = NULL;
 codes = NULL;
+rotation = NULL;
 adc_table_builds = 0;
 }
 
@@ -55,6 +63,7 @@ ANT_pq_store::~ANT_pq_store()
 delete [] presence;
 delete [] codebook;
 delete [] codes;
+delete [] rotation;
 }
 
 /*
@@ -69,8 +78,8 @@ ANT_pq_store *ANT_pq_store::load(const char *filename, long long expected_dimens
 FILE *fp;
 char stored_magic[8];
 unsigned int stored_version;
-long long stored_dimension, stored_documents, stored_m, stored_k;
-long long file_size, expected_size;
+long long stored_dimension, stored_documents, stored_m, stored_k, stored_opq = 0;
+long long file_size, expected_size, header_size;
 ANT_pq_store *result = new ANT_pq_store();
 
 if ((fp = fopen(filename, "rb")) == NULL)
@@ -87,15 +96,35 @@ if (fread(stored_magic, 1, 8, fp) != 8
 	return result;
 	}
 
+/*
+	v1 has no opq field (header 44 bytes); v2 adds an opq i64 (header 52 bytes).
+	Read the extra field only for v2 so old files still load with rotation=NULL.
+*/
+if (stored_version == ANT_PQ_STORE_VERSION)
+	{
+	if (fread(&stored_opq, sizeof(stored_opq), 1, fp) != 1)
+		{
+		fclose(fp);
+		return result;
+		}
+	header_size = ANT_PQ_STORE_HEADER_SIZE;
+	}
+else
+	{
+	stored_opq = 0;
+	header_size = ANT_PQ_STORE_HEADER_SIZE_V1;
+	}
+
 if (memcmp(stored_magic, ANT_PQ_STORE_MAGIC, 8) != 0
-	|| stored_version != ANT_PQ_STORE_VERSION
+	|| (stored_version != ANT_PQ_STORE_VERSION && stored_version != ANT_PQ_STORE_VERSION_V1)
 	|| stored_dimension != expected_dimension
 	|| stored_documents != expected_documents
 	|| stored_documents < 0 || stored_documents > (1LL << 40)
 	|| stored_dimension < 1 || stored_dimension > 65536
 	|| stored_m < 1 || stored_m > stored_dimension
 	|| stored_dimension % stored_m != 0
-	|| stored_k != ANT_pq_codec::K)
+	|| stored_k != ANT_pq_codec::K
+	|| (stored_opq != 0 && stored_opq != 1))
 	{
 	fclose(fp);
 	return result;
@@ -116,13 +145,21 @@ if (memcmp(stored_magic, ANT_PQ_STORE_MAGIC, 8) != 0
 long long presence_bytes = (stored_documents + 7) / 8;
 long long codebook_floats = stored_m * (long long)ANT_pq_codec::K * (stored_dimension / stored_m);
 long long codes_bytes = stored_documents * stored_m;
+/*
+	Under OPQ a dimension*dimension float R block follows the codes.  stored_dimension
+	is capped at 65536 above, so rotation_floats <= 2^32 and *4 <= 2^34 -- fits i64
+	without signed overflow, and is validated (below) against the actual file size
+	before any allocation.
+*/
+long long rotation_floats = stored_opq ? stored_dimension * stored_dimension : 0;
 
-expected_size = ANT_PQ_STORE_HEADER_SIZE
+expected_size = header_size
 	+ presence_bytes
 	+ codebook_floats * (long long)sizeof(float)
-	+ codes_bytes;
+	+ codes_bytes
+	+ rotation_floats * (long long)sizeof(float);
 
-if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || fseek(fp, ANT_PQ_STORE_HEADER_SIZE, SEEK_SET) != 0)
+if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || fseek(fp, header_size, SEEK_SET) != 0)
 	{
 	fclose(fp);
 	return result;
@@ -131,14 +168,17 @@ if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || f
 unsigned char *presence_buffer = new unsigned char[presence_bytes > 0 ? presence_bytes : 1];
 float *codebook_buffer = new float[codebook_floats > 0 ? codebook_floats : 1];
 unsigned char *codes_buffer = new unsigned char[codes_bytes > 0 ? codes_bytes : 1];
+float *rotation_buffer = rotation_floats > 0 ? new float[rotation_floats] : NULL;
 
 if ((presence_bytes > 0 && fread(presence_buffer, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes)
 	|| (codebook_floats > 0 && fread(codebook_buffer, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
-	|| (codes_bytes > 0 && fread(codes_buffer, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes))
+	|| (codes_bytes > 0 && fread(codes_buffer, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes)
+	|| (rotation_floats > 0 && fread(rotation_buffer, sizeof(float), (size_t)rotation_floats, fp) != (size_t)rotation_floats))
 	{
 	delete [] presence_buffer;
 	delete [] codebook_buffer;
 	delete [] codes_buffer;
+	delete [] rotation_buffer;
 	fclose(fp);
 	return result;
 	}
@@ -152,6 +192,7 @@ result->metric = metric;
 result->presence = presence_buffer;
 result->codebook = codebook_buffer;
 result->codes = codes_buffer;
+result->rotation = rotation_buffer;
 return result;
 }
 
@@ -166,7 +207,16 @@ if (!has(docid))
 	memset(out, 0, (size_t)dimension * sizeof(float));
 	return;
 	}
-ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, codebook, out);
+if (rotation != NULL)
+	{
+	/* codes live in rotated space -> reconstruct there, then un-rotate via R^T into original space */
+	float *tmp = new float[dimension];
+	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, codebook, tmp);
+	ANT_pq_codec::apply_rotation_transpose(tmp, dimension, rotation, out);
+	delete [] tmp;
+	}
+else
+	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, codebook, out);
 }
 
 /*
@@ -189,7 +239,16 @@ long long table_size = m * (long long)ANT_pq_codec::K;
 if (table_size > (long long)PQ_SCORE_STACK_CAP)
 	table = new double[table_size];				/* larger m: heap the ADC table */
 
-ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+const float *q = query;
+float *rq = NULL;
+if (rotation != NULL)
+	{
+	rq = new float[dimension];
+	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
+	q = rq;
+	}
+ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+delete [] rq;					/* delete[] NULL is a no-op */
 adc_table_builds++;
 double result = ANT_pq_codec::adc_score(codes + docid * m, m, table);
 
@@ -214,7 +273,16 @@ void *ANT_pq_store::prepare_query(const float *query, long metric)
 if (documents == 0 || codebook == 0)
 	return 0;								/* degraded store: ctx==NULL -> score_prepared falls back */
 double *table = new double[m * (long long)ANT_pq_codec::K];
-ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+const float *q = query;
+float *rq = NULL;
+if (rotation != NULL)
+	{
+	rq = new float[dimension];			/* one D-matvec per search, not per node */
+	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
+	q = rq;
+	}
+ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+delete [] rq;
 adc_table_builds++;
 return table;
 }
@@ -248,7 +316,16 @@ if (documents == 0 || codebook == 0)
 
 long long K = ANT_pq_codec::K;
 double *table = new double[m * K];
-ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+const float *q = query;
+float *rq = NULL;
+if (rotation != NULL)
+	{
+	rq = new float[dimension];
+	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
+	q = rq;
+	}
+ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+delete [] rq;
 
 for (long long d = 0; d < documents; d++)
 	{
@@ -274,6 +351,7 @@ filename = NULL;
 dimension = 0;
 m = 0;
 metric = 0;
+opq = 0;
 buffer = NULL;
 capacity = 0;
 documents = 0;
@@ -295,7 +373,7 @@ abandon();
 	---------------------------------
 	Resets any prior state, so a writer may be reused across create() calls.
 */
-long ANT_pq_store_writer::create(const char *path, long long dim, long long m_arg, long metric_arg)
+long ANT_pq_store_writer::create(const char *path, long long dim, long long m_arg, long metric_arg, long opq_arg)
 {
 abandon();
 
@@ -309,6 +387,7 @@ if (filename == NULL)
 dimension = dim;
 m = m_arg;
 metric = metric_arg;
+opq = opq_arg ? 1 : 0;
 capacity = 1024;
 buffer = new float[capacity * dimension];
 presence_capacity = (1024 + 7) / 8;
@@ -397,6 +476,37 @@ for (i = 0; i < documents; i++)
 		w++;
 		}
 
+/*
+	OPQ: learn R over the present rows (original space), then rotate BOTH the
+	codebook-training rows (present_rows) and every encode row (buffer) in place
+	so the codebook is trained on -- and every code encodes -- R*x.  Absent buffer
+	rows are all-zero and rotate to zero (harmless).  The non-OPQ path skips all of
+	this and stays byte-identical to the pre-OPQ writer.
+*/
+float *rotation = NULL;
+if (opq)
+	{
+	rotation = new float[dimension * dimension];
+	if (ANT_pq_codec::train_rotation(present_rows, dimension, m, present_count, rotation) != 0)
+		{
+		delete [] rotation;
+		delete [] present_rows;
+		return 1;
+		}
+	float *tmp = new float[dimension];
+	for (i = 0; i < present_count; i++)
+		{
+		ANT_pq_codec::apply_rotation(present_rows + i * dimension, dimension, rotation, tmp);
+		memcpy(present_rows + i * dimension, tmp, (size_t)dimension * sizeof(float));
+		}
+	for (i = 0; i < documents; i++)
+		{
+		ANT_pq_codec::apply_rotation(buffer + i * dimension, dimension, rotation, tmp);
+		memcpy(buffer + i * dimension, tmp, (size_t)dimension * sizeof(float));
+		}
+	delete [] tmp;
+	}
+
 float *codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
 long train_rc = ANT_pq_codec::train(present_rows, dimension, m, present_count, codebook);
 delete [] present_rows;
@@ -404,6 +514,7 @@ delete [] present_rows;
 if (train_rc != 0)
 	{
 	delete [] codebook;
+	delete [] rotation;
 	return 1;
 	}
 
@@ -416,6 +527,7 @@ if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(te
 	{
 	delete [] codebook;
 	delete [] codes;
+	delete [] rotation;
 	return 1;
 	}
 
@@ -424,10 +536,12 @@ if (fp == NULL)
 	{
 	delete [] codebook;
 	delete [] codes;
+	delete [] rotation;
 	return 1;
 	}
 
 long long k = ANT_pq_codec::K;
+long long opq_flag = opq ? 1 : 0;
 unsigned int version = ANT_PQ_STORE_VERSION;
 long failed = 0;
 
@@ -436,7 +550,8 @@ if (fwrite(ANT_PQ_STORE_MAGIC, 1, 8, fp) != 8
 	|| fwrite(&dimension, sizeof(dimension), 1, fp) != 1
 	|| fwrite(&documents, sizeof(documents), 1, fp) != 1
 	|| fwrite(&m, sizeof(m), 1, fp) != 1
-	|| fwrite(&k, sizeof(k), 1, fp) != 1)
+	|| fwrite(&k, sizeof(k), 1, fp) != 1
+	|| fwrite(&opq_flag, sizeof(opq_flag), 1, fp) != 1)
 	failed = 1;
 
 if (!failed && presence_bytes > 0 && fwrite(presence, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes)
@@ -448,8 +563,12 @@ if (!failed && codebook_floats > 0 && fwrite(codebook, sizeof(float), (size_t)co
 if (!failed && codes_bytes > 0 && fwrite(codes, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes)
 	failed = 1;
 
+if (!failed && opq && fwrite(rotation, sizeof(float), (size_t)(dimension*dimension), fp) != (size_t)(dimension*dimension))
+	failed = 1;
+
 delete [] codebook;
 delete [] codes;
+delete [] rotation;
 
 if (failed)
 	{

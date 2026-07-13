@@ -1244,7 +1244,7 @@ for (which = 0; which < segment_count; which++)
 		if (src->document_count() == docs && docs > 0 && !src->is_quantized())
 			{
 			ANT_pq_store_writer w;
-			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric) != 0;
+			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, 0) != 0;
 			float *buf = new float[vector_dimension_current];
 			for (long long docid = 0; !failed && docid < docs; docid++)
 				{

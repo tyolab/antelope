@@ -20,6 +20,7 @@ private:
 	unsigned char *presence;	// (documents+7)/8, NULL when empty
 	float *codebook;			// m*K*(dimension/m), NULL when empty
 	unsigned char *codes;		// documents*m, NULL when empty
+	float *rotation;			// D*D OPQ rotation R (row-major), NULL when OPQ off
 	ANT_pq_store();
 public:
 	long long adc_table_builds;	// diagnostic-only, NOT thread-safe: # of adc_table() builds (score() + prepare_query); test proves the seam engaged
@@ -48,11 +49,11 @@ public:
 class ANT_pq_store_writer
 {
 private:
-	char *filename; long long dimension, m; long metric;
+	char *filename; long long dimension, m; long metric; long opq;
 	float *buffer; long long capacity, documents; unsigned char *presence; long long presence_capacity;
 public:
 	ANT_pq_store_writer(); ~ANT_pq_store_writer();
-	long create(const char *path, long long dim, long long m, long metric);
+	long create(const char *path, long long dim, long long m, long metric, long opq);
 	long append(const float *vector_or_null);
 	long finish(void);
 	void abandon(void);

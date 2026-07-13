@@ -15,7 +15,7 @@ static ANT_pq_store *make_pq(long long dim, long long m, long long n, long metri
 	float *data = new float[n*dim];
 	srand(7); for (long long i=0;i<n*dim;i++) data[i]=(float)(rand()%200-100)/100.0f;
 	ANT_pq_store_writer w;
-	CHECK(w.create(path, dim, m, metric) == 0);
+	CHECK(w.create(path, dim, m, metric, 0) == 0);
 	for (long long d=0; d<n; d++) CHECK(w.append(data + d*dim) == 0);
 	CHECK(w.finish() == 0);
 	delete [] data;

@@ -18,7 +18,7 @@ static void test_score_stack_cap(void)
 	float *data = new float[n*dim];
 	srand(3); for (i = 0; i < n*dim; i++) data[i] = (float)(rand()%200-100)/100.0f;
 	ANT_pq_store_writer w;
-	CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT) == 0);
+	CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
 	for (d = 0; d < n; d++) CHECK(w.append(data + d*dim) == 0);
 	CHECK(w.finish() == 0);
 	ANT_pq_store *pq = ANT_pq_store::load(path, dim, n, ANT_pq_codec::METRIC_DOT);

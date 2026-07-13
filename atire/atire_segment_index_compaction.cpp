@@ -499,7 +499,7 @@ if (pq_configured())
 	if (out_vectors->document_count() == out_docs && out_docs > 0 && !out_vectors->is_quantized())
 		{
 		ANT_pq_store_writer w;
-		long failed = w.create(out_pq, vector_dimension_current, pq_m_current, vector_metric) != 0;
+		long failed = w.create(out_pq, vector_dimension_current, pq_m_current, vector_metric, 0) != 0;
 		float *buf = new float[vector_dimension_current];
 		for (long long d = 0; !failed && d < out_docs; d++)
 			{
