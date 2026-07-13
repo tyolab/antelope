@@ -6,6 +6,8 @@
 #ifndef TOKEN_INDEX_H_
 #define TOKEN_INDEX_H_
 
+#include <vector>
+
 class ANT_hnsw;
 class ANT_token_source;
 class ANT_index_tombstones;
@@ -22,6 +24,14 @@ private:
 	long long M;
 	long long ef_construction;
 	ANT_token_source *source;   // borrowed (not owned) -- do NOT delete in dtor
+	// #17: reusable candidate scratch (sized `documents`), reset lazily per touched
+	// doc via scratch_epoch instead of O(documents) zeroing each search_candidates call.
+	// Makes search_candidates NON-reentrant per instance -- consistent with the engine's
+	// single-threaded-search model (shared results buffer) and ANT_hnsw's visited_epoch.
+	std::vector<double>    scratch_provisional;    // valid where scratch_touched_epoch[d]==scratch_epoch
+	std::vector<long long> scratch_seen_query;     // query token that last contributed to d (this epoch)
+	std::vector<long long> scratch_touched_epoch;  // last epoch d was touched (replaces the per-call in_touched)
+	long long              scratch_epoch;          // bumped once per search_candidates call
 	ANT_token_index();
 public:
 	~ANT_token_index();

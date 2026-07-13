@@ -11,6 +11,7 @@
 ANT_token_index::ANT_token_index()
 {
 graph = NULL; token_docid = NULL; token_count = 0; documents = 0; dimension = 0; metric = 0; M = 0; ef_construction = 0; source = NULL;
+scratch_epoch = 0;
 }
 
 ANT_token_index::~ANT_token_index()
@@ -164,13 +165,18 @@ long long ANT_token_index::search_candidates(const float *query, long long num_q
 if (empty() || query == NULL || num_query_vecs <= 0 || max_candidates <= 0 || token_top_p <= 0)
 	return 0;
 
-std::vector<double> provisional((size_t)documents, 0.0);
-std::vector<char> in_touched((size_t)documents, 0);
-std::vector<long long> touched;
-std::vector<long long> seen_query((size_t)documents, -1);   // which query token last contributed to a doc
+// lazily size the reusable scratch to `documents` (once; grows only if documents grows)
+if ((long long)scratch_touched_epoch.size() < documents)
+	{
+	scratch_provisional.assign((size_t)documents, 0.0);
+	scratch_seen_query.assign((size_t)documents, -1);
+	scratch_touched_epoch.assign((size_t)documents, 0);   // 0 != any epoch>=1 -> nothing looks touched
+	}
+scratch_epoch++;                                          // new call -> all prior touches invalidated
 
+std::vector<long long> touched;                           // O(candidates), not O(documents)
 std::vector<long long> tok_docids((size_t)token_top_p);
-std::vector<double> tok_scores((size_t)token_top_p);
+std::vector<double>    tok_scores((size_t)token_top_p);
 
 for (long long i = 0; i < num_query_vecs; i++)
 	{
@@ -186,18 +192,24 @@ for (long long i = 0; i < num_query_vecs; i++)
 		if (d < 0 || d >= documents) continue;
 		if (tombstones != NULL && tombstones->is_deleted(d)) continue;
 		if (filter_bits != NULL && !(filter_bits[d >> 3] & (1 << (d & 7)))) continue;
+		if (scratch_touched_epoch[d] != scratch_epoch)   // first time this doc appears this call
+			{
+			scratch_touched_epoch[d] = scratch_epoch;
+			scratch_provisional[d]   = 0.0;
+			scratch_seen_query[d]    = -1;
+			touched.push_back(d);
+			}
 		// results are descending by kernel, so the FIRST hit for this (query token, doc) is its best
-		if (seen_query[d] == i) continue;          // already took this query token's best for d
-		seen_query[d] = i;
-		if (!in_touched[d]) { in_touched[d] = 1; touched.push_back(d); }
-		provisional[d] += tok_scores[r];
+		if (scratch_seen_query[d] == i) continue;        // already took this query token's best for d
+		scratch_seen_query[d] = i;
+		scratch_provisional[d] += tok_scores[r];
 		}
 	}
 
 long long out_n = (long long)touched.size();
 if (out_n > max_candidates) out_n = max_candidates;
 std::partial_sort(touched.begin(), touched.begin() + out_n, touched.end(),
-	[&](long long a, long long b){ return provisional[a] > provisional[b]; });
+	[&](long long a, long long b){ return scratch_provisional[a] > scratch_provisional[b]; });
 for (long long j = 0; j < out_n; j++)
 	out_docids[j] = touched[j];
 return out_n;
