@@ -68,3 +68,16 @@ def test_bad_filter_raises_typeerror():
         ix.flush()
         with pytest.raises(TypeError):
             ix.search("alpha", 5, filter={"eq": {"unknown_field": "v"}})
+
+
+def test_multivectors_without_rerank_raises_valueerror():
+    import tempfile, pytest, antelope
+    # dense vectors enabled, but rerank (multi-vector) support is NOT configured
+    with antelope.SegmentIndex(dimension=4, metric="dot") as ix:
+        ix.open(tempfile.mkdtemp())
+        with pytest.raises(ValueError) as e1:
+            ix.add_document("d0", "<DOC>x</DOC>", vector=[1, 0, 0, 0], multi_vectors=[[1, 0, 0, 0]])
+        assert "rerank is not configured" in str(e1.value)
+        with pytest.raises(ValueError) as e2:
+            ix.search_rerank("x", [1, 0, 0, 0], [[1, 0, 0, 0]], first_stage_n=10, k=5)
+        assert "rerank is not configured" in str(e2.value)

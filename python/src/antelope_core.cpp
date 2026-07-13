@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <memory>
 #include "atire_segment_index.h"
 #include "attribute_store.h"
 #include "filter.h"
@@ -841,6 +842,8 @@ struct PySegmentIndex
 	const float *mvptr = NULL;
 	if (has_mv)
 		{
+		if (!engine->rerank_configured())
+			throw py::value_error("multi-vectors given but rerank is not configured (pass rerank={'dimension': N} to the constructor)");
 		mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);	// touches Python -> must be before gil release
 		mvptr = num_mv > 0 ? mv.data() : NULL;
 		}
@@ -937,13 +940,12 @@ struct PySegmentIndex
 	if (k < 1)
 		return py::list();
 	std::string buf = text;
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search(&buf[0], k, flt) : engine->search(&buf[0], k);
+	count = flt ? engine->search(&buf[0], k, flt.get()) : engine->search(&buf[0], k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -957,13 +959,12 @@ struct PySegmentIndex
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_vector(vec.data(), k, flt) : engine->search_vector(vec.data(), k);
+	count = flt ? engine->search_vector(vec.data(), k, flt.get()) : engine->search_vector(vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -981,13 +982,12 @@ struct PySegmentIndex
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_hybrid(&buf[0], vec.data(), k, flt) : engine->search_hybrid(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid(&buf[0], vec.data(), k, flt.get()) : engine->search_hybrid(&buf[0], vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -1003,13 +1003,12 @@ struct PySegmentIndex
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_vector_approx(vec.data(), k, flt) : engine->search_vector_approx(vec.data(), k);
+	count = flt ? engine->search_vector_approx(vec.data(), k, flt.get()) : engine->search_vector_approx(vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -1023,13 +1022,12 @@ struct PySegmentIndex
 	if (k < 1)
 		return py::list();
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_vector_hnsw(vec.data(), k, flt) : engine->search_vector_hnsw(vec.data(), k);
+	count = flt ? engine->search_vector_hnsw(vec.data(), k, flt.get()) : engine->search_vector_hnsw(vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -1044,13 +1042,12 @@ struct PySegmentIndex
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_hybrid_approx(&buf[0], vec.data(), k, flt) : engine->search_hybrid_approx(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid_approx(&buf[0], vec.data(), k, flt.get()) : engine->search_hybrid_approx(&buf[0], vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -1065,13 +1062,12 @@ struct PySegmentIndex
 		return py::list();
 	std::string buf = text;
 	std::vector<float> vec = extract_vector(vector, engine->vector_dimension());
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_hybrid_hnsw(&buf[0], vec.data(), k, flt) : engine->search_hybrid_hnsw(&buf[0], vec.data(), k);
+	count = flt ? engine->search_hybrid_hnsw(&buf[0], vec.data(), k, flt.get()) : engine->search_hybrid_hnsw(&buf[0], vec.data(), k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
@@ -1163,16 +1159,17 @@ struct PySegmentIndex
 		vptr = vec.data();
 		}
 	long long num_qv = 0;
+	if (!engine->rerank_configured())
+		throw py::value_error("multi-vectors given but rerank is not configured (pass rerank={'dimension': N} to the constructor)");
 	std::vector<float> qmv = extract_multivectors(query_multi_vectors, engine->rerank_dimension(), &num_qv);
 	const float *qmvptr = num_qv > 0 ? qmv.data() : NULL;
-	ANT_filter *flt = parse_filter_option(filter, engine);
+	std::unique_ptr<ANT_filter> flt(parse_filter_option(filter, engine));
 	long long count;
 	{
 	py::gil_scoped_release release;
-	count = flt ? engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k, flt)
+	count = flt ? engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k, flt.get())
 	            : engine->search_rerank(tptr, vptr, qmvptr, num_qv, first_stage_n, k);
 	}
-	delete flt;
 	return hits_to_list(count);
 	}
 
