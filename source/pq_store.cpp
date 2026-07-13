@@ -357,6 +357,21 @@ capacity = 0;
 documents = 0;
 presence = NULL;
 presence_capacity = 0;
+ext_codebook = NULL;
+ext_rotation = NULL;
+}
+
+/*
+	ANT_PQ_STORE_WRITER::SET_EXTERNAL_CODEBOOK()
+	------------------------------------------------
+	Supply a codebook (+ optional OPQ rotation) trained elsewhere.  When set,
+	finish() skips training and encodes/embeds against these borrowed buffers.
+	The writer never frees them.
+*/
+void ANT_pq_store_writer::set_external_codebook(const float *codebook, const float *rotation)
+{
+ext_codebook = codebook;
+ext_rotation = rotation;
 }
 
 /*
@@ -376,6 +391,9 @@ abandon();
 long ANT_pq_store_writer::create(const char *path, long long dim, long long m_arg, long metric_arg, long opq_arg)
 {
 abandon();
+
+ext_codebook = NULL;			/* a reused writer must not carry stale externals */
+ext_rotation = NULL;
 
 if (m_arg < 1 || dim < 1 || dim % m_arg != 0)
 	return 1;
@@ -483,16 +501,24 @@ for (i = 0; i < documents; i++)
 	rows are all-zero and rotate to zero (harmless).  The non-OPQ path skips all of
 	this and stays byte-identical to the pre-OPQ writer.
 */
-float *rotation = NULL;
-if (opq && present_count > 0)
+/* --- rotation: external (borrowed) OR trained (owned) OR none --- */
+float *owned_rotation = NULL;
+const float *rotation = NULL;
+if (ext_codebook != NULL)
+	rotation = ext_rotation;					/* borrowed (may be NULL for non-OPQ global) */
+else if (opq && present_count > 0)
 	{
-	rotation = new float[dimension * dimension];
-	if (ANT_pq_codec::train_rotation(present_rows, dimension, m, present_count, rotation) != 0)
+	owned_rotation = new float[dimension * dimension];
+	if (ANT_pq_codec::train_rotation(present_rows, dimension, m, present_count, owned_rotation) != 0)
 		{
-		delete [] rotation;
+		delete [] owned_rotation;
 		delete [] present_rows;
 		return 1;
 		}
+	rotation = owned_rotation;
+	}
+if (rotation != NULL)							/* rotate present_rows + buffer in place (unchanged logic) */
+	{
 	float *tmp = new float[dimension];
 	for (i = 0; i < present_count; i++)
 		{
@@ -507,16 +533,24 @@ if (opq && present_count > 0)
 	delete [] tmp;
 	}
 
-float *codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
-long train_rc = ANT_pq_codec::train(present_rows, dimension, m, present_count, codebook);
-delete [] present_rows;
-
-if (train_rc != 0)
+/* --- codebook: external (borrowed) OR trained (owned) --- */
+float *owned_codebook = NULL;
+const float *codebook = NULL;
+if (ext_codebook != NULL)
+	codebook = ext_codebook;					/* borrowed; do NOT free */
+else
 	{
-	delete [] codebook;
-	delete [] rotation;
-	return 1;
+	owned_codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
+	if (ANT_pq_codec::train(present_rows, dimension, m, present_count, owned_codebook) != 0)
+		{
+		delete [] owned_codebook;
+		delete [] owned_rotation;
+		delete [] present_rows;
+		return 1;
+		}
+	codebook = owned_codebook;
 	}
+delete [] present_rows;
 
 unsigned char *codes = new unsigned char[codes_bytes > 0 ? codes_bytes : 1];
 for (i = 0; i < documents; i++)
@@ -525,18 +559,18 @@ for (i = 0; i < documents; i++)
 char temp_name[4200];
 if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))
 	{
-	delete [] codebook;
+	delete [] owned_codebook;
 	delete [] codes;
-	delete [] rotation;
+	delete [] owned_rotation;
 	return 1;
 	}
 
 FILE *fp = fopen(temp_name, "wb");
 if (fp == NULL)
 	{
-	delete [] codebook;
+	delete [] owned_codebook;
 	delete [] codes;
-	delete [] rotation;
+	delete [] owned_rotation;
 	return 1;
 	}
 
@@ -566,9 +600,9 @@ if (!failed && codes_bytes > 0 && fwrite(codes, 1, (size_t)codes_bytes, fp) != (
 if (!failed && rotation != NULL && fwrite(rotation, sizeof(float), (size_t)(dimension*dimension), fp) != (size_t)(dimension*dimension))
 	failed = 1;
 
-delete [] codebook;
+delete [] owned_codebook;
 delete [] codes;
-delete [] rotation;
+delete [] owned_rotation;
 
 if (failed)
 	{
