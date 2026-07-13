@@ -27,7 +27,7 @@ Two optional constructor options, each a dict/object. Keys use each binding's ex
 | `residentTier` / `resident_tier` | string | `"float"`→`PQ_TIER_FLOAT`, `"int8"`→`PQ_TIER_INT8`, `"none"`→`PQ_TIER_NONE` | unset ⇒ skip `set_pq_resident_tier` (engine default FLOAT) |
 | `eager` / `eager` | bool | `set_pq_policy(1|0)` | `false` |
 
-**Token — `multivectorPq`:** same shape, except `residentTier`/`resident_tier` accepts only `"float"`→`MV_TIER_FLOAT` / `"none"`→`MV_TIER_NONE` (token tier has no int8); routes to `set_multivector_pq_config` / `set_multivector_resident_tier` / `set_multivector_pq_policy`.
+**Token bag — Node `multivectorPq` / Python `multivector_pq`** (top-level key follows each binding's convention — camelCase for Node, snake_case for Python, same as `flush_threshold`/`flushThreshold` etc.): same shape, except `residentTier`/`resident_tier` accepts only `"float"`→`MV_TIER_FLOAT` / `"none"`→`MV_TIER_NONE` (token tier has no int8); routes to `set_multivector_pq_config` / `set_multivector_resident_tier` / `set_multivector_pq_policy`.
 
 Presence sentinel: a `long option_pq_m` etc. isn't enough to know "requested", so gate each bag on a `bool option_pq_requested` / `option_mvpq_requested` set when the option key is present (mirrors how `option_rerank_dim > 0` gates rerank, but PQ has no natural "off" numeric — use an explicit bool).
 
