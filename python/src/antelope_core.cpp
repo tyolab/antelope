@@ -835,6 +835,9 @@ struct PySegmentIndex
 			}
 		vptr = vec.data();
 		}
+	// reject multi-vectors on a non-rerank index before allocating owned resources (set), so the throw can't leak them
+	if (!multi_vectors.is_none() && !engine->rerank_configured())
+		throw py::value_error("multi-vectors given but rerank is not configured (pass rerank={'dimension': N} to the constructor)");
 	ANT_attribute_set *set = build_attribute_set(engine, attributes, payload);	// NULL if neither given; throws (and self-frees) on error
 	bool has_mv = !multi_vectors.is_none();
 	std::vector<float> mv;
@@ -842,8 +845,6 @@ struct PySegmentIndex
 	const float *mvptr = NULL;
 	if (has_mv)
 		{
-		if (!engine->rerank_configured())
-			throw py::value_error("multi-vectors given but rerank is not configured (pass rerank={'dimension': N} to the constructor)");
 		mv = extract_multivectors(multi_vectors, engine->rerank_dimension(), &num_mv);	// touches Python -> must be before gil release
 		mvptr = num_mv > 0 ? mv.data() : NULL;
 		}
@@ -1159,7 +1160,7 @@ struct PySegmentIndex
 		vptr = vec.data();
 		}
 	long long num_qv = 0;
-	if (!engine->rerank_configured())
+	if (!query_multi_vectors.is_none() && !engine->rerank_configured())
 		throw py::value_error("multi-vectors given but rerank is not configured (pass rerank={'dimension': N} to the constructor)");
 	std::vector<float> qmv = extract_multivectors(query_multi_vectors, engine->rerank_dimension(), &num_qv);
 	const float *qmvptr = num_qv > 0 ? qmv.data() : NULL;
