@@ -33,7 +33,7 @@ static void test_external_codebook_encodes_and_embeds(void)
 
 	char path[] = "/tmp/ant_gcb_XXXXXX"; CHECK(mkstemp(path) >= 0);
 	ANT_pq_store_writer w;
-	CHECK(w.create(path, D, m, ANT_pq_codec::METRIC_L2, 0) == 0);
+	CHECK(w.create(path, D, m, 256, ANT_pq_codec::METRIC_L2, 0) == 0);
 	w.set_external_codebook(ext_cb, NULL);              // supply codebook, no OPQ rotation
 	for (long long i = 0; i < n; i++) CHECK(w.append(vecs + i*D) == 0);
 	CHECK(w.finish() == 0);
@@ -65,7 +65,7 @@ static void test_non_external_path_unchanged(void)
 	for (int pass = 0; pass < 2; pass++)
 		{
 		ANT_pq_store_writer w;
-		CHECK(w.create(pass ? b : a, D, m, ANT_pq_codec::METRIC_L2, 0) == 0);
+		CHECK(w.create(pass ? b : a, D, m, 256, ANT_pq_codec::METRIC_L2, 0) == 0);
 		for (long long i = 0; i < n; i++) CHECK(w.append(vecs + i*D) == 0);
 		CHECK(w.finish() == 0);
 		}

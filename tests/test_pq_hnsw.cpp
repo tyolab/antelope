@@ -32,7 +32,7 @@ static ANT_pq_store *make_pq_store(const char *path, long long dim, long long m,
 {
 ANT_pq_store_writer w;
 long long i;
-CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
+CHECK(w.create(path, dim, m, 256, ANT_pq_codec::METRIC_DOT, 0) == 0);
 for (i = 0; i < n; i++)
 	CHECK(w.append(data + i * dim) == 0);
 CHECK(w.finish() == 0);

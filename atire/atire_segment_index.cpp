@@ -95,6 +95,7 @@ pq_opq_current = 0;
 pq_eager = 0;
 
 pq_global_current = 0;
+pq_k_current = 256;
 global_pq_codebook = NULL;
 global_pq_rotation = NULL;
 

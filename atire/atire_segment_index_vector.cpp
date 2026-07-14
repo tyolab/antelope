@@ -460,7 +460,7 @@ char filename[4096];
 FILE *fp;
 unsigned long long magic, want;
 unsigned int version;
-long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT, opq = 0, global = 0;
+long long m, posture, rerank_quant, tier = PQ_TIER_FLOAT, opq = 0, global = 0, kk = 256;
 const char *tag = "ANTPQCF1";
 
 memcpy(&want, tag, 8);
@@ -468,24 +468,29 @@ snprintf(filename, sizeof(filename), "%s/pq.config", directory);
 if ((fp = fopen(filename, "rb")) == NULL)
 	return 0;
 if (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
-	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u && version != 3u && version != 4u)
+	|| fread(&version, sizeof(version), 1, fp) != 1 || (version != 1u && version != 2u && version != 3u && version != 4u && version != 5u)
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m < 1 || m > 65536
 	|| fread(&posture, sizeof(posture), 1, fp) != 1 || (posture != 0 && posture != 1)
 	|| fread(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1 || (rerank_quant != 0 && rerank_quant != 1))
 	{ fclose(fp); return 0; }
-if (version == 2u || version == 3u || version == 4u)
+if (version == 2u || version == 3u || version == 4u || version == 5u)
 	{
 	if (fread(&tier, sizeof(tier), 1, fp) != 1 || tier < 0 || tier > 2)
 		{ fclose(fp); return 0; }
 	}
-if (version == 3u || version == 4u)
+if (version == 3u || version == 4u || version == 5u)
 	{
 	if (fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1))
 		{ fclose(fp); return 0; }
 	}
-if (version == 4u)
+if (version == 4u || version == 5u)
 	{
 	if (fread(&global, sizeof(global), 1, fp) != 1 || (global != 0 && global != 1))
+		{ fclose(fp); return 0; }
+	}
+if (version == 5u)
+	{
+	if (fread(&kk, sizeof(kk), 1, fp) != 1 || ANT_pq_codec::bits_for_k(kk) < 0)
 		{ fclose(fp); return 0; }
 	}
 fclose(fp);
@@ -497,6 +502,7 @@ pq_rerank_quant_current = (long)rerank_quant;
 pq_resident_tier_current = (long)tier;
 pq_opq_current = (long)opq;
 pq_global_current = (long)global;
+pq_k_current = kk;
 return 0;
 }
 
@@ -510,13 +516,14 @@ long ATIRE_segment_index::save_pq_config(void)
 char filename[4096], temp[4200];
 FILE *fp;
 unsigned long long magic;
-unsigned int version = 4u;
+unsigned int version = 5u;
 long long m = pq_m_current;
 long long posture = pq_posture_current;
 long long rerank_quant = pq_rerank_quant_current;
 long long tier = pq_resident_tier_current;
 long long opq = pq_opq_current;
 long long global = pq_global_current;
+long long kk = pq_k_current;
 const char *tag = "ANTPQCF1";
 
 memcpy(&magic, tag, 8);
@@ -531,7 +538,8 @@ if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version
 	|| fwrite(&rerank_quant, sizeof(rerank_quant), 1, fp) != 1
 	|| fwrite(&tier, sizeof(tier), 1, fp) != 1
 	|| fwrite(&opq, sizeof(opq), 1, fp) != 1
-	|| fwrite(&global, sizeof(global), 1, fp) != 1)
+	|| fwrite(&global, sizeof(global), 1, fp) != 1
+	|| fwrite(&kk, sizeof(kk), 1, fp) != 1)
 	{ fclose(fp); remove(temp); return 1; }
 fclose(fp);
 if (rename(temp, filename) != 0)
@@ -698,6 +706,36 @@ if (pq_global_current != 0)
 pq_global_current = want;
 if (save_pq_config() != 0)
 	{ pq_global_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_PQ_K()
+	--------------------------------
+	Choose the dense `.pq` codebook size k (a power of two in [2,256]); k<256
+	bit-packs codes below a byte per subvector for a smaller .pq, trading
+	recall.  Requires PQ already configured (set_pq_config()).  Default 256
+	(byte-per-code, byte-identical to pre-#22.3).  Like set_pq_opq(), once
+	changed from 256 it is immutable: the SAME value is a no-op success
+	(idempotent); any different value once changed is rejected.  Persists in
+	pq.config v5.  Composes with OPQ/global/tier (orthogonal); writer create()
+	sites pass pq_k_current so backfilled/compacted segments encode at k.
+*/
+long ATIRE_segment_index::set_pq_k(long long k)
+{
+if (directory == NULL)
+	return 1;						// must be open
+if (!pq_configured())
+	return 1;						// PQ must be configured first
+if (ANT_pq_codec::bits_for_k(k) < 0)
+	return 1;						// not a power of two in [2,256]
+if (pq_k_current == k)
+	return 0;						// idempotent
+if (pq_k_current != 256)
+	return 1;						// immutable once changed from the default
+pq_k_current = k;
+if (save_pq_config() != 0)
+	{ pq_k_current = 256; return 1; }
 return 0;
 }
 
@@ -1023,7 +1061,7 @@ for (which = 0; which < segment_count; which++)
 		{ delete src; any_failed = 1; continue; }		/* no usable float .vec -- leave this segment's .pq as-is */
 
 	ANT_pq_store_writer w;
-	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, pq_k_current, vector_metric, pq_opq_current) != 0;
 	if (!failed)
 		w.set_external_codebook(global_pq_codebook, global_pq_rotation);
 	float *buf = new float[vector_dimension_current];
@@ -1674,7 +1712,7 @@ for (which = 0; which < segment_count; which++)
 		if (src->document_count() == docs && docs > 0 && !src->is_quantized())
 			{
 			ANT_pq_store_writer w;
-			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, vector_metric, pq_opq_current) != 0;
+			long failed = w.create(pq_name, vector_dimension_current, pq_m_current, pq_k_current, vector_metric, pq_opq_current) != 0;
 			if (!failed && pq_global_current)
 				{
 				/*
