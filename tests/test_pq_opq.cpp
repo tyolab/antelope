@@ -87,7 +87,7 @@ static void test_rotation_rejects_bad_args(void)
 static void write_pq(const char *path, const float *vecs, long long D, long long m, long long n, long metric, long opq)
 {
 	ANT_pq_store_writer w;
-	CHECK(w.create(path, D, m, metric, opq) == 0);
+	CHECK(w.create(path, D, m, 256, metric, opq) == 0);
 	for (long long i = 0; i < n; i++) CHECK(w.append(vecs + i*D) == 0);
 	CHECK(w.finish() == 0);
 }
@@ -161,7 +161,7 @@ static void test_store_opq_empty_segment_degrades(void)
 	const long long D = 8, m = 4, n = 12;
 	char p[] = "/tmp/ant_opqempty_XXXXXX";  CHECK(mkstemp(p) >= 0);
 	ANT_pq_store_writer w;
-	CHECK(w.create(p, D, m, ANT_pq_codec::METRIC_L2, 1) == 0);
+	CHECK(w.create(p, D, m, 256, ANT_pq_codec::METRIC_L2, 1) == 0);
 	for (long long i = 0; i < n; i++) CHECK(w.append(NULL) == 0);   // no present rows
 	CHECK(w.finish() == 0);                                          // opq=1 requested, but degrades gracefully
 

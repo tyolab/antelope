@@ -11,15 +11,16 @@ class ANT_index_tombstones;
 struct ANT_vector_candidate;
 
 enum { PQ_SCORE_STACK_CAP = 8 * 256 };		// 2048 doubles (16 KB) inline in score(); heap above this
+enum { PQ_CODE_STACK_CAP = 4096 };			// bytes: inline unpacked-code buffer in read paths; heap above this
 
 class ANT_pq_store : public ANT_vector_source
 {
 private:
-	long long dimension, documents, m;
+	long long dimension, documents, m, k, bits, row_bytes;	// k = codebook size; bits = log2(k); row_bytes = (m*bits+7)/8
 	long metric;
 	unsigned char *presence;	// (documents+7)/8, NULL when empty
-	float *codebook;			// m*K*(dimension/m), NULL when empty
-	unsigned char *codes;		// documents*m, NULL when empty
+	float *codebook;			// m*k*(dimension/m), NULL when empty
+	unsigned char *codes;		// documents*row_bytes packed rows, NULL when empty
 	float *rotation;			// D*D OPQ rotation R (row-major), NULL when OPQ off
 	ANT_pq_store();
 public:
@@ -27,6 +28,7 @@ public:
 	~ANT_pq_store();
 	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
 	long long get_m(void) { return m; }
+	long long get_k(void) { return k; }
 	long long document_count(void) override { return documents; }
 	long long get_dimension(void) override { return dimension; }
 	long has(long long docid) override { return presence != 0 && docid >= 0 && docid < documents && (presence[docid/8] & (1 << (docid%8))) != 0; }
@@ -37,7 +39,7 @@ public:
 	void  *prepare_query(const float *query, long metric) override;
 	double score_prepared(long long docid, const float *query, long metric, void *ctx) override;
 	void   free_query(void *ctx) override;
-	const unsigned char *codes_for(long long docid) { return has(docid) ? codes + docid*m : 0; }
+	const unsigned char *codes_for(long long docid) { return has(docid) ? codes + docid*row_bytes : 0; }	// PACKED row; callers must ANT_pq_codec::unpack_codes
 	const float *get_codebook(void) { return codebook; }
 
 	// top-k docids by ADC kernel (higher=better), honoring presence, tombstones, and an
@@ -49,12 +51,12 @@ public:
 class ANT_pq_store_writer
 {
 private:
-	char *filename; long long dimension, m; long metric; long opq;
+	char *filename; long long dimension, m, k; long metric; long opq;
 	float *buffer; long long capacity, documents; unsigned char *presence; long long presence_capacity;
 	const float *ext_codebook; const float *ext_rotation;	// borrowed; when ext_codebook set, finish() skips training
 public:
 	ANT_pq_store_writer(); ~ANT_pq_store_writer();
-	long create(const char *path, long long dim, long long m, long metric, long opq);
+	long create(const char *path, long long dim, long long m, long long k, long metric, long opq);
 	void set_external_codebook(const float *codebook, const float *rotation);	// use these instead of training (rotation NULL = non-OPQ)
 	long append(const float *vector_or_null);
 	long finish(void);

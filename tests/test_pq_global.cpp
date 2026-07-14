@@ -19,7 +19,7 @@ static float *train_codebook(const float *vecs, long long D, long long m, long l
 {
 	long long sub = D / m, floats = m * (long long)ANT_pq_codec::K * sub;
 	float *cb = new float[floats];
-	CHECK(ANT_pq_codec::train(vecs, D, m, n, cb) == 0);
+	CHECK(ANT_pq_codec::train(vecs, D, m, ANT_pq_codec::K, n, cb) == 0);
 	return cb;
 }
 
@@ -33,7 +33,7 @@ static void test_external_codebook_encodes_and_embeds(void)
 
 	char path[] = "/tmp/ant_gcb_XXXXXX"; CHECK(mkstemp(path) >= 0);
 	ANT_pq_store_writer w;
-	CHECK(w.create(path, D, m, ANT_pq_codec::METRIC_L2, 0) == 0);
+	CHECK(w.create(path, D, m, 256, ANT_pq_codec::METRIC_L2, 0) == 0);
 	w.set_external_codebook(ext_cb, NULL);              // supply codebook, no OPQ rotation
 	for (long long i = 0; i < n; i++) CHECK(w.append(vecs + i*D) == 0);
 	CHECK(w.finish() == 0);
@@ -46,7 +46,7 @@ static void test_external_codebook_encodes_and_embeds(void)
 	for (long long doc = 0; doc < n; doc++)
 		{
 		unsigned char expect[4];
-		ANT_pq_codec::encode(vecs + doc*D, D, m, ext_cb, expect);
+		ANT_pq_codec::encode(vecs + doc*D, D, m, ANT_pq_codec::K, ext_cb, expect);
 		CHECK(memcmp(s->codes_for(doc), expect, (size_t)m) == 0);
 		}
 	delete s; remove(path); delete [] ext_cb; delete [] vecs;
@@ -65,7 +65,7 @@ static void test_non_external_path_unchanged(void)
 	for (int pass = 0; pass < 2; pass++)
 		{
 		ANT_pq_store_writer w;
-		CHECK(w.create(pass ? b : a, D, m, ANT_pq_codec::METRIC_L2, 0) == 0);
+		CHECK(w.create(pass ? b : a, D, m, 256, ANT_pq_codec::METRIC_L2, 0) == 0);
 		for (long long i = 0; i < n; i++) CHECK(w.append(vecs + i*D) == 0);
 		CHECK(w.finish() == 0);
 		}

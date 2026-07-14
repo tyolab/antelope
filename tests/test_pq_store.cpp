@@ -33,7 +33,7 @@ for (i = 0; i < 4; i++)
 char path[64]; strcpy(path, "/tmp/ant_pq_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 
 ANT_pq_store_writer w;
-CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
+CHECK(w.create(path, dim, m, 256, ANT_pq_codec::METRIC_DOT, 0) == 0);
 CHECK(w.append(docs[0]) == 0);
 CHECK(w.append(docs[1]) == 0);
 CHECK(w.append(docs[2]) == 0);
@@ -81,7 +81,7 @@ for (i = 0; i < 4; i++)
 char path[64]; strcpy(path, "/tmp/ant_pq2_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 
 ANT_pq_store_writer w;
-CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
+CHECK(w.create(path, dim, m, 256, ANT_pq_codec::METRIC_DOT, 0) == 0);
 CHECK(w.append(docs[0]) == 0);
 CHECK(w.append(docs[1]) == 0);
 CHECK(w.append(docs[2]) == 0);
@@ -167,7 +167,7 @@ for (i = 0; i < n; i++)
 char path[64]; strcpy(path, "/tmp/ant_pq_scan_XXXXXX"); { int fd = mkstemp(path); if (fd >= 0) close(fd); }
 
 ANT_pq_store_writer w;
-CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
+CHECK(w.create(path, dim, m, 256, ANT_pq_codec::METRIC_DOT, 0) == 0);
 for (i = 0; i < n; i++)
 	CHECK(w.append(docs[i]) == 0);
 CHECK(w.finish() == 0);

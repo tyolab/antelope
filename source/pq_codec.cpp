@@ -13,7 +13,7 @@
 	ANT_pq_codec::train()
 	----------------------
 */
-long ANT_pq_codec::train(const float *vectors, long long dimension, long long m, long long n, float *codebook)
+long ANT_pq_codec::train(const float *vectors, long long dimension, long long m, long long k, long long n, float *codebook)
 {
 long long sub, s, c, d, i;
 
@@ -24,23 +24,23 @@ sub = dimension / m;
 
 if (n == 0)
 	{
-	memset(codebook, 0, (size_t)(m * K * sub) * sizeof(float));
+	memset(codebook, 0, (size_t)(m * k * sub) * sizeof(float));
 	return 0;
 	}
 
 std::vector<long> assignment(n);
-std::vector<long long> counts(K);
-std::vector<double> sums(K * sub);
+std::vector<long long> counts(k);
+std::vector<double> sums(k * sub);
 
 for (s = 0; s < m; s++)
 	{
-	float *centroids = codebook + s * K * sub;		// this subspace's K centroids
+	float *centroids = codebook + s * k * sub;		// this subspace's k centroids
 	const float *subvecs_base = vectors + s * sub;		// offset into each row
 
-	/* Init: first-K-distinct sub-vectors (bytewise compare); if fewer than K
+	/* Init: first-k-distinct sub-vectors (bytewise compare); if fewer than k
 	   distinct exist, repeat the last distinct one for the remainder. */
 	long long distinct_found = 0;
-	for (i = 0; i < n && distinct_found < K; i++)
+	for (i = 0; i < n && distinct_found < k; i++)
 		{
 		const float *cand = subvecs_base + i * dimension;
 		int is_distinct = 1;
@@ -59,10 +59,10 @@ for (s = 0; s < m; s++)
 	if (distinct_found == 0)
 		{
 		/* n > 0 guaranteed here, but guard anyway: zero-fill */
-		memset(centroids, 0, (size_t)(K * sub) * sizeof(float));
+		memset(centroids, 0, (size_t)(k * sub) * sizeof(float));
 		distinct_found = 1;
 		}
-	for (c = distinct_found; c < K; c++)
+	for (c = distinct_found; c < k; c++)
 		memcpy(centroids + c * sub, centroids + (distinct_found - 1) * sub, (size_t)sub * sizeof(float));
 
 	/* Lloyd iterations */
@@ -80,7 +80,7 @@ for (s = 0; s < m; s++)
 				double diff = (double)v[d] - (double)centroids[d];
 				best_dist += diff * diff;
 				}
-			for (c = 1; c < K; c++)
+			for (c = 1; c < k; c++)
 				{
 				const float *cent = centroids + c * sub;
 				double dist = 0;
@@ -99,7 +99,7 @@ for (s = 0; s < m; s++)
 			}
 
 		/* recompute */
-		for (c = 0; c < K; c++)
+		for (c = 0; c < k; c++)
 			{
 			counts[c] = 0;
 			for (d = 0; d < sub; d++)
@@ -113,7 +113,7 @@ for (s = 0; s < m; s++)
 			for (d = 0; d < sub; d++)
 				sums[(long long)a * sub + d] += (double)v[d];
 			}
-		for (c = 0; c < K; c++)
+		for (c = 0; c < k; c++)
 			{
 			if (counts[c] == 0)
 				continue;		// keep previous centroid (deterministic, no drift)
@@ -130,7 +130,7 @@ return 0;
 	ANT_pq_codec::encode()
 	-----------------------
 */
-void ANT_pq_codec::encode(const float *vector, long long dimension, long long m, const float *codebook, unsigned char *codes)
+void ANT_pq_codec::encode(const float *vector, long long dimension, long long m, long long k, const float *codebook, unsigned char *codes)
 {
 long long sub, s, c, d;
 
@@ -139,7 +139,7 @@ sub = dimension / m;
 for (s = 0; s < m; s++)
 	{
 	const float *v = vector + s * sub;
-	const float *centroids = codebook + s * K * sub;
+	const float *centroids = codebook + s * k * sub;
 	long best = 0;
 	double best_dist = 0;
 	for (d = 0; d < sub; d++)
@@ -147,7 +147,7 @@ for (s = 0; s < m; s++)
 		double diff = (double)v[d] - (double)centroids[d];
 		best_dist += diff * diff;
 		}
-	for (c = 1; c < K; c++)
+	for (c = 1; c < k; c++)
 		{
 		const float *cent = centroids + c * sub;
 		double dist = 0;
@@ -170,7 +170,7 @@ for (s = 0; s < m; s++)
 	ANT_pq_codec::adc_table()
 	--------------------------
 */
-void ANT_pq_codec::adc_table(const float *query, long long dimension, long long m, const float *codebook, long metric, double *table)
+void ANT_pq_codec::adc_table(const float *query, long long dimension, long long m, long long k, const float *codebook, long metric, double *table)
 {
 long long sub, s, c, d;
 
@@ -179,8 +179,8 @@ sub = dimension / m;
 for (s = 0; s < m; s++)
 	{
 	const float *q = query + s * sub;
-	const float *centroids = codebook + s * K * sub;
-	for (c = 0; c < K; c++)
+	const float *centroids = codebook + s * k * sub;
+	for (c = 0; c < k; c++)
 		{
 		const float *cent = centroids + c * sub;
 		double value;
@@ -200,7 +200,7 @@ for (s = 0; s < m; s++)
 			for (d = 0; d < sub; d++)
 				value += (double)q[d] * (double)cent[d];
 			}
-		table[s * K + c] = value;
+		table[s * k + c] = value;
 		}
 	}
 }
@@ -209,13 +209,13 @@ for (s = 0; s < m; s++)
 	ANT_pq_codec::adc_score()
 	---------------------------
 */
-double ANT_pq_codec::adc_score(const unsigned char *codes, long long m, const double *table)
+double ANT_pq_codec::adc_score(const unsigned char *codes, long long m, long long k, const double *table)
 {
 long long s;
 double total = 0;
 
 for (s = 0; s < m; s++)
-	total += table[s * K + codes[s]];
+	total += table[s * k + codes[s]];
 
 return total;
 }
@@ -224,7 +224,7 @@ return total;
 	ANT_pq_codec::reconstruct()
 	-----------------------------
 */
-void ANT_pq_codec::reconstruct(const unsigned char *codes, long long dimension, long long m, const float *codebook, float *out)
+void ANT_pq_codec::reconstruct(const unsigned char *codes, long long dimension, long long m, long long k, const float *codebook, float *out)
 {
 long long sub, s;
 
@@ -232,9 +232,67 @@ sub = dimension / m;
 
 for (s = 0; s < m; s++)
 	{
-	const float *centroids = codebook + s * K * sub;
+	const float *centroids = codebook + s * k * sub;
 	const float *cent = centroids + codes[s] * sub;
 	memcpy(out + s * sub, cent, (size_t)sub * sizeof(float));
+	}
+}
+
+/*
+	ANT_pq_codec::bits_for_k()
+	----------------------------
+	log2(k) for a power of two in [2,256]; -1 otherwise.
+*/
+long ANT_pq_codec::bits_for_k(long long k)
+{
+if (k < 2 || k > 256)
+	return -1;
+long bits = 0;
+long long v = k;
+while ((v & 1) == 0) { v >>= 1; bits++; }
+return (v == 1) ? bits : -1;			// v==1 iff k was a power of two
+}
+
+/*
+	ANT_pq_codec::pack_codes()
+	----------------------------
+	Pack m byte-codes (each < 2^bits) LSB-first into (m*bits+7)/8 bytes:
+	code s occupies bit positions [s*bits, (s+1)*bits); trailing bits zero.
+	Deterministic. bits==8 is a straight memcpy (identity).
+*/
+void ANT_pq_codec::pack_codes(const unsigned char *codes, long long m, long long bits, unsigned char *packed)
+{
+long long nbytes = (m * bits + 7) / 8;
+if (bits == 8)
+	{ memcpy(packed, codes, (size_t)m); return; }
+memset(packed, 0, (size_t)(nbytes > 0 ? nbytes : 1));
+for (long long s = 0; s < m; s++)
+	{
+	unsigned long v = codes[s];
+	long long base = s * bits;
+	for (long long j = 0; j < bits; j++)
+		if (v & (1UL << j))
+			packed[(base + j) >> 3] |= (unsigned char)(1u << ((base + j) & 7));
+	}
+}
+
+/*
+	ANT_pq_codec::unpack_codes()
+	------------------------------
+	Inverse of pack_codes: writes m byte-codes.
+*/
+void ANT_pq_codec::unpack_codes(const unsigned char *packed, long long m, long long bits, unsigned char *codes)
+{
+if (bits == 8)
+	{ memcpy(codes, packed, (size_t)m); return; }
+for (long long s = 0; s < m; s++)
+	{
+	unsigned long v = 0;
+	long long base = s * bits;
+	for (long long j = 0; j < bits; j++)
+		if (packed[(base + j) >> 3] & (1u << ((base + j) & 7)))
+			v |= (1UL << j);
+	codes[s] = (unsigned char)v;
 	}
 }
 

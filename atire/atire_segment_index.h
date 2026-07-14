@@ -126,6 +126,7 @@ private:
 	long pq_eager;							// 0 ondemand (default), 1 eager
 
 	long pq_global_current;				// 0 (default, off) / 1 (shared global codebook enabled); immutable once on
+	long long pq_k_current;				// PQ codebook size (default 256); power of two in [2,256]; immutable once changed from 256
 	float *global_pq_codebook;				// m*K*(dimension/m) floats; trained once from the first built segment's floats; NULL until ensure_global_pq_codebook()/load_pq_codebook() populates it; freed in dtor
 	float *global_pq_rotation;				// D*D OPQ rotation R (row-major); NULL unless pq_opq_current && the global codebook has been trained
 
@@ -295,6 +296,8 @@ public:
 
 	long set_pq_global_codebook(long enable);	// 0 ok; nonzero: not open / PQ unconfigured / already set to a DIFFERENT value (immutable)
 	long pq_global_codebook(void) { return pq_global_current; }
+	long set_pq_k(long long k);			// 0 ok; nonzero: not open / PQ unconfigured / k not a power of two in [2,256] / already changed to a DIFFERENT value (immutable)
+	long long pq_k(void) { return pq_k_current; }
 	long ensure_global_pq_codebook(long which);	// trains+persists the global codebook (from segment `which`'s floats) iff not already trained; 0 on success/already-trained, nonzero on failure (fail-soft: caller falls back to per-segment training)
 	long load_pq_codebook(void);			// reads <dir>/pq.codebook; forgiving (any mismatch leaves global_pq_codebook/global_pq_rotation NULL)
 	long save_pq_codebook(void);			// atomic write (temp + rename); 0 on success
