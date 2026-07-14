@@ -763,7 +763,7 @@ unsigned long long magic;
 unsigned int version = 1u;
 long long dimension = vector_dimension_current;
 long long m = pq_m_current;
-long long k = ANT_pq_codec::K;
+long long k = pq_k_current;
 long long opq = pq_opq_current;
 long long sub = (m != 0) ? dimension / m : 0;
 long long codebook_floats = m * k * sub;
@@ -816,7 +816,7 @@ fail = (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
 	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
 	|| fread(&dimension, sizeof(dimension), 1, fp) != 1 || dimension != vector_dimension_current
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m != pq_m_current
-	|| fread(&k, sizeof(k), 1, fp) != 1 || k != (long long)ANT_pq_codec::K
+	|| fread(&k, sizeof(k), 1, fp) != 1 || k != (long long)pq_k_current
 	|| fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1) || opq != pq_opq_current);
 if (!fail && (dimension <= 0 || dimension > 65536 || m <= 0 || dimension % m != 0))
 	fail = 1;					// bounds dimension*dimension before it is used below
@@ -920,9 +920,9 @@ if (pq_opq_current)
 
 {
 long long sub = vector_dimension_current / pq_m_current;
-long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
+long long floats = pq_m_current * pq_k_current * sub;
 global_pq_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, ANT_pq_codec::K, present_count, global_pq_codebook) != 0)
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, pq_k_current, present_count, global_pq_codebook) != 0)
 	{
 	delete [] global_pq_codebook; global_pq_codebook = NULL;
 	delete [] global_pq_rotation; global_pq_rotation = NULL;
@@ -1025,9 +1025,9 @@ if (pq_opq_current)
 
 {
 long long sub = vector_dimension_current / pq_m_current;
-long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
+long long floats = pq_m_current * pq_k_current * sub;
 global_pq_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, ANT_pq_codec::K, present_count, global_pq_codebook) != 0)
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, pq_k_current, present_count, global_pq_codebook) != 0)
 	{
 	delete [] global_pq_codebook; global_pq_codebook = NULL;
 	delete [] global_pq_rotation; global_pq_rotation = NULL;
