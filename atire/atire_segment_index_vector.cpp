@@ -884,7 +884,7 @@ if (pq_opq_current)
 long long sub = vector_dimension_current / pq_m_current;
 long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
 global_pq_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_count, global_pq_codebook) != 0)
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, ANT_pq_codec::K, present_count, global_pq_codebook) != 0)
 	{
 	delete [] global_pq_codebook; global_pq_codebook = NULL;
 	delete [] global_pq_rotation; global_pq_rotation = NULL;
@@ -989,7 +989,7 @@ if (pq_opq_current)
 long long sub = vector_dimension_current / pq_m_current;
 long long floats = pq_m_current * (long long)ANT_pq_codec::K * sub;
 global_pq_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, present_count, global_pq_codebook) != 0)
+if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, ANT_pq_codec::K, present_count, global_pq_codebook) != 0)
 	{
 	delete [] global_pq_codebook; global_pq_codebook = NULL;
 	delete [] global_pq_rotation; global_pq_rotation = NULL;

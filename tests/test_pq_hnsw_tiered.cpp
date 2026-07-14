@@ -26,8 +26,8 @@ static void test_score_stack_cap(void)
 
 	float q[64]; for (i = 0; i < dim; i++) q[i] = (float)(rand()%200-100)/100.0f;
 	double *table = new double[m*256];
-	ANT_pq_codec::adc_table(q, dim, m, pq->get_codebook(), ANT_pq_codec::METRIC_DOT, table);
-	double ref = ANT_pq_codec::adc_score(pq->codes_for(0), m, table);
+	ANT_pq_codec::adc_table(q, dim, m, ANT_pq_codec::K, pq->get_codebook(), ANT_pq_codec::METRIC_DOT, table);
+	double ref = ANT_pq_codec::adc_score(pq->codes_for(0), m, ANT_pq_codec::K, table);
 	double got = pq->score(0, q, ANT_pq_codec::METRIC_DOT);
 	CHECK(fabs(got - ref) < 1e-6);		/* heap-path score == brute force */
 	delete [] table; delete pq; delete [] data;

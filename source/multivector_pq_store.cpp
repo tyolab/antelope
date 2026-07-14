@@ -34,16 +34,16 @@ return lo;
 void ANT_multivector_pq_store::token_reconstruct(long long t, float *out)
 {
 if (!token_has(t)) { memset(out, 0, (size_t)(dimension*sizeof(float))); return; }
-ANT_pq_codec::reconstruct(codes + t*m, dimension, m, codebook, out);
+ANT_pq_codec::reconstruct(codes + t*m, dimension, m, ANT_pq_codec::K, codebook, out);
 }
 
 double ANT_multivector_pq_store::token_score(long long t, const float *query, long)
 {
 if (!token_has(t)) return 0.0;
 double *table = new double[(size_t)(m * ANT_pq_codec::K)];
-ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+ANT_pq_codec::adc_table(query, dimension, m, ANT_pq_codec::K, codebook, metric, table);
 adc_table_builds++;
-double s = ANT_pq_codec::adc_score(codes + t*m, m, table);
+double s = ANT_pq_codec::adc_score(codes + t*m, m, ANT_pq_codec::K, table);
 delete [] table;
 return s;
 }
@@ -53,7 +53,7 @@ void *ANT_multivector_pq_store::token_prepare_query(const float *query)
 if (total_tokens == 0 || codebook == 0)
 	return 0;								/* degraded store: ctx==NULL -> score_prepared falls back */
 double *table = new double[(size_t)(m * ANT_pq_codec::K)];
-ANT_pq_codec::adc_table(query, dimension, m, codebook, metric, table);
+ANT_pq_codec::adc_table(query, dimension, m, ANT_pq_codec::K, codebook, metric, table);
 adc_table_builds++;
 return table;
 }
@@ -64,7 +64,7 @@ if (ctx == 0)
 	return token_score(t, query, metric);	/* no prepared table -> per-call build (build path) */
 if (!token_has(t))
 	return 0.0;
-return ANT_pq_codec::adc_score(codes + t*m, m, (double *)ctx);
+return ANT_pq_codec::adc_score(codes + t*m, m, ANT_pq_codec::K, (double *)ctx);
 }
 
 void ANT_multivector_pq_store::token_free_query(void *ctx)
@@ -77,7 +77,7 @@ double ANT_multivector_pq_store::maxsim(long long docid, const float *query_vecs
 if (!has(docid) || num_query_vecs < 1) return 0.0;
 double *tables = new double[(size_t)(num_query_vecs * m * ANT_pq_codec::K)];
 for (long long q = 0; q < num_query_vecs; q++)
-	ANT_pq_codec::adc_table(query_vecs + q*dimension, dimension, m, codebook, metric, tables + q*(m*ANT_pq_codec::K));
+	ANT_pq_codec::adc_table(query_vecs + q*dimension, dimension, m, ANT_pq_codec::K, codebook, metric, tables + q*(m*ANT_pq_codec::K));
 
 long long begin = offsets[docid], end = offsets[docid] + counts[docid];
 double total = 0.0;
@@ -86,7 +86,7 @@ for (long long q = 0; q < num_query_vecs; q++)
 	const double *table = tables + q*(m*ANT_pq_codec::K);
 	double best = 0.0; int seen = 0;
 	for (long long t = begin; t < end; t++)
-		{ double s = ANT_pq_codec::adc_score(codes + t*m, m, table); if (!seen || s > best) { best = s; seen = 1; } }
+		{ double s = ANT_pq_codec::adc_score(codes + t*m, m, ANT_pq_codec::K, table); if (!seen || s > best) { best = s; seen = 1; } }
 	total += best;
 	}
 delete [] tables;
@@ -185,11 +185,11 @@ long ANT_multivector_pq_store_writer::finish(void)
 if (filename == NULL) return 1;
 long long cb_floats = 256*dimension;
 float *codebook = new float[cb_floats];
-if (ANT_pq_codec::train(buffer, dimension, m, total_tokens, codebook) != 0) { delete [] codebook; return 1; }
+if (ANT_pq_codec::train(buffer, dimension, m, ANT_pq_codec::K, total_tokens, codebook) != 0) { delete [] codebook; return 1; }
 
 unsigned char *codes = new unsigned char[total_tokens*m > 0 ? total_tokens*m : 1];
 for (long long t = 0; t < total_tokens; t++)
-	ANT_pq_codec::encode(buffer + t*dimension, dimension, m, codebook, codes + t*m);
+	ANT_pq_codec::encode(buffer + t*dimension, dimension, m, ANT_pq_codec::K, codebook, codes + t*m);
 
 char *tmp = new char[strlen(filename)+5]; strcpy(tmp, filename); strcat(tmp, ".tmp");
 FILE *out = fopen(tmp, "wb");

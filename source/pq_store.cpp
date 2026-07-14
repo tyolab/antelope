@@ -211,12 +211,12 @@ if (rotation != NULL)
 	{
 	/* codes live in rotated space -> reconstruct there, then un-rotate via R^T into original space */
 	float *tmp = new float[dimension];
-	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, codebook, tmp);
+	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, ANT_pq_codec::K, codebook, tmp);
 	ANT_pq_codec::apply_rotation_transpose(tmp, dimension, rotation, out);
 	delete [] tmp;
 	}
 else
-	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, codebook, out);
+	ANT_pq_codec::reconstruct(codes + docid * m, dimension, m, ANT_pq_codec::K, codebook, out);
 }
 
 /*
@@ -247,10 +247,10 @@ if (rotation != NULL)
 	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
 	q = rq;
 	}
-ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+ANT_pq_codec::adc_table(q, dimension, m, ANT_pq_codec::K, codebook, metric, table);
 delete [] rq;					/* delete[] NULL is a no-op */
 adc_table_builds++;
-double result = ANT_pq_codec::adc_score(codes + docid * m, m, table);
+double result = ANT_pq_codec::adc_score(codes + docid * m, m, ANT_pq_codec::K, table);
 
 if (table != stack_table)
 	delete [] table;
@@ -281,7 +281,7 @@ if (rotation != NULL)
 	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
 	q = rq;
 	}
-ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+ANT_pq_codec::adc_table(q, dimension, m, ANT_pq_codec::K, codebook, metric, table);
 delete [] rq;
 adc_table_builds++;
 return table;
@@ -293,7 +293,7 @@ if (ctx == 0)
 	return score(docid, query, metric);		/* no prepared table -> per-call build (e.g. build path) */
 if (!has(docid))
 	return 0.0;
-return ANT_pq_codec::adc_score(codes + docid * m, m, (double *)ctx);
+return ANT_pq_codec::adc_score(codes + docid * m, m, ANT_pq_codec::K, (double *)ctx);
 }
 
 void ANT_pq_store::free_query(void *ctx)
@@ -324,7 +324,7 @@ if (rotation != NULL)
 	ANT_pq_codec::apply_rotation(query, dimension, rotation, rq);
 	q = rq;
 	}
-ANT_pq_codec::adc_table(q, dimension, m, codebook, metric, table);
+ANT_pq_codec::adc_table(q, dimension, m, ANT_pq_codec::K, codebook, metric, table);
 delete [] rq;
 
 for (long long d = 0; d < documents; d++)
@@ -335,7 +335,7 @@ for (long long d = 0; d < documents; d++)
 		continue;
 	if (filter_bits != 0 && !(filter_bits[d >> 3] & (1 << (d & 7))))
 		continue;
-	ANT_vector_candidate_insert(best, best_count, top_k, ANT_pq_codec::adc_score(codes + d*m, m, table), generation, d);
+	ANT_vector_candidate_insert(best, best_count, top_k, ANT_pq_codec::adc_score(codes + d*m, m, ANT_pq_codec::K, table), generation, d);
 	}
 
 delete [] table;
@@ -541,7 +541,7 @@ if (ext_codebook != NULL)
 else
 	{
 	owned_codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
-	if (ANT_pq_codec::train(present_rows, dimension, m, present_count, owned_codebook) != 0)
+	if (ANT_pq_codec::train(present_rows, dimension, m, ANT_pq_codec::K, present_count, owned_codebook) != 0)
 		{
 		delete [] owned_codebook;
 		delete [] owned_rotation;
@@ -554,7 +554,7 @@ delete [] present_rows;
 
 unsigned char *codes = new unsigned char[codes_bytes > 0 ? codes_bytes : 1];
 for (i = 0; i < documents; i++)
-	ANT_pq_codec::encode(buffer + i * dimension, dimension, m, codebook, codes + i * m);
+	ANT_pq_codec::encode(buffer + i * dimension, dimension, m, ANT_pq_codec::K, codebook, codes + i * m);
 
 char temp_name[4200];
 if (snprintf(temp_name, sizeof(temp_name), "%s.tmp", filename) >= (int)sizeof(temp_name))

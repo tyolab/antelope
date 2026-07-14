@@ -113,10 +113,10 @@ void test_hnsw_prepares_once(void)
 
 	/* brute-force ADC argmax over all docs; assert the graph returned it among top-k */
 	double *table = new double[m*256];
-	ANT_pq_codec::adc_table(q, dim, m, pq->get_codebook(), ANT_pq_codec::METRIC_COSINE, table);
+	ANT_pq_codec::adc_table(q, dim, m, ANT_pq_codec::K, pq->get_codebook(), ANT_pq_codec::METRIC_COSINE, table);
 	long long best_d = -1; double best_s = -1e30;
 	for (long long d=0; d<n; d++)
-		{ double s = ANT_pq_codec::adc_score(pq->codes_for(d), m, table); if (s > best_s){best_s=s;best_d=d;} }
+		{ double s = ANT_pq_codec::adc_score(pq->codes_for(d), m, ANT_pq_codec::K, table); if (s > best_s){best_s=s;best_d=d;} }
 	delete [] table;
 	int found = 0; for (long long h=0; h<got; h++) if (ids[h]==best_d) found=1;
 	CHECK(found);								/* prepared-path search recalls the true ADC nearest */
