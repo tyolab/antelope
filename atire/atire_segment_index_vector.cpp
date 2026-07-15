@@ -1009,11 +1009,31 @@ if (present_count == 0)
 delete [] global_pq_codebook; global_pq_codebook = NULL;
 delete [] global_pq_rotation; global_pq_rotation = NULL;
 
+/*
+	Approach A: the free above just invalidated every borrowing segment store's
+	codebook pointer (a borrowed store keeps NO embedded copy).  Drop them now so
+	that ANY downstream exit -- the train/save early returns below, the Pass-2
+	re-encode skips, OR the happy path -- leaves no store dangling on the freed
+	buffer.  Segments that survive to Pass-2 are reloaded (re-borrow the NEW
+	codebook); those that don't fail closed to the resident float tier.  Capture
+	each segment's re-encode eligibility FIRST (it needs the store's live
+	document_count, gone once we drop), so Pass-2 can still tell which segments
+	had a valid .pq before the drop nulled the pointer.
+*/
+char *had_pq = new char[segment_count > 0 ? segment_count : 1];
+for (long long s = 0; s < segment_count; s++)
+	{
+	long long sdocs = segments[s].engine->get_document_count();
+	had_pq[s] = (segments[s].pq_vectors != NULL && segments[s].pq_vectors->document_count() == sdocs && sdocs > 0) ? 1 : 0;
+	if (segments[s].pq_vectors != NULL && segments[s].pq_vectors->codebook_is_borrowed())
+		{ delete segments[s].pq_vectors; segments[s].pq_vectors = NULL; }
+	}
+
 if (pq_opq_current)
 	{
 	global_pq_rotation = new float[vector_dimension_current * vector_dimension_current];
 	if (ANT_pq_codec::train_rotation(rows, vector_dimension_current, pq_m_current, present_count, global_pq_rotation) != 0)
-		{ delete [] global_pq_rotation; global_pq_rotation = NULL; delete [] rows; return 1; }
+		{ delete [] global_pq_rotation; global_pq_rotation = NULL; delete [] rows; delete [] had_pq; return 1; }
 	tmp = new float[vector_dimension_current];
 	for (d = 0; d < present_count; d++)
 		{
@@ -1032,13 +1052,14 @@ if (ANT_pq_codec::train(rows, vector_dimension_current, pq_m_current, pq_k_curre
 	delete [] global_pq_codebook; global_pq_codebook = NULL;
 	delete [] global_pq_rotation; global_pq_rotation = NULL;
 	delete [] rows;
+	delete [] had_pq;
 	return 1;
 	}
 }
 delete [] rows;
 
 if (save_pq_codebook() != 0)
-	return 1;						/* persist failed -> skip re-encoding: on-disk sidecar and every .pq keep the OLD codebook (in-session search stays consistent via each .pq's embedded copy); resident global_pq_* now holds the NEW codebook, so a later same-session build_pq()/compact() would emit an incomparable segment -- caller must honor this nonzero return */
+	{ delete [] had_pq; return 1; }		/* persist failed -> skip re-encoding.  Under Approach A the borrowing stores were already dropped to NULL after the free above, so nothing dangles: those segments fail closed to the resident float tier.  resident global_pq_* now holds the NEW (unpersisted) codebook, so a later same-session build_pq()/compact() would emit an incomparable segment -- caller must honor this nonzero return */
 
 /*
 	Pass 2: re-encode every segment that currently has a .pq against the new
@@ -1050,20 +1071,14 @@ long any_failed = 0;
 for (which = 0; which < segment_count; which++)
 	{
 	docs = segments[which].engine->get_document_count();
-	int have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
-	if (!have_pq)
+	if (!had_pq[which])					/* captured before the drop above (the store pointer is now NULL for every borrowing segment) */
 		continue;
 
 	segment_filename(vec_name, sizeof(vec_name), segments[which].generation, "vec");
 	segment_filename(pq_name, sizeof(pq_name), segments[which].generation, "pq");
 	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
 	if (src->document_count() != docs || src->is_quantized())
-		{
-		/* Approach A: this segment's store still borrows the codebook freed above; drop it so search falls back to resident float rather than a dangling borrow. */
-		delete segments[which].pq_vectors;
-		segments[which].pq_vectors = NULL;
-		delete src; any_failed = 1; continue;			/* no usable float .vec -- drop stale borrow, fall back to resident float */
-		}
+		{ delete src; any_failed = 1; continue; }		/* no usable float .vec -- store already dropped to NULL after the free above, so this segment falls back to resident float */
 
 	ANT_pq_store_writer w;
 	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, pq_k_current, vector_metric, pq_opq_current) != 0;
@@ -1081,12 +1096,7 @@ for (which = 0; which < segment_count; which++)
 	if (!failed)
 		failed = w.finish() != 0;
 	if (failed)
-		{
-		/* Approach A: this segment's store still borrows the codebook freed above; drop it so search falls back to resident float rather than a dangling borrow. */
-		delete segments[which].pq_vectors;
-		segments[which].pq_vectors = NULL;
-		w.abandon(); any_failed = 1;
-		}
+		{ w.abandon(); any_failed = 1; }			/* store already dropped to NULL after the free above -- segment falls back to resident float */
 	else
 		{
 		delete segments[which].pq_vectors;
@@ -1096,6 +1106,7 @@ for (which = 0; which < segment_count; which++)
 	delete src;
 	}
 
+delete [] had_pq;
 return any_failed ? 1 : 0;
 }
 

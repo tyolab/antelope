@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include "../source/pq_codec.h"
 #include "../source/pq_store.h"
 #include "../atire/atire_segment_index.h"
@@ -105,10 +106,51 @@ static void test_drop_on_rebuild_fault(void)
 	printf("test_drop_on_rebuild_fault OK\n");
 }
 
+/*
+	Early-return-after-free path: make save_pq_codebook() fail (read-only dir) so
+	rebuild exits at the ":1041" early return -- AFTER it freed the old resident
+	codebook but BEFORE any Pass-2 reload.  The dominating drop-after-free must
+	have already NULLed every borrowing store, so no segment dangles on the freed
+	buffer; all segments fail closed to resident float.  Proves no UAF on the
+	early-return paths and clean teardown.
+*/
+static void test_save_fail_drops_all_borrows(void)
+{
+	char *dir = make_dir("/tmp/ant_srs_XXXXXX");
+	ATIRE_segment_index *ix = new ATIRE_segment_index();
+	CHECK(ix->set_vector_config(GDIM, ATIRE_segment_index::VECTOR_METRIC_DOT) == 0);
+	CHECK(ix->open(dir) == 0);
+	CHECK(ix->set_pq_config(GM, ATIRE_segment_index::PQ_POSTURE_REPLACE, ATIRE_segment_index::RERANK_QUANT_FLOAT) == 0);
+	CHECK(ix->set_pq_global_codebook(1) == 0);
+	// default FLOAT resident tier: float vectors stay resident in RAM for fallback.
+	for (int s = 0; s < 3; s++) { add_docs(ix, s*10, s*10+10); CHECK(ix->flush() == 0); CHECK(ix->build_pq() == 0); }
+	CHECK(ix->disk_segment_count() == 3);
+
+	// read-only directory: save_pq_codebook's temp-write (fopen "%s/pq.codebook.tmp") fails -> rebuild early-returns after the free.
+	CHECK(chmod(dir, 0500) == 0);
+	long rc = ix->rebuild_pq_global_codebook();
+	CHECK(chmod(dir, 0700) == 0);					// restore BEFORE any teardown / further use
+	CHECK(rc != 0);									// partial failure via the save early return
+
+	// every borrowing store was dropped after the free: no dangling borrow anywhere.
+	for (long i = 0; i < ix->disk_segment_count(); i++)
+		{
+		CHECK(ix->disk_segment_pq_borrowed(i) == 0);
+		CHECK(ix->disk_segment_pq_codebook(i) == NULL);
+		}
+	// search must NOT crash: all segments fall back to resident float.
+	float q[GDIM]; gvec(4, q);
+	CHECK(ix->search_vector(q, 5) >= 1);
+	delete ix;										// teardown clean: no store dangles on the freed codebook
+	delete [] dir;
+	printf("test_save_fail_drops_all_borrows OK\n");
+}
+
 int main(void)
 {
 	test_reborrow_after_rebuild();
 	test_drop_on_rebuild_fault();
+	test_save_fail_drops_all_borrows();
 	printf("ALL test_pq_single_resident_rebuild PASSED\n");
 	return 0;
 }
