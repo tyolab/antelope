@@ -22,11 +22,16 @@ private:
 	float *codebook;			// m*k*(dimension/m), NULL when empty
 	unsigned char *codes;		// documents*row_bytes packed rows, NULL when empty
 	float *rotation;			// D*D OPQ rotation R (row-major), NULL when OPQ off
+	long owns_codebook;		// 1 = this store allocated codebook (free in dtor); 0 = borrowed (engine-owned, never freed/deref'd here)
+	long owns_rotation;		// 1 = owned; 0 = borrowed
 	ANT_pq_store();
 public:
 	long long adc_table_builds;	// diagnostic-only, NOT thread-safe: # of adc_table() builds (score() + prepare_query); test proves the seam engaged
 	~ANT_pq_store();
-	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
+	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric,
+		const float *borrowed_codebook, const float *borrowed_rotation);
+	static ANT_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric)
+		{ return load(filename, expected_dimension, expected_documents, metric, 0, 0); }
 	long long get_m(void) { return m; }
 	long long get_k(void) { return k; }
 	long long document_count(void) override { return documents; }
@@ -41,6 +46,8 @@ public:
 	void   free_query(void *ctx) override;
 	const unsigned char *codes_for(long long docid) { return has(docid) ? codes + docid*row_bytes : 0; }	// PACKED row; callers must ANT_pq_codec::unpack_codes
 	const float *get_codebook(void) { return codebook; }
+	const float *get_rotation(void) { return rotation; }	// D*D OPQ rotation R, NULL when OPQ off
+	long codebook_is_borrowed(void) { return owns_codebook == 0; }
 
 	// top-k docids by ADC kernel (higher=better), honoring presence, tombstones, and an
 	// optional docid filter bitset. Builds the m*K ADC table once, then one pass over docs.

@@ -55,6 +55,8 @@ presence = NULL;
 codebook = NULL;
 codes = NULL;
 rotation = NULL;
+owns_codebook = 1;
+owns_rotation = 1;
 adc_table_builds = 0;
 }
 
@@ -65,9 +67,11 @@ adc_table_builds = 0;
 ANT_pq_store::~ANT_pq_store()
 {
 delete [] presence;
-delete [] codebook;
+if (owns_codebook)
+	delete [] codebook;
 delete [] codes;
-delete [] rotation;
+if (owns_rotation)
+	delete [] rotation;
 }
 
 /*
@@ -77,7 +81,8 @@ delete [] rotation;
 	ANT_multivector_store::load).  Validation happens strictly before any
 	size-driven allocation so a lying header cannot trigger an absurd new[].
 */
-ANT_pq_store *ANT_pq_store::load(const char *filename, long long expected_dimension, long long expected_documents, long metric)
+ANT_pq_store *ANT_pq_store::load(const char *filename, long long expected_dimension, long long expected_documents, long metric,
+	const float *borrowed_codebook, const float *borrowed_rotation)
 {
 FILE *fp;
 char stored_magic[8];
@@ -177,15 +182,43 @@ if (fseek(fp, 0, SEEK_END) != 0 || (file_size = ftell(fp)) != expected_size || f
 	return result;
 	}
 
-unsigned char *presence_buffer = new unsigned char[presence_bytes > 0 ? presence_bytes : 1];
-float *codebook_buffer = new float[codebook_floats > 0 ? codebook_floats : 1];
-unsigned char *codes_buffer = new unsigned char[codes_bytes > 0 ? codes_bytes : 1];
-float *rotation_buffer = rotation_floats > 0 ? new float[rotation_floats] : NULL;
+/*
+	Approach A (single-resident global codebook): if the caller supplied a
+	borrowed codebook AND the file's opq flag is consistent with the supplied
+	rotation (rotation present iff opq==1), point at the borrowed buffers and
+	SKIP reading the embedded codebook/rotation into RAM (fseek past them).
+	Otherwise own an embedded copy exactly as before.  Header dims/m/k were
+	already validated above against expected_*; global mode guarantees the
+	resident codebook is the one every .pq embeds, so no byte-compare is needed.
+*/
+int borrow = (borrowed_codebook != NULL) && ((stored_opq == 1) == (borrowed_rotation != NULL));
 
-if ((presence_bytes > 0 && fread(presence_buffer, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes)
-	|| (codebook_floats > 0 && fread(codebook_buffer, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
-	|| (codes_bytes > 0 && fread(codes_buffer, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes)
-	|| (rotation_floats > 0 && fread(rotation_buffer, sizeof(float), (size_t)rotation_floats, fp) != (size_t)rotation_floats))
+unsigned char *presence_buffer = new unsigned char[presence_bytes > 0 ? presence_bytes : 1];
+float *codebook_buffer = borrow ? NULL : new float[codebook_floats > 0 ? codebook_floats : 1];
+unsigned char *codes_buffer = new unsigned char[codes_bytes > 0 ? codes_bytes : 1];
+float *rotation_buffer = (borrow || rotation_floats == 0) ? NULL : new float[rotation_floats];
+
+/* presence, then codebook (read OR skip), then codes, then rotation (read OR skip) -- disk order */
+int failed = 0;
+if (presence_bytes > 0 && fread(presence_buffer, 1, (size_t)presence_bytes, fp) != (size_t)presence_bytes)
+	failed = 1;
+if (!failed && codebook_floats > 0)
+	{
+	if (borrow)
+		{ if (fseek(fp, (long)(codebook_floats * (long long)sizeof(float)), SEEK_CUR) != 0) failed = 1; }
+	else if (fread(codebook_buffer, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
+		failed = 1;
+	}
+if (!failed && codes_bytes > 0 && fread(codes_buffer, 1, (size_t)codes_bytes, fp) != (size_t)codes_bytes)
+	failed = 1;
+if (!failed && rotation_floats > 0)
+	{
+	if (borrow)
+		{ if (fseek(fp, (long)(rotation_floats * (long long)sizeof(float)), SEEK_CUR) != 0) failed = 1; }
+	else if (fread(rotation_buffer, sizeof(float), (size_t)rotation_floats, fp) != (size_t)rotation_floats)
+		failed = 1;
+	}
+if (failed)
 	{
 	delete [] presence_buffer;
 	delete [] codebook_buffer;
@@ -205,9 +238,18 @@ result->bits = stored_bits;
 result->row_bytes = stored_row_bytes;
 result->metric = metric;
 result->presence = presence_buffer;
-result->codebook = codebook_buffer;
 result->codes = codes_buffer;
-result->rotation = rotation_buffer;
+if (borrow)
+	{
+	result->codebook = (float *)borrowed_codebook;   result->owns_codebook = 0;
+	result->rotation = (stored_opq == 1) ? (float *)borrowed_rotation : NULL;
+	result->owns_rotation = 0;
+	}
+else
+	{
+	result->codebook = codebook_buffer;   result->owns_codebook = 1;
+	result->rotation = rotation_buffer;   result->owns_rotation = 1;   // NULL when opq==0
+	}
 return result;
 }
 
