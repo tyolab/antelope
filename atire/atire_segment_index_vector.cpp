@@ -1080,6 +1080,7 @@ for (which = 0; which < segment_count; which++)
 	else
 		{
 		delete segments[which].pq_vectors;
+		/* Approach A: reload borrows the freshly-installed resident global_pq_codebook (must run AFTER it is assigned). */
 		segments[which].pq_vectors = load_segment_pq_vectors(pq_name, docs);
 		}
 	delete src;
