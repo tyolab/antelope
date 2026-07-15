@@ -1782,7 +1782,7 @@ return ANT_pq_store::load(filename, vector_dimension_current, docs, vector_metri
 	(NULL if out of range or no store).  Under global mode this equals
 	resident_pq_codebook() (borrowed); otherwise it is the store's own copy.
 */
-const float *ATIRE_segment_index::disk_segment_pq_codebook(long idx)
+const float *ATIRE_segment_index::disk_segment_pq_codebook(long long idx)
 {
 if (idx < 0 || idx >= segment_count || segments[idx].pq_vectors == NULL)
 	return NULL;
@@ -1795,7 +1795,7 @@ return segments[idx].pq_vectors->get_codebook();
 	Test accessor: 1 iff segment `idx`'s resident PQ store borrowed the resident
 	global codebook (owns_codebook==0); 0 if it owns its copy / out of range / no store.
 */
-long ATIRE_segment_index::disk_segment_pq_borrowed(long idx)
+long ATIRE_segment_index::disk_segment_pq_borrowed(long long idx)
 {
 if (idx < 0 || idx >= segment_count || segments[idx].pq_vectors == NULL)
 	return 0;

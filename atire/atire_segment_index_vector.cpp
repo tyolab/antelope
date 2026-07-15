@@ -1058,7 +1058,12 @@ for (which = 0; which < segment_count; which++)
 	segment_filename(pq_name, sizeof(pq_name), segments[which].generation, "pq");
 	ANT_vector_store *src = ANT_vector_store::load(vec_name, vector_dimension_current, docs);
 	if (src->document_count() != docs || src->is_quantized())
-		{ delete src; any_failed = 1; continue; }		/* no usable float .vec -- leave this segment's .pq as-is */
+		{
+		/* Approach A: this segment's store still borrows the codebook freed above; drop it so search falls back to resident float rather than a dangling borrow. */
+		delete segments[which].pq_vectors;
+		segments[which].pq_vectors = NULL;
+		delete src; any_failed = 1; continue;			/* no usable float .vec -- drop stale borrow, fall back to resident float */
+		}
 
 	ANT_pq_store_writer w;
 	long failed = w.create(pq_name, vector_dimension_current, pq_m_current, pq_k_current, vector_metric, pq_opq_current) != 0;
@@ -1076,7 +1081,12 @@ for (which = 0; which < segment_count; which++)
 	if (!failed)
 		failed = w.finish() != 0;
 	if (failed)
-		{ w.abandon(); any_failed = 1; }
+		{
+		/* Approach A: this segment's store still borrows the codebook freed above; drop it so search falls back to resident float rather than a dangling borrow. */
+		delete segments[which].pq_vectors;
+		segments[which].pq_vectors = NULL;
+		w.abandon(); any_failed = 1;
+		}
 	else
 		{
 		delete segments[which].pq_vectors;

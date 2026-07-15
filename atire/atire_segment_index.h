@@ -404,8 +404,8 @@ public:
 	long build_pq(void);								// on-demand backfill: build .pq for PQ-configured segments lacking one; 0 = success, 1 if PQ unconfigured / no dense vectors
 	long disk_segment_has_pq(long long which);			// test accessor: 1 if segment `which` has a non-empty PQ store
 	const float *resident_pq_codebook(void) { return global_pq_codebook; }			// engine's single resident codebook (NULL if none)
-	const float *disk_segment_pq_codebook(long idx);								// idx-th resident segment store's codebook ptr (NULL if none)
-	long disk_segment_pq_borrowed(long idx);										// 1 iff that store borrowed the resident codebook
+	const float *disk_segment_pq_codebook(long long idx);							// idx-th resident segment store's codebook ptr (NULL if none)
+	long disk_segment_pq_borrowed(long long idx);									// 1 iff that store borrowed the resident codebook
 	long disk_segment_resident_tier(long long which);	// test accessor: PQ_TIER_FLOAT/INT8/NONE from the loaded segments[which].vectors; -1 if which out of range
 	long build_multivector_pq(void);					// on-demand backfill; 0 success, 1 if unconfigured / no multivectors
 	long disk_segment_has_multivector_pq(long long which);	// test accessor
