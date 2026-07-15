@@ -20,6 +20,7 @@ private:
 	long long *offsets;		// documents+1 prefix sums, NULL when empty
 	float *codebook;		// m*256*(dimension/m), NULL when empty
 	unsigned char *codes;	// total_tokens*m, NULL when empty
+	float *rotation;		// D*D OPQ rotation R (row-major), NULL when OPQ off
 	ANT_multivector_pq_store();
 public:
 	long long adc_table_builds;	// diagnostic-only, NOT thread-safe: # of ADC-table builds (token_score + token_prepare_query)
@@ -51,12 +52,12 @@ public:
 class ANT_multivector_pq_store_writer
 {
 private:
-	char *filename; long long dimension, m; long metric;
+	char *filename; long long dimension, m; long metric; long opq;
 	float *buffer; long long capacity, total_tokens;
 	int *counts; long long counts_capacity, documents;
 public:
 	ANT_multivector_pq_store_writer(); ~ANT_multivector_pq_store_writer();
-	long create(const char *path, long long dim, long long m, long metric);
+	long create(const char *path, long long dim, long long m, long metric, long opq = 0);
 	long append(const float *vectors, long long num_vectors);	// one doc's M_d normalized rows; append(NULL,0) for a doc with no tokens
 	long finish(void);		// trains codebook over the whole pool + encodes + writes atomically
 	void abandon(void);
