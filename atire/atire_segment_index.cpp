@@ -1567,7 +1567,7 @@ if (vector_dimension_current != 0)
 		{
 		char pq_filename[1024];
 		segment_filename(pq_filename, sizeof(pq_filename), generation, "pq");
-		ANT_pq_store *pq = ANT_pq_store::load(pq_filename, vector_dimension_current, docs, vector_metric);
+		ANT_pq_store *pq = load_segment_pq_vectors(pq_filename, docs);
 		if (pq->document_count() == docs && docs > 0)
 			{ segments[segment_count].pq_vectors = pq; pq_valid = 1; }
 		else
@@ -1759,6 +1759,47 @@ return total;
 ANT_search_engine *ATIRE_segment_index::disk_segment_engine(long long which)
 {
 return segments[which].engine->get_search_engine();
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::LOAD_SEGMENT_PQ_VECTORS()
+	------------------------------------------------
+	Load a segment's dense .pq.  Under global-codebook mode with a resident
+	global_pq_codebook, the store BORROWS it (single resident copy, Approach A);
+	otherwise the store owns its embedded copy (Approach B / per-segment).
+*/
+ANT_pq_store *ATIRE_segment_index::load_segment_pq_vectors(const char *filename, long long docs)
+{
+if (pq_global_current && global_pq_codebook != NULL)
+	return ANT_pq_store::load(filename, vector_dimension_current, docs, vector_metric, global_pq_codebook, global_pq_rotation);
+return ANT_pq_store::load(filename, vector_dimension_current, docs, vector_metric);
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_PQ_CODEBOOK()
+	-------------------------------------------------
+	Test accessor: the codebook pointer of segment `idx`'s resident PQ store
+	(NULL if out of range or no store).  Under global mode this equals
+	resident_pq_codebook() (borrowed); otherwise it is the store's own copy.
+*/
+const float *ATIRE_segment_index::disk_segment_pq_codebook(long idx)
+{
+if (idx < 0 || idx >= segment_count || segments[idx].pq_vectors == NULL)
+	return NULL;
+return segments[idx].pq_vectors->get_codebook();
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::DISK_SEGMENT_PQ_BORROWED()
+	-------------------------------------------------
+	Test accessor: 1 iff segment `idx`'s resident PQ store borrowed the resident
+	global codebook (owns_codebook==0); 0 if it owns its copy / out of range / no store.
+*/
+long ATIRE_segment_index::disk_segment_pq_borrowed(long idx)
+{
+if (idx < 0 || idx >= segment_count || segments[idx].pq_vectors == NULL)
+	return 0;
+return segments[idx].pq_vectors->codebook_is_borrowed();
 }
 
 /*

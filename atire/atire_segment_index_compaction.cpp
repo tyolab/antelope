@@ -531,7 +531,7 @@ if (pq_configured())
 		}
 	delete out_vectors;
 	delete output_segment->pq_vectors;
-	output_segment->pq_vectors = ANT_pq_store::load(out_pq, vector_dimension_current, output_segment->engine->get_document_count(), vector_metric);
+	output_segment->pq_vectors = load_segment_pq_vectors(out_pq, output_segment->engine->get_document_count());
 	}
 
 /*

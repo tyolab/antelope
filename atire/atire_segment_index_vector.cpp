@@ -1080,7 +1080,7 @@ for (which = 0; which < segment_count; which++)
 	else
 		{
 		delete segments[which].pq_vectors;
-		segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+		segments[which].pq_vectors = load_segment_pq_vectors(pq_name, docs);
 		}
 	delete src;
 	}
@@ -1742,7 +1742,7 @@ for (which = 0; which < segment_count; which++)
 			else
 				{
 				delete segments[which].pq_vectors;
-				segments[which].pq_vectors = ANT_pq_store::load(pq_name, vector_dimension_current, docs, vector_metric);
+				segments[which].pq_vectors = load_segment_pq_vectors(pq_name, docs);
 				have_pq = (segments[which].pq_vectors != NULL && segments[which].pq_vectors->document_count() == docs && docs > 0);
 				}
 			}

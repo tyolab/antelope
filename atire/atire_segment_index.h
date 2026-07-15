@@ -220,6 +220,7 @@ private:
 	long long vector_candidates_hnsw(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// Task 7
 	long long vector_candidates_pq(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// PQ ADC gatherer (replace posture); falls back to float scan for segments without a valid .pq
 	long long vector_candidates_pq_rerank(const float *query, long long top_k, ANT_vector_candidate *best, const ANT_filter *filter = NULL);	// PQ ADC shortlist (top_k*candidate_multiplier) -> exact resident-float rescore (rerank posture)
+	ANT_pq_store *load_segment_pq_vectors(const char *filename, long long docs);	// borrow global_pq_codebook under global mode, else own (Approach A)
 	long writer_vector_append(long long docid, const float *vector_or_null);
 	long writer_multivector_append(long long docid, const float *multivector, long long num_vectors);
 	void writer_attribute_capture(long long docid, const ANT_attribute_set *attributes);	// deep-clone into the per-docid attribute buffer (Task 6: capture only)
@@ -402,6 +403,9 @@ public:
 	long disk_segment_has_token_index(long long which);	// test accessor: 1 if segment `which` has a non-empty token index
 	long build_pq(void);								// on-demand backfill: build .pq for PQ-configured segments lacking one; 0 = success, 1 if PQ unconfigured / no dense vectors
 	long disk_segment_has_pq(long long which);			// test accessor: 1 if segment `which` has a non-empty PQ store
+	const float *resident_pq_codebook(void) { return global_pq_codebook; }			// engine's single resident codebook (NULL if none)
+	const float *disk_segment_pq_codebook(long idx);								// idx-th resident segment store's codebook ptr (NULL if none)
+	long disk_segment_pq_borrowed(long idx);										// 1 iff that store borrowed the resident codebook
 	long disk_segment_resident_tier(long long which);	// test accessor: PQ_TIER_FLOAT/INT8/NONE from the loaded segments[which].vectors; -1 if which out of range
 	long build_multivector_pq(void);					// on-demand backfill; 0 success, 1 if unconfigured / no multivectors
 	long disk_segment_has_multivector_pq(long long which);	// test accessor
