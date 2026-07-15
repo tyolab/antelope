@@ -1132,28 +1132,31 @@ if (in == NULL)
 
 char tag[8];
 unsigned int version;
-long long vals[5];
+long long vals[6];
 if (fread(tag, 1, 8, in) != 8 || memcmp(tag, "ANTMVPQC", 8) != 0 || fread(&version, 4, 1, in) != 1)
 	{ fclose(in); return 1; }
 long ok;
 if (version == 1)
-	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; vals[4] = 0; }
+	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; vals[4] = 0; vals[5] = 0; }
 else if (version == 2)
-	{ ok = (fread(vals, 8, 4, in) == 4); vals[4] = 0; }
+	{ ok = (fread(vals, 8, 4, in) == 4); vals[4] = 0; vals[5] = 0; }
 else if (version == 3)
-	{ ok = (fread(vals, 8, 5, in) == 5); }
+	{ ok = (fread(vals, 8, 5, in) == 5); vals[5] = 0; }
+else if (version == 4)
+	{ ok = (fread(vals, 8, 6, in) == 6); }
 else
 	ok = 0;
 fclose(in);
 if (!ok)
 	return 1;
 
-long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3], opq = vals[4];
+long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3], opq = vals[4], global = vals[5];
 if (m < 1
 	|| (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
 	|| (rq != RERANK_QUANT_FLOAT && rq != RERANK_QUANT_INT8)
 	|| (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
 	|| (opq != 0 && opq != 1)
+	|| (global != 0 && global != 1)
 	|| (rerank_dimension_current != 0 && rerank_dimension_current % m != 0))
 	return 1;					/* invalid persisted config; leave token-PQ unconfigured */
 
@@ -1162,6 +1165,7 @@ mvpq_posture_current = (long)posture;
 mvpq_rerank_quant_current = (long)rq;
 mvpq_resident_tier_current = (long)tier;
 mvpq_opq_current = (long)opq;
+mvpq_global_current = (long)global;
 return 0;
 }
 
@@ -1179,9 +1183,9 @@ FILE *out = fopen(temp, "wb");
 if (out == NULL)
 	return 1;
 
-unsigned int version = 3;
-long long vals[5] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current, mvpq_opq_current };
-long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 5, out) == 5;
+unsigned int version = 4;
+long long vals[6] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current, mvpq_opq_current, mvpq_global_current };
+long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 6, out) == 6;
 if (fclose(out) != 0)
 	ok = 0;
 if (ok && rename(temp, name) != 0)
@@ -1310,6 +1314,226 @@ if (mvpq_opq_current != 0)
 mvpq_opq_current = want;
 if (save_multivector_pq_config() != 0)
 	{ mvpq_opq_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_MULTIVECTOR_PQ_GLOBAL_CODEBOOK()
+	----------------------------------------------------------
+	Opt-in to a single collection-wide (global) `.mvpq` token codebook, trained
+	ONCE (from the first segment build_multivector_pq() trains against) instead
+	of a fresh codebook per segment: token codes then compare across segments (a
+	prerequisite for cross-segment token-ANN structures). Requires token-PQ
+	already configured (set_multivector_pq_config()).  Like set_multivector_pq_opq(),
+	once enabled it is immutable: setting the SAME value again is a no-op success
+	(idempotent), but flipping it back off (or any other change once on) is
+	rejected.  Persists in multivector_pq.config v4.  Composes with OPQ (T1):
+	under global mode the learned rotation is ALSO shared (one R), trained
+	alongside the codebook by ensure_global_mvpq_codebook().
+*/
+long ATIRE_segment_index::set_multivector_pq_global_codebook(long enable)
+{
+long want;
+
+if (directory == NULL)
+	return 1;					// must be open
+if (!multivector_pq_configured())
+	return 1;					// token-PQ must be configured first
+want = enable ? 1 : 0;
+if (mvpq_global_current == want)
+	return 0;					// idempotent
+if (mvpq_global_current != 0)
+	return 1;					// immutable once enabled
+mvpq_global_current = want;
+if (save_multivector_pq_config() != 0)
+	{ mvpq_global_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SAVE_MVPQ_CODEBOOK() / LOAD_MVPQ_CODEBOOK()
+	----------------------------------------------------------------
+	Persist/load the frozen global token codebook (+ OPQ rotation, when
+	configured) in <dir>/multivector_pq.codebook (magic "ANTMVGCB"): u32
+	version(1), i64 dimension, i64 m, i64 k, i64 opq, then (opq ?
+	global_mvpq_rotation: dimension*dimension floats) + global_mvpq_codebook:
+	m*k*(dimension/m) floats.  save_mvpq_codebook() is an atomic write (temp +
+	rename).  load_mvpq_codebook() is forgiving: any mismatch (magic/version/
+	dimension/m/k/opq/file size) leaves global_mvpq_codebook/global_mvpq_rotation
+	NULL (untrained) rather than crashing or over-reading --
+	ensure_global_mvpq_codebook() will then (re)train on the next
+	build_multivector_pq().  Validates before allocating, and bounds
+	dimension*dimension (D <= 65536) before computing the rotation block size,
+	so a corrupt/hostile sidecar cannot trigger an oversized allocation or an
+	out-of-bounds read.  k is always ANT_pq_codec::K (256) for tokens.
+*/
+long ATIRE_segment_index::save_mvpq_codebook(void)
+{
+char filename[4096], temp[4200];
+FILE *fp;
+unsigned long long magic;
+unsigned int version = 1u;
+long long dimension = rerank_dimension_current;
+long long m = mvpq_m_current;
+long long k = ANT_pq_codec::K;
+long long opq = mvpq_opq_current;
+long long sub = (m != 0) ? dimension / m : 0;
+long long codebook_floats = m * k * sub;
+const char *tag = "ANTMVGCB";
+
+if (global_mvpq_codebook == NULL)
+	return 1;					// nothing trained yet
+memcpy(&magic, tag, 8);
+snprintf(filename, sizeof(filename), "%s/multivector_pq.codebook", directory);
+if (snprintf(temp, sizeof(temp), "%s.tmp", filename) >= (int)sizeof(temp))
+	return 1;
+if ((fp = fopen(temp, "wb")) == NULL)
+	return 1;
+if (fwrite(&magic, sizeof(magic), 1, fp) != 1 || fwrite(&version, sizeof(version), 1, fp) != 1
+	|| fwrite(&dimension, sizeof(dimension), 1, fp) != 1
+	|| fwrite(&m, sizeof(m), 1, fp) != 1
+	|| fwrite(&k, sizeof(k), 1, fp) != 1
+	|| fwrite(&opq, sizeof(opq), 1, fp) != 1)
+	{ fclose(fp); remove(temp); return 1; }
+if (opq && global_mvpq_rotation != NULL)
+	{
+	if (fwrite(global_mvpq_rotation, sizeof(float), (size_t)(dimension * dimension), fp) != (size_t)(dimension * dimension))
+		{ fclose(fp); remove(temp); return 1; }
+	}
+if (fwrite(global_mvpq_codebook, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
+	{ fclose(fp); remove(temp); return 1; }
+fclose(fp);
+if (rename(temp, filename) != 0)
+	{ remove(temp); return 1; }
+return 0;
+}
+
+long ATIRE_segment_index::load_mvpq_codebook(void)
+{
+char filename[4096];
+FILE *fp;
+unsigned long long magic, want;
+unsigned int version;
+long long dimension, m, k, opq;
+long long sub, codebook_floats, rotation_floats;
+long fail;
+const char *tag = "ANTMVGCB";
+
+memcpy(&want, tag, 8);
+snprintf(filename, sizeof(filename), "%s/multivector_pq.codebook", directory);
+if ((fp = fopen(filename, "rb")) == NULL)
+	return 0;					// absent: leave untrained (ensure_global_mvpq_codebook() will train)
+
+fail = (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
+	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
+	|| fread(&dimension, sizeof(dimension), 1, fp) != 1 || dimension != rerank_dimension_current
+	|| fread(&m, sizeof(m), 1, fp) != 1 || m != mvpq_m_current
+	|| fread(&k, sizeof(k), 1, fp) != 1 || k != (long long)ANT_pq_codec::K
+	|| fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1) || opq != mvpq_opq_current);
+if (!fail && (dimension <= 0 || dimension > 65536 || m <= 0 || dimension % m != 0))
+	fail = 1;					// bounds dimension*dimension before it is used below
+if (fail)
+	{ fclose(fp); return 0; }
+
+sub = dimension / m;
+codebook_floats = m * k * sub;
+rotation_floats = opq ? dimension * dimension : 0;
+
+/* validate the exact remaining file size before allocating anything */
+{
+long here = ftell(fp);
+long end;
+if (here < 0) { fclose(fp); return 0; }
+fseek(fp, 0, SEEK_END);
+end = ftell(fp);
+fseek(fp, here, SEEK_SET);
+if (end < 0 || (end - here) != (long)((rotation_floats + codebook_floats) * (long long)sizeof(float)))
+	{ fclose(fp); return 0; }
+}
+
+float *new_rotation = NULL;
+float *new_codebook = new float[codebook_floats > 0 ? codebook_floats : 1];
+if (opq)
+	{
+	new_rotation = new float[rotation_floats > 0 ? rotation_floats : 1];
+	if (fread(new_rotation, sizeof(float), (size_t)rotation_floats, fp) != (size_t)rotation_floats)
+		{ delete [] new_rotation; delete [] new_codebook; fclose(fp); return 0; }
+	}
+if (fread(new_codebook, sizeof(float), (size_t)codebook_floats, fp) != (size_t)codebook_floats)
+	{ delete [] new_rotation; delete [] new_codebook; fclose(fp); return 0; }
+fclose(fp);
+
+delete [] global_mvpq_codebook;
+delete [] global_mvpq_rotation;
+global_mvpq_codebook = new_codebook;
+global_mvpq_rotation = new_rotation;
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::ENSURE_GLOBAL_MVPQ_CODEBOOK()
+	---------------------------------------------------
+	Trains (and persists) the shared global token codebook the FIRST time it is
+	needed -- from segment `which`'s present on-disk float token pool (mirrors
+	how build_multivector_pq() reads a segment's float .mvec, decoupled from
+	whatever resident tier is currently realized).  A no-op (returns 0) once
+	global_mvpq_codebook is already populated (by an earlier call in this
+	session, or by load_mvpq_codebook() at open()).  Fail-soft: any failure
+	(missing/degraded/empty .mvec, no tokens, training failure, or a
+	save_mvpq_codebook() failure) leaves global_mvpq_codebook NULL and returns
+	nonzero -- the caller (build_multivector_pq()) then skips
+	set_external_codebook() and the writer trains a per-segment codebook
+	instead, so a transient failure here never hard-fails a build.
+*/
+long ATIRE_segment_index::ensure_global_mvpq_codebook(long which)
+{
+char mvec_name[4096];
+long long docs, ntok, t;
+float *rows;
+ANT_multivector_store *src;
+
+if (global_mvpq_codebook != NULL)
+	return 0;					// already trained (this session or loaded at open())
+if (which < 0 || which >= segment_count || mvpq_m_current == 0)
+	return 1;
+
+segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
+docs = segments[which].engine->get_document_count();
+src = ANT_multivector_store::load(mvec_name, rerank_dimension_current, docs);
+ntok = src->token_count();
+if (ntok <= 0 || src->tokens_quantized())
+	{ delete src; return 1; }			// degraded/absent or int8 .mvec (token-PQ is float-only) -> fail-soft to per-segment
+
+rows = new float[ntok * rerank_dimension_current];
+for (t = 0; t < ntok; t++)
+	src->token_reconstruct(t, rows + t * rerank_dimension_current);
+delete src;
+
+if (mvpq_opq_current)
+	{
+	global_mvpq_rotation = new float[rerank_dimension_current * rerank_dimension_current];
+	if (ANT_pq_codec::train_rotation(rows, rerank_dimension_current, mvpq_m_current, ntok, global_mvpq_rotation) != 0)
+		{ delete [] global_mvpq_rotation; global_mvpq_rotation = NULL; delete [] rows; return 1; }
+	float *tmp = new float[rerank_dimension_current];
+	for (t = 0; t < ntok; t++)
+		{
+		ANT_pq_codec::apply_rotation(rows + t*rerank_dimension_current, rerank_dimension_current, global_mvpq_rotation, tmp);
+		memcpy(rows + t*rerank_dimension_current, tmp, (size_t)rerank_dimension_current*sizeof(float));
+		}
+	delete [] tmp;
+	}
+
+{
+long long sub = rerank_dimension_current / mvpq_m_current;
+long long floats = mvpq_m_current * (long long)ANT_pq_codec::K * sub;
+global_mvpq_codebook = new float[floats > 0 ? floats : 1];
+if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::K, ntok, global_mvpq_codebook) != 0)
+	{ delete [] global_mvpq_codebook; global_mvpq_codebook = NULL; delete [] global_mvpq_rotation; global_mvpq_rotation = NULL; delete [] rows; return 1; }
+}
+delete [] rows;
+
+if (save_mvpq_codebook() != 0)
+	{ delete [] global_mvpq_codebook; global_mvpq_codebook = NULL; delete [] global_mvpq_rotation; global_mvpq_rotation = NULL; return 1; }
 return 0;
 }
 
@@ -1935,6 +2159,19 @@ for (which = 0; which < segment_count; which++)
 	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
 	ANT_multivector_pq_store_writer w;
 	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	if (!failed && mvpq_global_current)
+		{
+		/*
+			Global mode: reuse the shared token codebook (training it now, from
+			THIS segment's token pool, if this is the first build this
+			session/on-disk). Fail-soft -- if ensure_global_mvpq_codebook()
+			could not train/persist one, fall through and let the writer train
+			its own per-segment codebook (no hard build failure).
+		*/
+		ensure_global_mvpq_codebook((long)which);
+		if (global_mvpq_codebook != NULL)
+			w.set_external_codebook(global_mvpq_codebook, global_mvpq_rotation);
+		}
 	long long cap = mv->max_vector_count();
 	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
 	for (long long d = 0; !failed && d < docs; d++)

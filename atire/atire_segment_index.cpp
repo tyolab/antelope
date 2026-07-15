@@ -104,6 +104,9 @@ mvpq_posture_current = PQ_POSTURE_REPLACE;
 mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
 mvpq_resident_tier_current = MV_TIER_FLOAT;
 mvpq_opq_current = 0;
+mvpq_global_current = 0;
+global_mvpq_codebook = NULL;
+global_mvpq_rotation = NULL;
 mvpq_eager = 0;
 
 rerank_dimension_current = 0;
@@ -152,6 +155,8 @@ delete query_signer;
 delete wal;
 delete [] global_pq_codebook;
 delete [] global_pq_rotation;
+delete [] global_mvpq_codebook;
+delete [] global_mvpq_rotation;
 
 for (which = 0; which < segment_count; which++)
 	{
@@ -399,6 +404,8 @@ if (pq_global_current)
 	load_pq_codebook();
 load_rerank_config();
 load_multivector_pq_config();
+if (mvpq_global_current)
+	load_mvpq_codebook();
 load_attributes_config();
 if (vector_config_pending)
 	{

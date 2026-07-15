@@ -135,6 +135,9 @@ private:
 	long mvpq_rerank_quant_current;		// RERANK_QUANT_FLOAT / RERANK_QUANT_INT8
 	long mvpq_resident_tier_current;		// MV_TIER_FLOAT (default) / MV_TIER_NONE
 	long mvpq_opq_current;				// 0 (default, off) / 1 (OPQ rotation enabled); immutable once on
+	long mvpq_global_current;			// 0 (default, off) / 1 (shared global token codebook enabled); immutable once on
+	float *global_mvpq_codebook;		// m*K*(rerank_dimension/m) floats; trained once from the first built segment's token pool; NULL until ensure_global_mvpq_codebook()/load_mvpq_codebook() populates it; freed in dtor
+	float *global_mvpq_rotation;		// D*D OPQ rotation R (row-major); NULL unless mvpq_opq_current && the global token codebook has been trained
 	long mvpq_eager;					// 0 ondemand (default), 1 eager
 
 	long long rerank_dimension_current;		// 0 = rerank not configured
@@ -315,6 +318,12 @@ public:
 	long multivector_resident_tier(void) { return mvpq_resident_tier_current; }
 	long set_multivector_pq_opq(long enable);	// 0 ok; nonzero: not open / token-PQ unconfigured / already set to a DIFFERENT value (immutable)
 	long multivector_pq_opq(void) { return mvpq_opq_current; }
+	long set_multivector_pq_global_codebook(long enable);	// 0 ok; nonzero: not open / token-PQ unconfigured / already set to a DIFFERENT value (immutable)
+	long multivector_pq_global_codebook(void) { return mvpq_global_current; }
+	long ensure_global_mvpq_codebook(long which);	// trains+persists the global token codebook (from segment `which`'s token pool) iff not already trained; 0 on success/already-trained, nonzero on failure (fail-soft: caller falls back to per-segment training)
+	long load_mvpq_codebook(void);			// reads <dir>/multivector_pq.codebook; forgiving (any mismatch leaves global_mvpq_codebook/global_mvpq_rotation NULL)
+	long save_mvpq_codebook(void);			// atomic write (temp + rename); 0 on success
+	long rebuild_mvpq_global_codebook(void);	// token epic 2/4 Task 3: explicit retrain + re-encode every segment against the new global token codebook
 	long disk_segment_resident_tier_mv(long long which);	// test accessor: MV_TIER_NONE if float pool not resident but .mvpq is, else MV_TIER_FLOAT
 
 	long load_rerank_config(void);
