@@ -187,15 +187,24 @@ return s;
 }
 
 ANT_multivector_pq_store_writer::ANT_multivector_pq_store_writer() :
-	filename(0), dimension(0), m(0), metric(0), opq(0), buffer(0), capacity(0), total_tokens(0),
+	filename(0), dimension(0), m(0), metric(0), opq(0), ext_codebook(0), ext_rotation(0),
+	buffer(0), capacity(0), total_tokens(0),
 	counts(0), counts_capacity(0), documents(0) {}
 
 ANT_multivector_pq_store_writer::~ANT_multivector_pq_store_writer() { abandon(); }
+
+void ANT_multivector_pq_store_writer::set_external_codebook(const float *codebook, const float *rotation)
+{
+ext_codebook = codebook;
+ext_rotation = rotation;
+}
 
 long ANT_multivector_pq_store_writer::create(const char *path, long long dim, long long mm, long met, long op)
 {
 if (dim < 1 || mm < 1 || mm > dim || dim % mm != 0) return 1;
 abandon();
+ext_codebook = NULL;
+ext_rotation = NULL;
 filename = new char[strlen(path)+1]; strcpy(filename, path);
 dimension = dim; m = mm; metric = met; opq = op ? 1 : 0;
 capacity = 1024; buffer = new float[capacity * dimension];
@@ -224,29 +233,42 @@ long ANT_multivector_pq_store_writer::finish(void)
 if (filename == NULL) return 1;
 long long cb_floats = 256*dimension;
 
-/* OPQ: learn R over the whole flattened token pool, then rotate every token in place so the
-   codebook trains on -- and every code encodes -- R*x.  Empty pool -> no R (opq_flag=0). */
-float *rotation = NULL;
-if (opq && total_tokens > 0)
+/* --- rotation: external (borrowed) OR trained (owned) OR none --- */
+float *owned_rotation = NULL;
+const float *rotation = NULL;
+if (ext_codebook != NULL)
+	rotation = ext_rotation;						/* borrowed (may be NULL for non-OPQ global) */
+else if (opq && total_tokens > 0)
 	{
-	rotation = new float[dimension * dimension];
-	if (ANT_pq_codec::train_rotation(buffer, dimension, m, total_tokens, rotation) != 0)
-		{ delete [] rotation; rotation = NULL; }
+	owned_rotation = new float[dimension * dimension];
+	if (ANT_pq_codec::train_rotation(buffer, dimension, m, total_tokens, owned_rotation) != 0)
+		{ delete [] owned_rotation; owned_rotation = NULL; }
 	else
+		rotation = owned_rotation;
+	}
+if (rotation != NULL)								/* rotate the whole pool in place */
+	{
+	float *tmp = new float[dimension];
+	for (long long t = 0; t < total_tokens; t++)
 		{
-		float *tmp = new float[dimension];
-		for (long long t = 0; t < total_tokens; t++)
-			{
-			ANT_pq_codec::apply_rotation(buffer + t*dimension, dimension, rotation, tmp);
-			memcpy(buffer + t*dimension, tmp, (size_t)(dimension*sizeof(float)));
-			}
-		delete [] tmp;
+		ANT_pq_codec::apply_rotation(buffer + t*dimension, dimension, rotation, tmp);
+		memcpy(buffer + t*dimension, tmp, (size_t)(dimension*sizeof(float)));
 		}
+	delete [] tmp;
 	}
 
-float *codebook = new float[cb_floats];
-if (ANT_pq_codec::train(buffer, dimension, m, ANT_pq_codec::K, total_tokens, codebook) != 0)
-	{ delete [] codebook; delete [] rotation; return 1; }
+/* --- codebook: external (borrowed) OR trained (owned) --- */
+float *owned_codebook = NULL;
+const float *codebook = NULL;
+if (ext_codebook != NULL)
+	codebook = ext_codebook;						/* borrowed; do NOT free */
+else
+	{
+	owned_codebook = new float[cb_floats];
+	if (ANT_pq_codec::train(buffer, dimension, m, ANT_pq_codec::K, total_tokens, owned_codebook) != 0)
+		{ delete [] owned_codebook; delete [] owned_rotation; return 1; }
+	codebook = owned_codebook;
+	}
 
 unsigned char *codes = new unsigned char[total_tokens*m > 0 ? total_tokens*m : 1];
 for (long long t = 0; t < total_tokens; t++)
@@ -257,7 +279,7 @@ FILE *out = fopen(tmp, "wb");
 long ok = out != NULL;
 if (ok)
 	{
-	long long opq_flag = (rotation != NULL) ? 1 : 0;			/* derive from trained R, not the request */
+	long long opq_flag = (rotation != NULL) ? 1 : 0;			/* derive from the R actually used */
 	unsigned int version = opq_flag ? 2u : 1u;
 	long long k = 256;
 	ok = fwrite("ANTMVPQ1", 1, 8, out) == 8
@@ -276,7 +298,7 @@ if (ok)
 	}
 if (ok && rename(tmp, filename) != 0) ok = 0;
 if (!ok) remove(tmp);
-delete [] tmp; delete [] codes; delete [] codebook; delete [] rotation;
+delete [] tmp; delete [] codes; delete [] owned_codebook; delete [] owned_rotation;	/* NEVER free ext_* */
 if (ok) abandon();
 return ok ? 0 : 1;
 }

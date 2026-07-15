@@ -53,11 +53,14 @@ class ANT_multivector_pq_store_writer
 {
 private:
 	char *filename; long long dimension, m; long metric; long opq;
+	const float *ext_codebook;		// borrowed external codebook (global mode); NULL = train own
+	const float *ext_rotation;		// borrowed external R (global+OPQ); NULL = non-OPQ or train own
 	float *buffer; long long capacity, total_tokens;
 	int *counts; long long counts_capacity, documents;
 public:
 	ANT_multivector_pq_store_writer(); ~ANT_multivector_pq_store_writer();
 	long create(const char *path, long long dim, long long m, long metric, long opq = 0);
+	void set_external_codebook(const float *codebook, const float *rotation);	// finish() encodes/embeds these instead of training (borrowed; never freed here)
 	long append(const float *vectors, long long num_vectors);	// one doc's M_d normalized rows; append(NULL,0) for a doc with no tokens
 	long finish(void);		// trains codebook over the whole pool + encodes + writes atomically
 	void abandon(void);
