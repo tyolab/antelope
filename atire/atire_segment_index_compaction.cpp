@@ -665,6 +665,23 @@ if (multivector_pq_configured() && output_segment->multivectors != NULL
 	ANT_multivector_store *mv = output_segment->multivectors;
 	ANT_multivector_pq_store_writer w;
 	long failed = w.create(out_mvpq, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	if (!failed && mvpq_global_current)
+		{
+		/*
+			Global mode: reuse the shared token codebook -- no retrain on
+			compaction.  Post-open the codebook is already resident (loaded at
+			open() or trained by an earlier build_multivector_pq()/compact() this
+			session), so this is normally a no-op; segment_count-1 is the last
+			existing (input) segment -- the merged output is not appended yet -- and
+			is passed only as the fallback training source in the (should-not-happen)
+			corner where the codebook is still NULL (a valid token pool to train
+			from).  Fail-soft -- if it cannot be trained, fall through and let the
+			writer train its own per-segment codebook.
+		*/
+		ensure_global_mvpq_codebook((long)(segment_count - 1));
+		if (global_mvpq_codebook != NULL)
+			w.set_external_codebook(global_mvpq_codebook, global_mvpq_rotation);
+		}
 	long long cap = mv->max_vector_count();
 	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
 	for (long long d = 0; !failed && d < docs; d++)

@@ -1538,6 +1538,204 @@ return 0;
 }
 
 /*
+	ATIRE_SEGMENT_INDEX::REBUILD_MVPQ_GLOBAL_CODEBOOK()
+	---------------------------------------------------
+	Explicit retrain + re-encode escape hatch (token epic 2/4 Task 3).  Unlike
+	ensure_global_mvpq_codebook() (which trains once, from a single segment's
+	token pool, the first time it is needed), this gathers the ragged token pool
+	across EVERY disk segment's on-disk float .mvec, retrains a fresh global
+	codebook (+ OPQ rotation when configured) from that index-wide sample,
+	persists it, then re-encodes every segment's .mvpq against the new codebook --
+	so all segments stay comparable after the retrain.
+
+	Requires open + token-PQ configured + global mode.  Gather-before-free
+	ordering: the entire token pool is accumulated into `rows` BEFORE the existing
+	global_mvpq_codebook/rotation are touched, and the new codebook is trained into
+	LOCAL buffers that are only swapped in AFTER save_mvpq_codebook() succeeds -- so
+	ANY failure (no tokens anywhere, train_rotation/train failure, or a persist
+	failure) leaves the EXISTING global codebook intact and returns nonzero (never
+	a NULL/half-trained state).  Approach B embeds a copy of the codebook in every
+	.mvpq (no cross-segment borrow), so this swap/rollback is a plain pointer
+	exchange.  Once the new codebook is persisted, each segment is re-encoded
+	independently; a per-segment failure is skipped (that segment's .mvpq is left
+	as-is, referencing the OLD codebook until the next successful rebuild) rather
+	than aborting.  Returns 0 iff every re-encodable segment was re-encoded
+	successfully.  Opt-in, expensive, never automatic.
+*/
+long ATIRE_segment_index::rebuild_mvpq_global_codebook(void)
+{
+char mvec_name[4096], mvpq_name[4096];
+long long which, t, docs, total_tokens, filled;
+float *rows;
+float *new_codebook = NULL, *new_rotation = NULL;
+
+if (directory == NULL || !multivector_pq_configured() || !mvpq_global_current)
+	return 1;
+
+/* Pass 1a: size the pool -- sum token counts across every segment's float .mvec. */
+total_tokens = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	if (docs <= 0)
+		continue;
+	segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
+	ANT_multivector_store *src = ANT_multivector_store::load(mvec_name, rerank_dimension_current, docs);
+	if (src->document_count() == docs && !src->tokens_quantized())
+		total_tokens += src->token_count();
+	delete src;
+	}
+if (total_tokens <= 0)
+	return 1;					/* nothing to retrain from -- leave the prior codebook/.mvpq files untouched */
+
+/* Pass 1b: gather every segment's tokens into one contiguous buffer BEFORE freeing the old codebook. */
+rows = new float[total_tokens * rerank_dimension_current];
+filled = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	if (docs <= 0)
+		continue;
+	segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
+	ANT_multivector_store *src = ANT_multivector_store::load(mvec_name, rerank_dimension_current, docs);
+	if (src->document_count() == docs && !src->tokens_quantized())
+		{
+		long long ntok = src->token_count();
+		for (t = 0; t < ntok && filled < total_tokens; t++)
+			{ src->token_reconstruct(t, rows + filled * rerank_dimension_current); filled++; }
+		}
+	delete src;
+	}
+if (filled <= 0)
+	{ delete [] rows; return 1; }
+
+/*
+	Train the replacement into LOCAL buffers -- the existing global_mvpq_codebook
+	stays intact (and every on-disk .mvpq keeps its embedded copy) until the new
+	one is BOTH trained and persisted.  Any failure here just frees the locals and
+	returns nonzero, leaving the engine on the prior codebook.
+*/
+if (mvpq_opq_current)
+	{
+	new_rotation = new float[rerank_dimension_current * rerank_dimension_current];
+	if (ANT_pq_codec::train_rotation(rows, rerank_dimension_current, mvpq_m_current, filled, new_rotation) != 0)
+		{ delete [] new_rotation; delete [] rows; return 1; }
+	float *tmp = new float[rerank_dimension_current];
+	for (t = 0; t < filled; t++)
+		{
+		ANT_pq_codec::apply_rotation(rows + t*rerank_dimension_current, rerank_dimension_current, new_rotation, tmp);
+		memcpy(rows + t*rerank_dimension_current, tmp, (size_t)rerank_dimension_current*sizeof(float));
+		}
+	delete [] tmp;
+	}
+
+{
+long long sub = rerank_dimension_current / mvpq_m_current;
+long long floats = mvpq_m_current * (long long)ANT_pq_codec::K * sub;
+new_codebook = new float[floats > 0 ? floats : 1];
+if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::K, filled, new_codebook) != 0)
+	{ delete [] new_codebook; delete [] new_rotation; delete [] rows; return 1; }
+}
+delete [] rows;
+
+/*
+	Swap in the new codebook, then persist.  save_mvpq_codebook() writes from the
+	resident members, so swap first; on persist failure roll back to the prior
+	buffers (a plain pointer exchange under Approach B) and return nonzero -- the
+	engine is left exactly as before the rebuild.
+*/
+{
+float *old_codebook = global_mvpq_codebook, *old_rotation = global_mvpq_rotation;
+global_mvpq_codebook = new_codebook;
+global_mvpq_rotation = new_rotation;
+if (save_mvpq_codebook() != 0)
+	{
+	delete [] new_codebook; delete [] new_rotation;
+	global_mvpq_codebook = old_codebook;
+	global_mvpq_rotation = old_rotation;
+	return 1;
+	}
+delete [] old_codebook; delete [] old_rotation;
+}
+
+/*
+	Pass 2: re-encode every segment's .mvpq against the new codebook (mirrors
+	build_multivector_pq()'s per-segment writer path, but forced -- the codebook
+	changed).  A segment without a usable float .mvec token pool is skipped
+	(fail-soft, like ensure); a per-segment writer failure is skipped (that .mvpq
+	is left referencing the OLD codebook) and flips the overall return nonzero,
+	never aborting mid-loop.
+*/
+long any_failed = 0;
+for (which = 0; which < segment_count; which++)
+	{
+	docs = segments[which].engine->get_document_count();
+	if (docs <= 0)
+		continue;
+	segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
+	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
+	ANT_multivector_store *src = ANT_multivector_store::load(mvec_name, rerank_dimension_current, docs);
+	if (src->document_count() != docs || src->tokens_quantized() || src->token_count() <= 0)
+		{ delete src; continue; }			/* no usable float token pool -- skip (like ensure); does NOT flip any_failed because a .mvpq is always built from a persisted float .mvec that survives (kept on disk even under NONE tier), so this corner is unreachable while a .mvpq exists */
+
+	ANT_multivector_pq_store_writer w;
+	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	if (!failed)
+		w.set_external_codebook(global_mvpq_codebook, global_mvpq_rotation);
+	long long cap = src->max_vector_count();
+	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
+	for (long long d = 0; !failed && d < docs; d++)
+		{
+		long long md = src->copy_vectors(d, buf);
+		failed = w.append(md > 0 ? buf : NULL, md) != 0;
+		}
+	delete [] buf;
+	if (!failed)
+		failed = w.finish() != 0;
+	if (failed)
+		{ w.abandon(); any_failed = 1; }
+	else
+		{
+		delete segments[which].multivector_pq;
+		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+
+		/*
+			V6 UAF: token_index borrows token_source, which borrows the .mvpq store
+			we just replaced -- under the NONE resident tier token_source is an
+			ANT_multivector_pq_source wrapping that (now freed) store, so leaving it
+			(and any graph built over it) intact would dangle.  Drop the graph and
+			rebuild token_source tier-aware over the NEW store, exactly as open()/
+			compaction do (NONE -> PQ/ADC wrapper; FLOAT -> float wrapper, which the
+			re-encode never touches so FLOAT stays byte-identical).  Then invalidate
+			the on-disk .tann/.tann.g (built over the OLD code geometry) so the next
+			build_token_index() rebuilds the graph over the new codes (mirrors
+			set_multivector_resident_tier's invalidation).
+		*/
+		delete segments[which].token_index;
+		segments[which].token_index = NULL;
+		delete segments[which].token_source;
+		if (mvpq_resident_tier_current == MV_TIER_NONE && segments[which].multivector_pq != NULL)
+			segments[which].token_source = new ANT_multivector_pq_source(segments[which].multivector_pq);
+		else if (segments[which].multivectors != NULL)
+			segments[which].token_source = new ANT_multivector_source(segments[which].multivectors);
+		else
+			segments[which].token_source = NULL;
+
+		{
+		char tann_name[4096], tanng_name[4200];
+		segment_filename(tann_name, sizeof(tann_name), segments[which].generation, "tann");
+		snprintf(tanng_name, sizeof(tanng_name), "%s.g", tann_name);
+		remove(tann_name);
+		remove(tanng_name);
+		}
+		}
+	delete src;
+	}
+
+return any_failed ? 1 : 0;
+}
+
+/*
 	ATIRE_SEGMENT_INDEX::LOAD_RERANK_CONFIG()
 	--------------------------------------------
 	Reads <dir>/rerank.config (magic/version/dimension/quant).  Absent =>
