@@ -103,6 +103,7 @@ mvpq_m_current = 0;
 mvpq_posture_current = PQ_POSTURE_REPLACE;
 mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
 mvpq_resident_tier_current = MV_TIER_FLOAT;
+mvpq_opq_current = 0;
 mvpq_eager = 0;
 
 rerank_dimension_current = 0;

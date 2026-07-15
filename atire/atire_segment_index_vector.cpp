@@ -1132,25 +1132,28 @@ if (in == NULL)
 
 char tag[8];
 unsigned int version;
-long long vals[4];
+long long vals[5];
 if (fread(tag, 1, 8, in) != 8 || memcmp(tag, "ANTMVPQC", 8) != 0 || fread(&version, 4, 1, in) != 1)
 	{ fclose(in); return 1; }
 long ok;
 if (version == 1)
-	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; }
+	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; vals[4] = 0; }
 else if (version == 2)
-	{ ok = (fread(vals, 8, 4, in) == 4); }
+	{ ok = (fread(vals, 8, 4, in) == 4); vals[4] = 0; }
+else if (version == 3)
+	{ ok = (fread(vals, 8, 5, in) == 5); }
 else
 	ok = 0;
 fclose(in);
 if (!ok)
 	return 1;
 
-long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3];
+long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3], opq = vals[4];
 if (m < 1
 	|| (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
 	|| (rq != RERANK_QUANT_FLOAT && rq != RERANK_QUANT_INT8)
 	|| (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
+	|| (opq != 0 && opq != 1)
 	|| (rerank_dimension_current != 0 && rerank_dimension_current % m != 0))
 	return 1;					/* invalid persisted config; leave token-PQ unconfigured */
 
@@ -1158,6 +1161,7 @@ mvpq_m_current = m;
 mvpq_posture_current = (long)posture;
 mvpq_rerank_quant_current = (long)rq;
 mvpq_resident_tier_current = (long)tier;
+mvpq_opq_current = (long)opq;
 return 0;
 }
 
@@ -1175,9 +1179,9 @@ FILE *out = fopen(temp, "wb");
 if (out == NULL)
 	return 1;
 
-unsigned int version = 2;
-long long vals[4] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current };
-long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 4, out) == 4;
+unsigned int version = 3;
+long long vals[5] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current, mvpq_opq_current };
+long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 5, out) == 5;
 if (fclose(out) != 0)
 	ok = 0;
 if (ok && rename(temp, name) != 0)
@@ -1278,6 +1282,35 @@ if (which < 0 || which >= segment_count)
 if (segments[which].multivectors == NULL && segments[which].multivector_pq != NULL)
 	return MV_TIER_NONE;
 return MV_TIER_FLOAT;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_MULTIVECTOR_PQ_OPQ()
+	----------------------------------------------
+	Enable OPQ rotation for the token .mvpq store: a learned orthogonal D*D
+	rotation applied before subspace splitting, improving MaxSim recall at the
+	same m/k (metric-exactly).  Requires token-PQ configured
+	(set_multivector_pq_config()).  Immutable once enabled: the SAME value is a
+	no-op success (idempotent); flipping it back off (or any other change once
+	on) is rejected.  Persists in multivector_pq.config v3.  Writer create()
+	sites pass mvpq_opq_current so backfilled/compacted segments train R.
+*/
+long ATIRE_segment_index::set_multivector_pq_opq(long enable)
+{
+long want;
+if (directory == NULL)
+	return 1;
+if (!multivector_pq_configured())
+	return 1;
+want = enable ? 1 : 0;
+if (mvpq_opq_current == want)
+	return 0;
+if (mvpq_opq_current != 0)
+	return 1;
+mvpq_opq_current = want;
+if (save_multivector_pq_config() != 0)
+	{ mvpq_opq_current = 0; return 1; }
+return 0;
 }
 
 /*
@@ -1901,7 +1934,7 @@ for (which = 0; which < segment_count; which++)
 
 	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
 	ANT_multivector_pq_store_writer w;
-	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT) != 0;
+	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
 	long long cap = mv->max_vector_count();
 	float *buf = new float[(cap > 0 ? cap : 1) * rerank_dimension_current];
 	for (long long d = 0; !failed && d < docs; d++)
