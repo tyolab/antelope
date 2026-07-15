@@ -12,9 +12,11 @@
 	    fixed number, mirroring the #22.1 dense OPQ fixture discipline.
 
 	(b) test_opq_composes_with_token_graph -- OPQ + the #24 PQ-backed token graph
-	    (set_multivector_pq_config REPLACE + build_token_index): scoring flows
-	    through token_score_prepared on the ROTATED prepared table; a planted
-	    exact-match doc ranks #1 and nothing crashes.
+	    (set_multivector_pq_config REPLACE + build_token_index): under the default
+	    FLOAT tier the graph navigates via the float source, and the REPLACE-posture
+	    final rescoring runs through the rotated pqs->maxsim; a planted exact-match
+	    doc ranks #1 and nothing crashes. (The rotated prepared-table navigation
+	    path is exercised by case (c)'s NONE tier.)
 
 	(c) test_opq_none_tier_reconstruct -- OPQ + MV_TIER_NONE: the float pool is
 	    dropped and search reconstructs tokens from PQ codes, un-rotating via R^T
