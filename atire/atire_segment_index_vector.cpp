@@ -1396,7 +1396,8 @@ return 0;
 	build_multivector_pq().  Validates before allocating, and bounds
 	dimension*dimension (D <= 65536) before computing the rotation block size,
 	so a corrupt/hostile sidecar cannot trigger an oversized allocation or an
-	out-of-bounds read.  k is always ANT_pq_codec::K (256) for tokens.
+	out-of-bounds read.  k is mvpq_k_current (a power of two in [2,256]; 256 by
+	default), and load validates the stored k matches the configured k.
 */
 long ATIRE_segment_index::save_mvpq_codebook(void)
 {
@@ -1406,10 +1407,10 @@ unsigned long long magic;
 unsigned int version = 1u;
 long long dimension = rerank_dimension_current;
 long long m = mvpq_m_current;
-long long k = ANT_pq_codec::K;
+long long k = mvpq_k_current;						// real code-width (was hardcoded ANT_pq_codec::K)
 long long opq = mvpq_opq_current;
 long long sub = (m != 0) ? dimension / m : 0;
-long long codebook_floats = m * k * sub;
+long long codebook_floats = m * k * sub;			// k*dim
 const char *tag = "ANTMVGCB";
 
 if (global_mvpq_codebook == NULL)
@@ -1459,7 +1460,7 @@ fail = (fread(&magic, sizeof(magic), 1, fp) != 1 || magic != want
 	|| fread(&version, sizeof(version), 1, fp) != 1 || version != 1u
 	|| fread(&dimension, sizeof(dimension), 1, fp) != 1 || dimension != rerank_dimension_current
 	|| fread(&m, sizeof(m), 1, fp) != 1 || m != mvpq_m_current
-	|| fread(&k, sizeof(k), 1, fp) != 1 || k != (long long)ANT_pq_codec::K
+	|| fread(&k, sizeof(k), 1, fp) != 1 || k != mvpq_k_current || ANT_pq_codec::bits_for_k(k) < 0
 	|| fread(&opq, sizeof(opq), 1, fp) != 1 || (opq != 0 && opq != 1) || opq != mvpq_opq_current);
 if (!fail && (dimension <= 0 || dimension > 65536 || m <= 0 || dimension % m != 0))
 	fail = 1;					// bounds dimension*dimension before it is used below
@@ -1556,9 +1557,9 @@ if (mvpq_opq_current)
 
 {
 long long sub = rerank_dimension_current / mvpq_m_current;
-long long floats = mvpq_m_current * (long long)ANT_pq_codec::K * sub;
+long long floats = mvpq_m_current * mvpq_k_current * sub;		/* k*dim (was 256*dim) */
 global_mvpq_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::K, ntok, global_mvpq_codebook) != 0)
+if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, mvpq_k_current, ntok, global_mvpq_codebook) != 0)
 	{ delete [] global_mvpq_codebook; global_mvpq_codebook = NULL; delete [] global_mvpq_rotation; global_mvpq_rotation = NULL; delete [] rows; return 1; }
 }
 delete [] rows;
@@ -1662,9 +1663,9 @@ if (mvpq_opq_current)
 
 {
 long long sub = rerank_dimension_current / mvpq_m_current;
-long long floats = mvpq_m_current * (long long)ANT_pq_codec::K * sub;
+long long floats = mvpq_m_current * mvpq_k_current * sub;		/* k*dim (was 256*dim) */
 new_codebook = new float[floats > 0 ? floats : 1];
-if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::K, filled, new_codebook) != 0)
+if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, mvpq_k_current, filled, new_codebook) != 0)
 	{ delete [] new_codebook; delete [] new_rotation; delete [] rows; return 1; }
 }
 delete [] rows;
