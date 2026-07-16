@@ -136,6 +136,7 @@ private:
 	long mvpq_resident_tier_current;		// MV_TIER_FLOAT (default) / MV_TIER_NONE
 	long mvpq_opq_current;				// 0 (default, off) / 1 (OPQ rotation enabled); immutable once on
 	long mvpq_global_current;			// 0 (default, off) / 1 (shared global token codebook enabled); immutable once on
+	long long mvpq_k_current;			// token PQ codebook size (power of two in [2,256]); 256 = full byte
 	float *global_mvpq_codebook;		// m*K*(rerank_dimension/m) floats; trained once from the first built segment's token pool; NULL until ensure_global_mvpq_codebook()/load_mvpq_codebook() populates it; freed in dtor
 	float *global_mvpq_rotation;		// D*D OPQ rotation R (row-major); NULL unless mvpq_opq_current && the global token codebook has been trained
 	long mvpq_eager;					// 0 ondemand (default), 1 eager

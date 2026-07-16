@@ -105,6 +105,7 @@ mvpq_rerank_quant_current = RERANK_QUANT_FLOAT;
 mvpq_resident_tier_current = MV_TIER_FLOAT;
 mvpq_opq_current = 0;
 mvpq_global_current = 0;
+mvpq_k_current = 256;
 global_mvpq_codebook = NULL;
 global_mvpq_rotation = NULL;
 mvpq_eager = 0;

@@ -664,7 +664,7 @@ if (multivector_pq_configured() && output_segment->multivectors != NULL
 	long long docs = output_segment->engine->get_document_count();
 	ANT_multivector_store *mv = output_segment->multivectors;
 	ANT_multivector_pq_store_writer w;
-	long failed = w.create(out_mvpq, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	long failed = w.create(out_mvpq, rerank_dimension_current, mvpq_m_current, mvpq_k_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
 	if (!failed && mvpq_global_current)
 		{
 		/*

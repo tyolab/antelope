@@ -1,10 +1,11 @@
 /*
 	MULTIVECTOR_PQ_STORE.H -- per-segment PQ-compressed token pool (seg_G.mvpq).
-	Ragged, self-contained sibling of ANT_multivector_store: one k=256 codebook
-	per segment over the whole token pool, m code bytes per token. Exposes the
-	V6 token accessors + ADC-MaxSim scoring. Forgiving load: any validation failure
-	-> degraded empty store (token_count()==0) so the segment falls back to the
-	.mvec float/int8 pool.
+	Ragged, self-contained sibling of ANT_multivector_store: one codebook of k
+	(a power of two in [2,256]) per segment over the whole token pool, each token
+	stored as a bit-packed row of row_bytes = (m*bits+7)/8 (v3; v1/v2 keep the
+	byte-per-code k=256 layout). Exposes the V6 token accessors + ADC-MaxSim
+	scoring. Forgiving load: any validation failure -> degraded empty store
+	(token_count()==0) so the segment falls back to the .mvec float/int8 pool.
 */
 #ifndef MULTIVECTOR_PQ_STORE_H_
 #define MULTIVECTOR_PQ_STORE_H_
@@ -15,11 +16,13 @@ class ANT_multivector_pq_store
 {
 private:
 	long long dimension, documents, total_tokens, m;
+	long long k;			// codebook size (power of two in [2,256]); 256 for v1/v2
+	long long row_bytes;	// packed bytes per token row = (m*bits_for_k(k)+7)/8 (== m when k==256)
 	long metric;
 	int *counts;			// documents ints, NULL when empty
 	long long *offsets;		// documents+1 prefix sums, NULL when empty
-	float *codebook;		// m*256*(dimension/m), NULL when empty
-	unsigned char *codes;	// total_tokens*m, NULL when empty
+	float *codebook;		// k*(dimension/m)*m = k*dimension, NULL when empty
+	unsigned char *codes;	// total_tokens*row_bytes packed rows, NULL when empty
 	float *rotation;		// D*D OPQ rotation R (row-major), NULL when OPQ off
 	ANT_multivector_pq_store();
 public:
@@ -28,6 +31,7 @@ public:
 	~ANT_multivector_pq_store();
 	static ANT_multivector_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
 	long long get_m(void) { return m; }
+	long long get_k(void) { return k; }
 	long long get_dimension(void) { return dimension; }
 	long long document_count(void) { return documents; }
 	long long token_count(void) { return total_tokens; }
@@ -36,7 +40,7 @@ public:
 	long long vector_count(long long docid) { return has(docid) ? counts[docid] : 0; }
 	long long max_vector_count(void);
 	long token_has(long long t) { return t >= 0 && t < total_tokens; }
-	const unsigned char *token_codes(long long t) { return token_has(t) ? codes + t*m : 0; }
+	const unsigned char *token_codes(long long t) { return token_has(t) ? codes + t*row_bytes : 0; }
 	void token_reconstruct(long long t, float *out);
 	double token_score(long long t, const float *query, long metric_ignored);	// ADC; metric is the store's
 	long long token_docid_of(long long t);
@@ -52,14 +56,14 @@ public:
 class ANT_multivector_pq_store_writer
 {
 private:
-	char *filename; long long dimension, m; long metric; long opq;
+	char *filename; long long dimension, m, k; long metric; long opq;
 	const float *ext_codebook;		// borrowed external codebook (global mode); NULL = train own
 	const float *ext_rotation;		// borrowed external R (global+OPQ); NULL = non-OPQ or train own
 	float *buffer; long long capacity, total_tokens;
 	int *counts; long long counts_capacity, documents;
 public:
 	ANT_multivector_pq_store_writer(); ~ANT_multivector_pq_store_writer();
-	long create(const char *path, long long dim, long long m, long metric, long opq = 0);
+	long create(const char *path, long long dim, long long m, long long k, long metric, long opq = 0);
 	void set_external_codebook(const float *codebook, const float *rotation);	// finish() encodes/embeds these instead of training (borrowed; never freed here)
 	long append(const float *vectors, long long num_vectors);	// one doc's M_d normalized rows; append(NULL,0) for a doc with no tokens
 	long finish(void);		// trains codebook over the whole pool + encodes + writes atomically

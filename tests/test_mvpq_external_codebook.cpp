@@ -33,7 +33,7 @@ static void test_external_encodes_and_embeds(void)
 
 	char path[] = "/tmp/mvpq_ext_XXXXXX"; CHECK(mkstemp(path) >= 0);
 	ANT_multivector_pq_store_writer w;
-	CHECK(w.create(path, D, m, ANT_pq_codec::METRIC_DOT, /*opq*/0) == 0);
+	CHECK(w.create(path, D, m, 256, ANT_pq_codec::METRIC_DOT, /*opq*/0) == 0);
 	w.set_external_codebook(ext, NULL);					// supply codebook, no OPQ rotation
 	long long off = 0;
 	for (int d = 0; d < 3; d++) { CHECK(w.append(pool + off*D, counts[d]) == 0); off += counts[d]; }
@@ -66,7 +66,7 @@ static void test_non_external_unchanged(void)
 	for (int pass = 0; pass < 2; pass++)
 		{
 		ANT_multivector_pq_store_writer w;
-		CHECK(w.create(pass ? b : a, D, m, ANT_pq_codec::METRIC_DOT, 0) == 0);
+		CHECK(w.create(pass ? b : a, D, m, 256, ANT_pq_codec::METRIC_DOT, 0) == 0);
 		long long off = 0;
 		for (int d = 0; d < 2; d++) { CHECK(w.append(pool + off*D, counts[d]) == 0); off += counts[d]; }
 		CHECK(w.finish() == 0);

@@ -27,7 +27,7 @@ n = sqrt(n)+1e-9; for (int d = 0; d < DIM; d++) v[d] = (float)(v[d]/n);
 static void write_pool(const char *path, long long ndocs)
 {
 ANT_multivector_pq_store_writer w;
-CHECK(w.create(path, DIM, 4, ANT_pq_codec::METRIC_DOT) == 0);
+CHECK(w.create(path, DIM, 4, 256, ANT_pq_codec::METRIC_DOT) == 0);
 float row[8*DIM];
 long long seed = 0;
 for (long long d = 0; d < ndocs; d++)
@@ -67,7 +67,7 @@ char pq_path[] = "/tmp/ant_mvpq_a_XXXXXX";  int a = mkstemp(pq_path); CHECK(a>=0
 char mv_path[] = "/tmp/ant_mvf_a_XXXXXX";   int b = mkstemp(mv_path); CHECK(b>=0); close(b);
 const long long N = 30;
 
-ANT_multivector_pq_store_writer pw; CHECK(pw.create(pq_path, DIM, 4, ANT_pq_codec::METRIC_DOT) == 0);
+ANT_multivector_pq_store_writer pw; CHECK(pw.create(pq_path, DIM, 4, 256, ANT_pq_codec::METRIC_DOT) == 0);
 ANT_multivector_store_writer fw;    CHECK(fw.create(mv_path, DIM) == 0);
 float row[8*DIM]; long long seed = 0;
 for (long long d = 0; d < N; d++)

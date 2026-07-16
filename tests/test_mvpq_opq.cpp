@@ -32,7 +32,7 @@ static void write_store(const char *path, long long D, long long m, long opq,
 	const float *pool, const int *counts, long ndocs)
 {
 	ANT_multivector_pq_store_writer w;
-	CHECK(w.create(path, D, m, ANT_pq_codec::METRIC_DOT, opq) == 0);
+	CHECK(w.create(path, D, m, 256, ANT_pq_codec::METRIC_DOT, opq) == 0);
 	long long off = 0;
 	for (long d = 0; d < ndocs; d++) { CHECK(w.append(pool + off*D, counts[d]) == 0); off += counts[d]; }
 	CHECK(w.finish() == 0);

@@ -52,7 +52,7 @@ static ANT_multivector_pq_store *make_mvpq(long long dim, long long m, long long
 {
 	remove(path);
 	ANT_multivector_pq_store_writer w;
-	CHECK(w.create(path, dim, m, ANT_pq_codec::METRIC_DOT) == 0);
+	CHECK(w.create(path, dim, m, 256, ANT_pq_codec::METRIC_DOT) == 0);
 	srand(5);
 	for (long long d=0; d<ndoc; d++)
 		{

@@ -1679,7 +1679,7 @@ for (which = 0; which < segment_count; which++)
 		{ delete src; continue; }			/* no usable float token pool -- skip (like ensure); does NOT flip any_failed because a .mvpq is always built from a persisted float .mvec that survives (kept on disk even under NONE tier), so this corner is unreachable while a .mvpq exists */
 
 	ANT_multivector_pq_store_writer w;
-	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, mvpq_k_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
 	if (!failed)
 		w.set_external_codebook(global_mvpq_codebook, global_mvpq_rotation);
 	long long cap = src->max_vector_count();
@@ -2356,7 +2356,7 @@ for (which = 0; which < segment_count; which++)
 
 	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
 	ANT_multivector_pq_store_writer w;
-	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
+	long failed = w.create(mvpq_name, rerank_dimension_current, mvpq_m_current, mvpq_k_current, ANT_pq_codec::METRIC_DOT, mvpq_opq_current) != 0;
 	if (!failed && mvpq_global_current)
 		{
 		/*
