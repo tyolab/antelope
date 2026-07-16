@@ -321,6 +321,8 @@ public:
 	long multivector_pq_opq(void) { return mvpq_opq_current; }
 	long set_multivector_pq_global_codebook(long enable);	// 0 ok; nonzero: not open / token-PQ unconfigured / already set to a DIFFERENT value (immutable)
 	long multivector_pq_global_codebook(void) { return mvpq_global_current; }
+	long set_multivector_pq_k(long long k);	// 0 ok; nonzero: not open / token-PQ unconfigured / k not a power of two in [2,256] / already changed to a DIFFERENT value (immutable)
+	long long multivector_pq_k(void) { return mvpq_k_current; }
 	long ensure_global_mvpq_codebook(long which);	// trains+persists the global token codebook (from segment `which`'s token pool) iff not already trained; 0 on success/already-trained, nonzero on failure (fail-soft: caller falls back to per-segment training)
 	long load_mvpq_codebook(void);			// reads <dir>/multivector_pq.codebook; forgiving (any mismatch leaves global_mvpq_codebook/global_mvpq_rotation NULL)
 	long save_mvpq_codebook(void);			// atomic write (temp + rename); 0 on success

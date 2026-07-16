@@ -1132,31 +1132,34 @@ if (in == NULL)
 
 char tag[8];
 unsigned int version;
-long long vals[6];
+long long vals[7];
 if (fread(tag, 1, 8, in) != 8 || memcmp(tag, "ANTMVPQC", 8) != 0 || fread(&version, 4, 1, in) != 1)
 	{ fclose(in); return 1; }
 long ok;
 if (version == 1)
-	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; vals[4] = 0; vals[5] = 0; }
+	{ ok = (fread(vals, 8, 3, in) == 3); vals[3] = MV_TIER_FLOAT; vals[4] = 0; vals[5] = 0; vals[6] = 256; }
 else if (version == 2)
-	{ ok = (fread(vals, 8, 4, in) == 4); vals[4] = 0; vals[5] = 0; }
+	{ ok = (fread(vals, 8, 4, in) == 4); vals[4] = 0; vals[5] = 0; vals[6] = 256; }
 else if (version == 3)
-	{ ok = (fread(vals, 8, 5, in) == 5); vals[5] = 0; }
+	{ ok = (fread(vals, 8, 5, in) == 5); vals[5] = 0; vals[6] = 256; }
 else if (version == 4)
-	{ ok = (fread(vals, 8, 6, in) == 6); }
+	{ ok = (fread(vals, 8, 6, in) == 6); vals[6] = 256; }
+else if (version == 5)
+	{ ok = (fread(vals, 8, 7, in) == 7); }
 else
 	ok = 0;
 fclose(in);
 if (!ok)
 	return 1;
 
-long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3], opq = vals[4], global = vals[5];
+long long m = vals[0], posture = vals[1], rq = vals[2], tier = vals[3], opq = vals[4], global = vals[5], k = vals[6];
 if (m < 1
 	|| (posture != PQ_POSTURE_REPLACE && posture != PQ_POSTURE_RERANK)
 	|| (rq != RERANK_QUANT_FLOAT && rq != RERANK_QUANT_INT8)
 	|| (tier != MV_TIER_FLOAT && tier != MV_TIER_NONE)
 	|| (opq != 0 && opq != 1)
 	|| (global != 0 && global != 1)
+	|| ANT_pq_codec::bits_for_k(k) < 0
 	|| (rerank_dimension_current != 0 && rerank_dimension_current % m != 0))
 	return 1;					/* invalid persisted config; leave token-PQ unconfigured */
 
@@ -1166,6 +1169,7 @@ mvpq_rerank_quant_current = (long)rq;
 mvpq_resident_tier_current = (long)tier;
 mvpq_opq_current = (long)opq;
 mvpq_global_current = (long)global;
+mvpq_k_current = k;
 return 0;
 }
 
@@ -1183,9 +1187,9 @@ FILE *out = fopen(temp, "wb");
 if (out == NULL)
 	return 1;
 
-unsigned int version = 4;
-long long vals[6] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current, mvpq_opq_current, mvpq_global_current };
-long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 6, out) == 6;
+unsigned int version = 5;
+long long vals[7] = { mvpq_m_current, mvpq_posture_current, mvpq_rerank_quant_current, mvpq_resident_tier_current, mvpq_opq_current, mvpq_global_current, mvpq_k_current };
+long ok = fwrite("ANTMVPQC", 1, 8, out) == 8 && fwrite(&version, 4, 1, out) == 1 && fwrite(vals, 8, 7, out) == 7;
 if (fclose(out) != 0)
 	ok = 0;
 if (ok && rename(temp, name) != 0)
@@ -1347,6 +1351,33 @@ if (mvpq_global_current != 0)
 mvpq_global_current = want;
 if (save_multivector_pq_config() != 0)
 	{ mvpq_global_current = 0; return 1; }
+return 0;
+}
+
+/*
+	ATIRE_SEGMENT_INDEX::SET_MULTIVECTOR_PQ_K()
+	-------------------------------------------
+	Token PQ code-width: k = power of two in [2,256] (256 = one byte per code,
+	byte-identical to pre-#T2 .mvpq v1/v2). Immutable once changed from 256:
+	the same value is idempotent success; any different value is rejected.
+	Persists in multivector_pq.config v5. Composes with opq/global/tier; writer
+	create() sites pass mvpq_k_current so backfilled/compacted segments encode at k.
+*/
+long ATIRE_segment_index::set_multivector_pq_k(long long k)
+{
+if (directory == NULL)
+	return 1;						// must be open
+if (!multivector_pq_configured())
+	return 1;						// token PQ must be configured first
+if (ANT_pq_codec::bits_for_k(k) < 0)
+	return 1;						// not a power of two in [2,256]
+if (mvpq_k_current == k)
+	return 0;						// idempotent
+if (mvpq_k_current != 256)
+	return 1;						// immutable once changed from the default
+mvpq_k_current = k;
+if (save_multivector_pq_config() != 0)
+	{ mvpq_k_current = 256; return 1; }
 return 0;
 }
 
