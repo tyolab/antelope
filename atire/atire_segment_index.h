@@ -328,6 +328,8 @@ public:
 	long save_mvpq_codebook(void);			// atomic write (temp + rename); 0 on success
 	long rebuild_mvpq_global_codebook(void);	// token epic 2/4 Task 3: explicit retrain + re-encode every segment against the new global token codebook
 	long disk_segment_resident_tier_mv(long long which);	// test accessor: MV_TIER_NONE if float pool not resident but .mvpq is, else MV_TIER_FLOAT
+	const float *debug_global_mvpq_codebook(void) { return global_mvpq_codebook; }	// test accessor: the single resident token codebook (NULL if none)
+	ANT_multivector_pq_store *debug_segment_multivector_pq(long long which) { return (which >= 0 && which < segment_count) ? segments[which].multivector_pq : NULL; }	// test accessor: segment `which`'s .mvpq store (NULL if absent)
 
 	long load_rerank_config(void);
 	long save_rerank_config(void);

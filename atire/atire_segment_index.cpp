@@ -1637,7 +1637,9 @@ if (rerank_configured())
 		{
 		char mvpq_filename[1024];
 		segment_filename(mvpq_filename, sizeof(mvpq_filename), generation, "mvpq");
-		ANT_multivector_pq_store *p = ANT_multivector_pq_store::load(mvpq_filename, rerank_dimension_current, engine->get_document_count(), ANT_pq_codec::METRIC_DOT);
+		const float *bcb = (mvpq_global_current && global_mvpq_codebook != NULL) ? global_mvpq_codebook : NULL;
+		const float *brot = (bcb != NULL) ? global_mvpq_rotation : NULL;
+		ANT_multivector_pq_store *p = ANT_multivector_pq_store::load(mvpq_filename, rerank_dimension_current, engine->get_document_count(), ANT_pq_codec::METRIC_DOT, bcb, brot);
 		if (p->document_count() == engine->get_document_count() && p->token_count() > 0)
 			segments[segment_count].multivector_pq = p;
 		else

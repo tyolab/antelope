@@ -695,7 +695,9 @@ if (multivector_pq_configured() && output_segment->multivectors != NULL
 	if (failed)
 		w.abandon();
 	delete output_segment->multivector_pq;
-	output_segment->multivector_pq = ANT_multivector_pq_store::load(out_mvpq, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+	const float *bcb = (mvpq_global_current && global_mvpq_codebook != NULL) ? global_mvpq_codebook : NULL;
+	const float *brot = (bcb != NULL) ? global_mvpq_rotation : NULL;
+	output_segment->multivector_pq = ANT_multivector_pq_store::load(out_mvpq, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT, bcb, brot);
 	}
 else
 	{

@@ -1729,7 +1729,9 @@ for (which = 0; which < segment_count; which++)
 	else
 		{
 		delete segments[which].multivector_pq;
-		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+		const float *bcb = (mvpq_global_current && global_mvpq_codebook != NULL) ? global_mvpq_codebook : NULL;
+		const float *brot = (bcb != NULL) ? global_mvpq_rotation : NULL;
+		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT, bcb, brot);
 
 		/*
 			V6 UAF: token_index borrows token_source, which borrows the .mvpq store
@@ -2417,7 +2419,9 @@ for (which = 0; which < segment_count; which++)
 	else
 		{
 		delete segments[which].multivector_pq;
-		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT);
+		const float *bcb = (mvpq_global_current && global_mvpq_codebook != NULL) ? global_mvpq_codebook : NULL;
+		const float *brot = (bcb != NULL) ? global_mvpq_rotation : NULL;
+		segments[which].multivector_pq = ANT_multivector_pq_store::load(mvpq_name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT, bcb, brot);
 		}
 	delete mv_disk;
 	}
