@@ -1642,6 +1642,21 @@ if (filled <= 0)
 	{ delete [] rows; return 1; }
 
 /*
+	Approach A eligibility snapshot -- capture BEFORE any drop.  Under single-resident
+	borrowing, the free/swap of global_mvpq_codebook below invalidates every borrowing
+	store's codebook pointer, so we drop those stores to NULL.  Pass-2 then can no longer
+	read the live store to decide which segments to re-encode, so record each segment's
+	re-encode eligibility here (needs the store's live document_count/token_count, gone
+	once the drop nulls the pointer).  Mirrors dense rebuild_pq_global_codebook.
+*/
+char *had_pq = new char[segment_count > 0 ? segment_count : 1];
+for (long long s = 0; s < segment_count; s++)
+	{
+	long long sdocs = segments[s].engine ? segments[s].engine->get_document_count() : 0;
+	had_pq[s] = (segments[s].multivector_pq != NULL && segments[s].multivector_pq->document_count() == sdocs && sdocs > 0 && segments[s].multivector_pq->token_count() > 0) ? 1 : 0;
+	}
+
+/*
 	Train the replacement into LOCAL buffers -- the existing global_mvpq_codebook
 	stays intact (and every on-disk .mvpq keeps its embedded copy) until the new
 	one is BOTH trained and persisted.  Any failure here just frees the locals and
@@ -1651,7 +1666,7 @@ if (mvpq_opq_current)
 	{
 	new_rotation = new float[rerank_dimension_current * rerank_dimension_current];
 	if (ANT_pq_codec::train_rotation(rows, rerank_dimension_current, mvpq_m_current, filled, new_rotation) != 0)
-		{ delete [] new_rotation; delete [] rows; return 1; }
+		{ delete [] new_rotation; delete [] rows; delete [] had_pq; return 1; }
 	float *tmp = new float[rerank_dimension_current];
 	for (t = 0; t < filled; t++)
 		{
@@ -1666,29 +1681,32 @@ long long sub = rerank_dimension_current / mvpq_m_current;
 long long floats = mvpq_m_current * mvpq_k_current * sub;		/* k*dim (was 256*dim) */
 new_codebook = new float[floats > 0 ? floats : 1];
 if (ANT_pq_codec::train(rows, rerank_dimension_current, mvpq_m_current, mvpq_k_current, filled, new_codebook) != 0)
-	{ delete [] new_codebook; delete [] new_rotation; delete [] rows; return 1; }
+	{ delete [] new_codebook; delete [] new_rotation; delete [] rows; delete [] had_pq; return 1; }
 }
 delete [] rows;
 
 /*
-	Swap in the new codebook, then persist.  save_mvpq_codebook() writes from the
-	resident members, so swap first; on persist failure roll back to the prior
-	buffers (a plain pointer exchange under Approach B) and return nonzero -- the
-	engine is left exactly as before the rebuild.
+	Approach A (single-resident): freeing the old resident invalidates every borrowing
+	store's codebook pointer (a borrowed store keeps NO embedded copy).  Swap in the new
+	resident, then DROP every borrowing store to NULL -- delete the token graph and
+	tier-aware token_source (which borrow the store) first, then the store -- so nothing
+	dereferences the freed buffer.  Pass-2 (below) reloads each had_pq-eligible segment,
+	re-borrowing the NEW resident.  On save failure we fail CLOSED (unlike the T3
+	Approach-B rollback): the borrowing stores are already NULL so nothing dangles (those
+	segments fall back to the resident float tier), the resident now holds the new
+	UNPERSISTED codebook, and we return nonzero -- the caller must honor it.
 */
-{
-float *old_codebook = global_mvpq_codebook, *old_rotation = global_mvpq_rotation;
-global_mvpq_codebook = new_codebook;
-global_mvpq_rotation = new_rotation;
+delete [] global_mvpq_codebook; global_mvpq_codebook = new_codebook;
+delete [] global_mvpq_rotation; global_mvpq_rotation = new_rotation;	/* new_rotation NULL when OPQ off */
+for (long long s = 0; s < segment_count; s++)
+	if (segments[s].multivector_pq != NULL && segments[s].multivector_pq->codebook_is_borrowed())
+		{
+		delete segments[s].token_index; segments[s].token_index = NULL;		/* graph borrows token_source borrows the store */
+		delete segments[s].token_source; segments[s].token_source = NULL;
+		delete segments[s].multivector_pq; segments[s].multivector_pq = NULL;
+		}
 if (save_mvpq_codebook() != 0)
-	{
-	delete [] new_codebook; delete [] new_rotation;
-	global_mvpq_codebook = old_codebook;
-	global_mvpq_rotation = old_rotation;
-	return 1;
-	}
-delete [] old_codebook; delete [] old_rotation;
-}
+	{ delete [] had_pq; return 1; }		/* persist failed: borrowing stores already NULL -> fail closed to resident float tier; resident holds the new unpersisted codebook -> caller must honor nonzero */
 
 /*
 	Pass 2: re-encode every segment's .mvpq against the new codebook (mirrors
@@ -1702,7 +1720,7 @@ long any_failed = 0;
 for (which = 0; which < segment_count; which++)
 	{
 	docs = segments[which].engine->get_document_count();
-	if (docs <= 0)
+	if (!had_pq[which])					/* captured before the drop above (the store pointer is now NULL for every borrowing segment) */
 		continue;
 	segment_filename(mvec_name, sizeof(mvec_name), segments[which].generation, "mvec");
 	segment_filename(mvpq_name, sizeof(mvpq_name), segments[which].generation, "mvpq");
@@ -1766,6 +1784,7 @@ for (which = 0; which < segment_count; which++)
 	delete src;
 	}
 
+delete [] had_pq;
 return any_failed ? 1 : 0;
 }
 
