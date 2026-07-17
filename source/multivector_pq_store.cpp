@@ -11,7 +11,7 @@ enum { MVPQ_CODE_STACK_CAP = 4096 };		// bytes: inline unpacked/encoded per-row 
 
 ANT_multivector_pq_store::ANT_multivector_pq_store() :
 	dimension(0), documents(0), total_tokens(0), m(0), k(256), row_bytes(0), metric(0),
-	counts(0), offsets(0), codebook(0), codes(0), rotation(0), adc_table_builds(0) {}
+	counts(0), offsets(0), codebook(0), codes(0), rotation(0), owns_codebook(1), owns_rotation(1), adc_table_builds(0) {}
 
 /* unpack token t's packed row into an m-byte scratch (caller supplies buf of size >= m) */
 static inline void mvpq_unpack_row(const unsigned char *codes, long long t, long long row_bytes, long long m, long long bits, unsigned char *buf)
@@ -19,7 +19,9 @@ static inline void mvpq_unpack_row(const unsigned char *codes, long long t, long
 
 ANT_multivector_pq_store::~ANT_multivector_pq_store()
 {
-delete [] counts; delete [] offsets; delete [] codebook; delete [] codes; delete [] rotation;
+delete [] counts; delete [] offsets; delete [] codes;
+if (owns_codebook) delete [] codebook;
+if (owns_rotation) delete [] rotation;
 }
 
 long long ANT_multivector_pq_store::max_vector_count(void)
@@ -144,7 +146,7 @@ return total;
 
 static long long read_i64(const unsigned char *p) { long long v; memcpy(&v, p, 8); return v; }
 
-ANT_multivector_pq_store *ANT_multivector_pq_store::load(const char *filename, long long expected_dimension, long long expected_documents, long metric)
+ANT_multivector_pq_store *ANT_multivector_pq_store::load(const char *filename, long long expected_dimension, long long expected_documents, long metric, const float *borrowed_codebook, const float *borrowed_rotation)
 {
 ANT_multivector_pq_store *s = new ANT_multivector_pq_store();
 s->metric = metric;
@@ -187,17 +189,38 @@ long long expected_size = header_size + docs*4 + toks*row_bytes + cb_floats*4 + 
 if (actual != expected_size) { fclose(in); return s; }
 if (fseek(in, header_size, SEEK_SET) != 0) { fclose(in); return s; }
 
+/*
+	Approach A (single-resident): if a borrowed codebook is supplied AND the
+	file's opq flag is consistent with the supplied rotation (rotation present
+	iff opq==1), point at the borrowed buffers and SKIP reading the embedded
+	codebook/rotation into RAM (fseek past them). Otherwise own an embedded copy
+	exactly as before. Header dims/m/k were already validated against expected_*;
+	global mode guarantees the resident codebook is the one every .mvpq embeds,
+	so no byte-compare is needed.
+*/
+int borrow = (borrowed_codebook != NULL) && ((opq == 1) == (borrowed_rotation != NULL));
+
 int *counts = new int[docs > 0 ? docs : 1];
 long long *offsets = new long long[docs + 1];
 unsigned char *codes = new unsigned char[toks*row_bytes > 0 ? toks*row_bytes : 1];
-float *codebook = new float[cb_floats > 0 ? cb_floats : 1];
-float *rotation = rot_floats > 0 ? new float[rot_floats] : NULL;
+float *codebook = borrow ? NULL : new float[cb_floats > 0 ? cb_floats : 1];
+float *rotation = (borrow || rot_floats == 0) ? NULL : new float[rot_floats];
 
 long ok = 1;
 if (docs > 0 && fread(counts, 4, (size_t)docs, in) != (size_t)docs) ok = 0;
 if (ok && toks > 0 && fread(codes, 1, (size_t)(toks*row_bytes), in) != (size_t)(toks*row_bytes)) ok = 0;
-if (ok && fread(codebook, sizeof(float), (size_t)cb_floats, in) != (size_t)cb_floats) ok = 0;
-if (ok && rot_floats > 0 && fread(rotation, sizeof(float), (size_t)rot_floats, in) != (size_t)rot_floats) ok = 0;
+if (ok && cb_floats > 0)					/* codebook block: read OR skip */
+	{
+	if (borrow)
+		{ if (fseek(in, (long)(cb_floats * (long long)sizeof(float)), SEEK_CUR) != 0) ok = 0; }
+	else if (fread(codebook, sizeof(float), (size_t)cb_floats, in) != (size_t)cb_floats) ok = 0;
+	}
+if (ok && rot_floats > 0)					/* rotation block: read OR skip */
+	{
+	if (borrow)
+		{ if (fseek(in, (long)(rot_floats * (long long)sizeof(float)), SEEK_CUR) != 0) ok = 0; }
+	else if (fread(rotation, sizeof(float), (size_t)rot_floats, in) != (size_t)rot_floats) ok = 0;
+	}
 fclose(in);
 
 if (ok)
@@ -212,7 +235,17 @@ if (!ok) { delete [] counts; delete [] offsets; delete [] codes; delete [] codeb
 
 s->dimension = dim; s->documents = docs; s->total_tokens = toks; s->m = mm;
 s->k = kk; s->row_bytes = row_bytes;
-s->counts = counts; s->offsets = offsets; s->codes = codes; s->codebook = codebook; s->rotation = rotation;
+s->counts = counts; s->offsets = offsets; s->codes = codes;
+if (borrow)
+	{
+	s->codebook = (float *)borrowed_codebook; s->owns_codebook = 0;
+	s->rotation = (opq == 1) ? (float *)borrowed_rotation : NULL; s->owns_rotation = 0;
+	}
+else
+	{
+	s->codebook = codebook; s->owns_codebook = 1;
+	s->rotation = rotation; s->owns_rotation = 1;	/* rotation NULL when opq==0 */
+	}
 return s;
 }
 

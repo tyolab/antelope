@@ -24,12 +24,14 @@ private:
 	float *codebook;		// k*(dimension/m)*m = k*dimension, NULL when empty
 	unsigned char *codes;	// total_tokens*row_bytes packed rows, NULL when empty
 	float *rotation;		// D*D OPQ rotation R (row-major), NULL when OPQ off
+	long owns_codebook;		// 1 = this store allocated codebook (free in dtor); 0 = borrowed (engine-owned, never freed/deref'd here)
+	long owns_rotation;		// 1 = owned; 0 = borrowed
 	ANT_multivector_pq_store();
 public:
 	long long adc_table_builds;	// diagnostic-only, NOT thread-safe: # of ADC-table builds (token_score + token_prepare_query)
 
 	~ANT_multivector_pq_store();
-	static ANT_multivector_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric);
+	static ANT_multivector_pq_store *load(const char *filename, long long expected_dimension, long long expected_documents, long metric, const float *borrowed_codebook = NULL, const float *borrowed_rotation = NULL);
 	long long get_m(void) { return m; }
 	long long get_k(void) { return k; }
 	long long get_dimension(void) { return dimension; }
@@ -50,6 +52,7 @@ public:
 	double token_score_prepared(long long t, const float *query, void *ctx);	// ADC via a prepared table; ctx==NULL -> falls back to token_score(t,query,metric)
 	void   token_free_query(void *ctx);
 	const float *get_codebook(void) { return codebook; }
+	long codebook_is_borrowed(void) { return owns_codebook == 0; }
 	long get_metric(void) { return metric; }
 };
 
