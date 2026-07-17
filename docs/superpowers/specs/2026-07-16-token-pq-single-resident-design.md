@@ -25,9 +25,9 @@
 
 ## 2. Engine load-site wiring (`atire/atire_segment_index*`)
 
-At every `.mvpq` store load site, pass the resident codebook when global mode is active and trained, else NULL (→ owned/degrade-to-B):
+At every `.mvpq` store load site that populates a resident `segments[].multivector_pq`, pass the resident codebook when global mode is active and trained, else NULL (→ owned/degrade-to-B):
 `const float *bcb = (mvpq_global_current && global_mvpq_codebook != NULL) ? global_mvpq_codebook : NULL; const float *brot = (bcb != NULL) ? global_mvpq_rotation : NULL;` then `ANT_multivector_pq_store::load(name, rerank_dimension_current, docs, ANT_pq_codec::METRIC_DOT, bcb, brot)`.
-The three sites: `open()` (`atire_segment_index.cpp` ~1640), `rebuild_mvpq_global_codebook` Pass-2 reload (`atire_segment_index_vector.cpp` ~1732), and the `ensure`/`build_multivector_pq` reload after finish (`atire_segment_index_vector.cpp` ~2420). No behavior/format change when global mode is off (bcb == NULL everywhere).
+The FOUR sites: `open()`/`append_segment` (`atire_segment_index.cpp` ~1640), `rebuild_mvpq_global_codebook` Pass-2 reload (`atire_segment_index_vector.cpp` ~1732), the `ensure`/`build_multivector_pq` reload after finish (`atire_segment_index_vector.cpp` ~2420), and the **compaction merged-output reload** (`atire_segment_index_compaction.cpp` ~698 — the merged segment's store is resident and `token_source`-wrapped, so it must borrow too). No behavior/format change when global mode is off (bcb == NULL everywhere).
 
 ## 3. Rebuild UAF safety (`rebuild_mvpq_global_codebook`) — the one non-mechanical change
 
