@@ -1,0 +1,13 @@
+{
+  "name": "spoor",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": { "spoor": "src/cli.js" },
+  "scripts": { "test": "node --test" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ignore": "^5.3.0",
+    "web-tree-sitter": "^0.22.0",
+    "zod": "^3.23.0"
+  }
+}
