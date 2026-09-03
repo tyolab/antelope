@@ -140,7 +140,11 @@ spoor supports two embedding representations, chosen by config (`EMBED_MODE = mu
   - **`single`:** one dense vector (`.vec`); retrieval via dense ANN/HNSW, with dense **`.pq`** compression available as the analogous flag.
 - Both modes fuse their vector leg with lexical retrieval via **RRF**; the fused ranking and the `search` result shape are identical across modes.
 - Incremental: `upsert` replaces a file's chunks; `remove` drops them. Compaction is the addon's existing responsibility.
-- **Addon-surface check (planning gate):** confirm the Node addon exposes, for `multi`: multi-vector add + `search_multivector` (or `search_rerank`) + `.mvpq` setters; and for `single`: dense-vector add + dense ANN search + `.pq` setters. Project memory says both are present (PQ config bags + async `buildPq`/`buildMultivectorPq` shipped). Any missing call is a separate flagged engine task, surfaced before implementation — not silently worked around.
+- **Addon-surface check (planning gate) — RESOLVED 2026-09-03 by reading `nodejs/addon/segment_index.cpp`:**
+  - `single`: `addDocument(key,text,vector)`, `searchHybrid`/`searchVectorHnsw`, `buildHnsw`, `pq` bag (`m`/`posture`/`rerankQuant`/`residentTier`) + `buildPq`. ✅
+  - `multi`: `addDocument(...,multiVectors)`, **`searchRerank(queryMultiVectors,{text?,vector?,firstStageN?,topK?})`** (V5 two-stage MaxSim), `multivectorPq` bag (`m`/`posture`/`rerankQuant`/**`residentTier`**) + `buildMultivectorPq`. ✅ The RAM differentiator is reachable via `residentTier:'none'` (drops resident float multivectors → PQ-code search).
+  - **Gap (flagged follow-on, NOT MVP-blocking):** the advanced token-codec knobs `set_multivector_pq_opq` / `_global_codebook` / `_k` and V6 `searchMultivector` are **not** bound to the Node addon (engine-only). A separate small addon-binding sub-project exposes them to reach full recall/footprint parity.
+  - **`multi` first-stage:** because `searchRerank`'s first stage is lexical-or-dense, `multi` mode also stores a **mean-pooled dense vector per chunk** (`addDocument` accepts both `vector` and `multiVectors`) to drive a *semantic* first stage, then MaxSim-reranks. Recall benefit for a small pooling step in the embedder.
 
 ---
 
