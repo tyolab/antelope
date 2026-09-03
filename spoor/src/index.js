@@ -1,7 +1,7 @@
 import { loadSegmentIndex } from './addon.js';
 import { rrf } from './fuse.js';
 import { bestWindow, firstMatchLine } from './snippet.js';
-import { readFile, writeFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join as pjoin } from 'node:path';
 
 export function chunkKey(chunk) { return `${chunk.path}:${chunk.span[0]}-${chunk.span[1]}`; }
@@ -29,6 +29,7 @@ export class SpoorIndex {
   }
 
   async open() {
+    await mkdir(this.indexDir, { recursive: true });
     const SegmentIndex = loadSegmentIndex(this.addonPath);
     this.raw = new SegmentIndex(addonOptions({ mode: this.mode, dim: this.dim, pq: this.pq }));
     this.raw.open(this.indexDir);
