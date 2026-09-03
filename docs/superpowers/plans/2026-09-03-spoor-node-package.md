@@ -809,7 +809,7 @@ test('rrf fuses two ranked key lists and normalizes to [0,1]', () => {
 ```javascript
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bestWindow } from '../src/snippet.js';
+import { bestWindow, firstMatchLine } from '../src/snippet.js';
 
 test('bestWindow centers on the matched line', () => {
   const text = Array.from({ length: 20 }, (_, i) => `line ${i + 1}`).join('\n');
@@ -821,6 +821,16 @@ test('bestWindow falls back to the head when hitLine is null', () => {
   const text = 'a\nb\nc\nd\ne\nf';
   const s = bestWindow(text, { hitLine: null, radius: 2, headLines: 3 });
   assert.equal(s, 'a\nb\nc');
+});
+
+test('firstMatchLine returns the 1-based line of the best query-term hit', () => {
+  const text = 'def helper():\n    pass\n\ndef login(user):\n    return auth(user)\n';
+  // "login" first appears on line 4
+  assert.equal(firstMatchLine(text, 'login user'), 4);
+});
+
+test('firstMatchLine returns null when no term matches', () => {
+  assert.equal(firstMatchLine('a\nb\nc', 'zzz'), null);
 });
 ```
 
@@ -861,6 +871,20 @@ export function bestWindow(text, { hitLine, radius = 3, headLines = 6 } = {}) {
   const start = Math.max(0, idx - radius);
   const end = Math.min(lines.length, idx + radius + 1);
   return lines.slice(start, end).join('\n');
+}
+
+// 1-based line within `text` of the first query-term occurrence (case-insensitive),
+// or null if no term matches. Used to center the snippet on the best-matched line
+// (both modes) since the addon does not expose per-token MaxSim offsets at MVP.
+export function firstMatchLine(text, query) {
+  const terms = query.toLowerCase().split(/[^a-z0-9_]+/i).filter(Boolean);
+  if (!terms.length) return null;
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const lc = lines[i].toLowerCase();
+    if (terms.some(t => lc.includes(t))) return i + 1;
+  }
+  return null;
 }
 ```
 
@@ -1097,6 +1121,7 @@ test('single mode search returns re-openable, budgeted results', async () => {
   assert.match(top.path, /\.js$/);
   assert.equal(top.span.length, 2);
   assert.ok(top.score >= 0 && top.score <= 1);
+  assert.match(top.snippet, /login/);   // snippet centers on the matched line, not the chunk head
   assert.equal(typeof out.token_estimate, 'number');
   assert.equal(typeof out.truncated, 'boolean');
   await ix.close();
@@ -1126,7 +1151,7 @@ Expected: FAIL (`ix.search is not a function`).
 Add these imports at the top of the file:
 ```javascript
 import { rrf } from './fuse.js';
-import { bestWindow } from './snippet.js';
+import { bestWindow, firstMatchLine } from './snippet.js';
 ```
 
 Add inside the `SpoorIndex` class:
@@ -1157,7 +1182,8 @@ Add inside the `SpoorIndex` class:
     let used = 0, truncated = fused.length < k ? false : fused.length > k;
     for (const row of fused) {
       const { path, span } = this._parseKey(row.key);
-      const snippet = bestWindow(this._textOf(row.key) ?? '', { hitLine: null });
+      const chunkText = this._textOf(row.key) ?? '';
+      const snippet = bestWindow(chunkText, { hitLine: firstMatchLine(chunkText, query) });
       const rec = { path, span, symbol: this._symbolOf(row.key), kind: this._kindOf(row.key), score: row.score, snippet };
       const cost = SpoorIndex.estTokens(JSON.stringify(rec));
       if (used + cost > maxTokens) { truncated = true; break; }
@@ -1787,4 +1813,6 @@ git commit -m "docs(spoor): README with usage, env, modes, MCP tools"
 - **Addon calls used:** `addDocument(key,text,vector,multiVectors)`, `search`, `searchVectorHnsw`, `searchRerank(qmv,{vector,firstStageN,topK})`, `deleteDocument`, `flush`, `buildPq`, `buildMultivectorPq`, `documentCount` — all confirmed present in `nodejs/addon/segment_index.cpp`. No use of unbound advanced-codec knobs.
 - **Type consistency:** chunk shape `{path,span:[s,e],symbol,kind,text}`, embed items `{vector}` (single) / `{tokens,pooled}` (multi), search result `{path,span,symbol?,kind?,score,snippet}` + envelope `{results,truncated,token_estimate,index_stale}` — consistent across Tasks 4–17.
 - **Known verification points (not placeholders — real checks in-task):** tree-sitter grammar node-type names (Task 5 Step 5), addon entry-point path (Task 9 Step 4), MCP SDK `McpServer.tool` signature (Task 15 — if the installed SDK version differs, adjust the registration call; the unit test targets `buildTools`, which is SDK-independent).
+- **Open contract point (`kind`):** the shared `search` response schema (co-owned with tyode/Parley) uses `additionalProperties:false`. The result record here includes an optional `kind` (`function`|`method`|`class`). This is proposed to the schema owner; if they decline to add `kind`, remove it from the record built in Task 11 Step 3 (single-line deletion) so output validates. `symbol` and `lang` are otherwise the optional code fields.
+- **Snippet centering (contract-aligned):** snippets center on `firstMatchLine` (best lexical-term line) in BOTH modes — the addon's `searchRerank` does not expose per-token MaxSim offsets at MVP, so multi/single snippet precision is equal for now. True per-token centering is a flagged addon follow-on (expose MaxSim hit positions), addable later as an optional `highlights` field without breaking representation-agnosticism.
 ```
