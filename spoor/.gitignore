@@ -1,0 +1,4 @@
+node_modules/
+grammars/*.wasm
+*.log
+.spoor/
